@@ -1,10 +1,20 @@
 { config, pkgs, ... }:
 
 {
+  imports = [
+    ./modules
+  ];
   home.username = "user";
   home.homeDirectory = "/home/user";
   
   home.stateVersion = "24.05";
+
+  # Enable/disable development modules
+  modules = {
+    python.enable = true;   # Set to false to disable
+    node.enable = true;     # Set to false to disable  
+    java.enable = false;    # Set to true to enable
+  };
 
   home.packages = with pkgs; [
     git
