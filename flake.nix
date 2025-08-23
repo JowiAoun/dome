@@ -10,18 +10,22 @@
   };
 
   outputs = { self, nixpkgs, home-manager, ... }:
-    let
-      system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
-    in {
-      homeConfigurations = {
-        default = home-manager.lib.homeManagerConfiguration {
-          inherit pkgs;
-          
-          modules = [
-            ./home.nix
-          ];
-        };
+  let
+    system = "x86_64-linux";
+    pkgs = import nixpkgs { inherit system; };
+  in {
+    homeManagerConfigurations = {
+      vscode = home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
+        configuration = ./home.nix;
+      };
+
+      default = home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
+        configuration = ./home.nix;
       };
     };
+
+    homeConfigurations = homeManagerConfigurations;
+  };
 }
