@@ -3,7 +3,7 @@
 {
   nixpkgs.config.allowUnfree = true;
   imports = [
-    ./modules
+    ./modules/default.nix
   ];
   home.username = "vscode";
   home.homeDirectory = "/home/vscode";
@@ -12,9 +12,9 @@
 
   # Enable/disable development modules
   modules = {
-    python.enable = true;   # Set to false to disable
-    node.enable = false;    # Disabled to avoid Node.js version conflict in Codespaces
-    java.enable = false;    # Set to true to enable
+    python.enable = true;
+    node.enable = true;
+    java.enable = false;
   };
 
   home.packages = with pkgs; [
@@ -43,6 +43,7 @@
       la = "ls -la";
       grep = "grep --color=auto";
       ".." = "cd ..";
+      l = "lazygit";
     };
     initExtra = ''
       # Source Nix if available
@@ -70,6 +71,7 @@
       la = "ls -la";
       grep = "grep --color=auto";
       ".." = "cd ..";
+      l = "lazygit";
       lg = "lazygit";
     };
 
@@ -160,7 +162,6 @@
           inactiveBorderColor = ["default"];
           selectedLineBgColor = ["blue"];
         };
-        commitLength = 50;
         sidePanelWidth = 0.3333;
       };
       git = {

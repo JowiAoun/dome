@@ -53,6 +53,14 @@ fi
 
 # Nix sourcing will be handled by Home Manager through shell configurations
 
+# Create Home Manager config directory and symlink
+echo "Setting up Home Manager config symlink..."
+mkdir -p ~/.config/home-manager
+ln -sf /workspaces/dome/home.nix ~/.config/home-manager/home.nix
+ln -sf /workspaces/dome/flake.nix ~/.config/home-manager/flake.nix
+ln -sf /workspaces/dome/flake.lock ~/.config/home-manager/flake.lock
+ln -sf /workspaces/dome/modules ~/.config/home-manager/modules
+
 # Change default shell to zsh if it was installed
 if command -v zsh >/dev/null 2>&1; then
     echo "Changing default shell to zsh..."
