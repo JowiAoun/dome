@@ -47,6 +47,45 @@
     };
   };
 
+  programs.zsh = {
+    enable = true;
+    enableCompletion = true;
+    autosuggestion.enable = true;
+    syntaxHighlighting.enable = true;
+    
+    history = {
+      size = 10000;
+      save = 10000;
+      ignoreDups = true;
+      ignoreSpace = true;
+    };
+
+    shellAliases = {
+      ll = "ls -l";
+      la = "ls -la";
+      grep = "grep --color=auto";
+      ".." = "cd ..";
+      lg = "lazygit";
+    };
+
+    initExtra = ''
+      # Set prompt
+      autoload -U promptinit; promptinit
+      prompt adam1
+
+      # Enable Vi mode
+      bindkey -v
+      
+      # Better history search
+      autoload -U up-line-or-beginning-search
+      autoload -U down-line-or-beginning-search
+      zle -N up-line-or-beginning-search
+      zle -N down-line-or-beginning-search
+      bindkey "^[[A" up-line-or-beginning-search
+      bindkey "^[[B" down-line-or-beginning-search
+    '';
+  };
+
   programs.git = {
     enable = true;
     userName = "Your Name";
@@ -92,10 +131,45 @@
       syntax on
       colorscheme default
     '';
+
   };
 
   home.sessionVariables = {
     EDITOR = "vim";
     BROWSER = "firefox";
+    SHELL = "${pkgs.zsh}/bin/zsh";
+  };
+
+  programs.lazygit = {
+    enable = true;
+    settings = {
+      gui = {
+        theme = {
+          lightTheme = false;
+          activeBorderColor = ["cyan" "bold"];
+          inactiveBorderColor = ["default"];
+          selectedLineBgColor = ["blue"];
+        };
+        commitLength = 50;
+        sidePanelWidth = 0.3333;
+      };
+      git = {
+        paging = {
+          colorArg = "always";
+          pager = "delta --dark --paging=never";
+        };
+        commit = {
+          signOff = false;
+        };
+        merging = {
+          manualCommit = false;
+          args = "";
+        };
+      };
+      refresher = {
+        refreshInterval = 10;
+        fetchInterval = 60;
+      };
+    };
   };
 }
