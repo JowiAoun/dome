@@ -14,18 +14,21 @@
     system = "x86_64-linux";
     pkgs = import nixpkgs { inherit system; };
   in {
-    homeManagerConfigurations = {
+    homeConfigurations = {
       vscode = home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
-        configuration = ./home.nix;
+        modules = [ ./home.nix ];
+      };
+
+      codespaces = home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
+        modules = [ ./home-codespaces.nix ];
       };
 
       default = home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
-        configuration = ./home.nix;
+        modules = [ ./home-codespaces.nix ];
       };
     };
-
-    homeConfigurations = homeManagerConfigurations;
   };
 }
