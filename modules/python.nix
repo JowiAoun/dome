@@ -9,13 +9,6 @@ in
       python3
       python3Packages.pip
       python3Packages.virtualenv
-      python3Packages.poetry
-      python3Packages.black
-      python3Packages.flake8
-      python3Packages.mypy
-      python3Packages.pytest
-      python3Packages.ipython
-      python3Packages.jupyter
     ];
 
     home.sessionVariables = {
