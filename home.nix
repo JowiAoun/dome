@@ -44,6 +44,12 @@
       grep = "grep --color=auto";
       ".." = "cd ..";
     };
+    initExtra = ''
+      # Source Nix if available
+      if [ -f ~/.nix-profile/etc/profile.d/nix.sh ]; then
+        . ~/.nix-profile/etc/profile.d/nix.sh
+      fi
+    '';
   };
 
   programs.zsh = {
@@ -68,6 +74,11 @@
     };
 
     initContent = ''
+      # Source Nix if available
+      if [ -f ~/.nix-profile/etc/profile.d/nix.sh ]; then
+        . ~/.nix-profile/etc/profile.d/nix.sh
+      fi
+
       # Set prompt
       autoload -U promptinit; promptinit
       prompt adam1
