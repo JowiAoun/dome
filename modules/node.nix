@@ -8,15 +8,8 @@ in
     home.packages = with pkgs; [
       nodejs_20
       nodePackages.npm
-      nodePackages.yarn
       nodePackages.pnpm
       nodePackages.typescript
-      nodePackages.ts-node
-      nodePackages.eslint
-      nodePackages.prettier
-      nodePackages.nodemon
-      nodePackages."@vue/cli"
-      nodePackages.create-react-app
     ];
 
     home.sessionVariables = {
@@ -33,17 +26,12 @@ in
     '';
 
     programs.bash.shellAliases = lib.mkIf config.programs.bash.enable {
-      ni = "npm install";
-      ns = "npm start";
-      nt = "npm test";
-      nb = "npm run build";
-      nd = "npm run dev";
-      npx = "npx --yes";
-      yi = "yarn install";
-      ys = "yarn start";
-      yt = "yarn test";
-      yb = "yarn build";
-      yd = "yarn dev";
+      pi = "pnpm install";
+      ps = "pnpm start";
+      pt = "pnpm test";
+      pb = "pnpm build";
+      pd = "pnpm dev";
+      px = "pnpm dlx";
     };
   };
 }
