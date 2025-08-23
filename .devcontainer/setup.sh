@@ -51,10 +51,7 @@ if ! nix run home-manager/master -- switch --flake .#default -b backup; then
     exit 1
 fi
 
-# Add Nix to shell profile permanently
-echo "Adding Nix to shell profiles..."
-echo 'if [ -f ~/.nix-profile/etc/profile.d/nix.sh ]; then . ~/.nix-profile/etc/profile.d/nix.sh; fi' >> ~/.bashrc
-echo 'if [ -f ~/.nix-profile/etc/profile.d/nix.sh ]; then . ~/.nix-profile/etc/profile.d/nix.sh; fi' >> ~/.zshrc
+# Nix sourcing will be handled by Home Manager through shell configurations
 
 # Change default shell to zsh if it was installed
 if command -v zsh >/dev/null 2>&1; then
