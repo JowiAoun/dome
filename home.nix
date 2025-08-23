@@ -67,7 +67,7 @@
       lg = "lazygit";
     };
 
-    initExtra = ''
+    initContent = ''
       # Set prompt
       autoload -U promptinit; promptinit
       prompt adam1
