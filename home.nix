@@ -30,6 +30,8 @@
     bat
     exa
     neofetch
+    lazygit
+    vscode
   ];
 
   programs.home-manager.enable = true;
