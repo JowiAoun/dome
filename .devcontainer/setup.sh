@@ -46,7 +46,7 @@ fi
 
 # Install and apply home-manager
 echo "Setting up Home Manager..."
-if ! nix run home-manager/master -- switch --flake .#default; then
+if ! nix run home-manager/master -- switch --flake .#default -b backup; then
     echo "Home Manager setup failed"
     exit 1
 fi
