@@ -1,11 +1,12 @@
 { config, pkgs, ... }:
 
 {
+  nixpkgs.config.allowUnfree = true;
   imports = [
     ./modules
   ];
-  home.username = "user";
-  home.homeDirectory = "/home/user";
+  home.username = "vscode";
+  home.homeDirectory = "/home/vscode";
   
   home.stateVersion = "24.05";
 
@@ -28,10 +29,8 @@
     ripgrep
     fd
     bat
-    exa
     neofetch
     lazygit
-    vscode
   ];
 
   programs.home-manager.enable = true;
