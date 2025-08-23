@@ -13,7 +13,7 @@
   # Enable/disable development modules
   modules = {
     python.enable = true;   # Set to false to disable
-    node.enable = true;     # Set to false to disable  
+    node.enable = false;    # Disabled to avoid Node.js version conflict in Codespaces
     java.enable = false;    # Set to true to enable
   };
 
