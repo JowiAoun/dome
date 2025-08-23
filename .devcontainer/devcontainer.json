@@ -5,7 +5,9 @@
   "customizations": {
     "vscode": {
       "settings": {},
-      "extensions": []
+      "extensions": [
+        "ms-vscode-remote.remote-containers"
+      ]
     }
   },
   "remoteUser": "vscode"
