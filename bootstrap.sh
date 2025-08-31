@@ -130,12 +130,12 @@ collect_user_info() {
         echo "🔧 Collecting user information for personalization..."
         
         # Get user's name with default
-        read -p "Enter your full name [John Doe]: " user_name
-        user_name=${user_name:-"John Doe"}
+        read -p "Enter your full name [Jowi Aoun]: " user_name
+        user_name=${user_name:-"Jowi Aoun"}
         
         # Get user's email with default
-        read -p "Enter your email [john.doe@example.com]: " user_email
-        user_email=${user_email:-"john.doe@example.com"}
+        read -p "Enter your email [83415433+JowiAoun@users.noreply.github.com]: " user_email
+        user_email=${user_email:-"83415433+JowiAoun@users.noreply.github.com"}
         
         # Update user-config.nix with collected information
         sed -i "s|name = \".*\";|name = \"$user_name\";|" user-config.nix

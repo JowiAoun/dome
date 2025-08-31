@@ -1,8 +1,8 @@
 {
   # User configuration template - copied to user-config.nix by bootstrap.sh
   # DO NOT commit user-config.nix - it may contain personal information
-  name = "Your Full Name";
-  email = "your.email@example.com";
+  name = "Jowi Aoun";
+  email = "83415433+JowiAoun@users.noreply.github.com";
   
   # Module selections - chosen during bootstrap
   modules = {
