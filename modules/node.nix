@@ -2,6 +2,7 @@
 
 let
   cfg = config.modules.node;
+  userConfig = import ../user-config.nix;
 in
 {
   config = lib.mkIf cfg.enable {
@@ -19,8 +20,8 @@ in
 
     home.file.".npmrc".text = ''
       prefix=~/.npm-global
-      init-author-name=Your Name
-      init-author-email=your.email@example.com
+      init-author-name=${userConfig.name}
+      init-author-email=${userConfig.email}
       init-license=MIT
       save-exact=true
     '';

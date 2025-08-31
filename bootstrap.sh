@@ -47,8 +47,39 @@ wait_for_system() {
     echo "⚠️  System readiness check timed out, proceeding anyway..."
 }
 
+# Function to collect user information
+collect_user_info() {
+    echo "👤 Setting up user configuration..."
+    
+    # Check if user-config.nix already has real values (not defaults)
+    if grep -q "John Doe\|john.doe@example.com" user-config.nix 2>/dev/null; then
+        echo "🔧 Collecting user information for personalization..."
+        
+        # Get user's name with default
+        read -p "Enter your full name [John Doe]: " user_name
+        user_name=${user_name:-"John Doe"}
+        
+        # Get user's email with default
+        read -p "Enter your email [john.doe@example.com]: " user_email
+        user_email=${user_email:-"john.doe@example.com"}
+        
+        # Update user-config.nix with collected information
+        sed -i "s|name = \".*\";|name = \"$user_name\";|" user-config.nix
+        sed -i "s|email = \".*\";|email = \"$user_email\";|" user-config.nix
+        
+        echo "✅ User configuration updated with:"
+        echo "   Name: $user_name"
+        echo "   Email: $user_email"
+    else
+        echo "✅ User configuration already personalized"
+    fi
+}
+
 echo "🏠 Setting up dotfiles in GitHub Codespaces..."
 echo "📊 Environment info: USER=$USER, HOME=$HOME"
+
+# Collect user information for personalization
+collect_user_info
 
 # Wait for Codespaces to be fully ready
 if [ "$USER" = "codespace" ] || [ ! -z "$CODESPACES" ] || [ ! -z "$CODESPACE_NAME" ]; then

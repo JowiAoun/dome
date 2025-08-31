@@ -1,5 +1,9 @@
 { config, pkgs, ... }:
 
+let
+  userConfig = import ./user-config.nix;
+in
+
 {
   nixpkgs.config.allowUnfree = true;
   imports = [
@@ -100,11 +104,11 @@
 
   programs.git = {
     enable = true;
-    userName = "Your Name";
-    userEmail = "your.email@example.com";
+    userName = userConfig.name;
+    userEmail = userConfig.email;
     extraConfig = {
-      init.defaultBranch = "main";
-      core.editor = "vim";
+      init.defaultBranch = userConfig.gitDefaultBranch;
+      core.editor = userConfig.gitEditor;
       pull.rebase = true;
     };
   };
@@ -147,9 +151,9 @@
   };
 
   home.sessionVariables = {
-    EDITOR = "vim";
+    EDITOR = userConfig.preferredEditor;
     BROWSER = "firefox";
-    SHELL = "${pkgs.zsh}/bin/zsh";
+    SHELL = "${pkgs.${userConfig.preferredShell}}/bin/${userConfig.preferredShell}";
   };
 
   programs.lazygit = {
