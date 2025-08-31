@@ -47,7 +47,8 @@ dome/
     ├── default.nix       # Module system setup
     ├── python.nix        # Python development tools
     ├── node.nix          # Node.js development tools
-    └── java.nix          # Java development tools
+    ├── java.nix          # Java development tools
+    └── ai.nix            # AI development tools (Claude Code)
 ```
 
 ## ⚙️ Configurations
@@ -74,6 +75,7 @@ dome/
 - **Shell**: Zsh with completions, syntax highlighting, and vi-mode
 - **Editor**: Vim with sensible defaults
 - **Git**: Configured with aliases and settings
+- **GitHub**: CLI tool (`gh`) with Copilot extensions
 - **Terminal**: Tmux with custom keybindings
 - **Utils**: fzf, ripgrep, fd, bat, htop, tree, lazygit
 
@@ -93,6 +95,12 @@ dome/
 - JDK 21, Maven, Gradle, Spring Boot CLI
 - Maven settings configuration
 - Shell aliases for common Maven/Gradle commands
+
+#### AI Tools Module (`modules.ai.enable = true`)
+- **Claude Code**: Anthropic's official CLI for AI development assistance
+- **Setup script**: `~/.local/bin/ai-setup` for quick environment setup
+- **Tips & docs**: `~/.local/share/ai-tips.md` with usage examples
+- **GitHub Copilot**: Available via `gh copilot` (pre-installed with GitHub CLI)
 
 ## 🎨 Shell Features
 
@@ -116,6 +124,21 @@ lg        # lazygit (alternative)
 - **Splits**: `prefix + v` (vertical), `prefix + s` (horizontal)
 - **Navigation**: `prefix + h/j/k/l` (vim-like pane switching)
 - **Features**: Mouse support, 50k history, base index 1
+
+### AI Tools Usage
+```bash
+# Start AI environment
+ai-setup                         # Quick setup script
+
+# Claude Code (Interactive AI assistant)
+claude                          # Start Claude Code interactive session
+
+# GitHub Copilot CLI (requires auth)
+gh auth login                   # Authenticate for Copilot features
+gh copilot explain "git rebase" # Explain commands
+gh copilot suggest "compress"   # Get suggestions
+gh copilot suggest -t shell     # Shell command suggestions
+```
 
 ## 👤 Personalization
 
@@ -154,10 +177,19 @@ modules = {
   python.enable = true;   # Python tools
   node.enable = true;     # Node.js tools  
   java.enable = false;    # Java tools (disabled)
+  ai.enable = true;       # AI development tools
 };
 ```
 
-**For Codespaces**: Development tools are minimal to avoid conflicts.
+**For Codespaces**: Development tools are minimal to avoid conflicts, but AI tools are enabled:
+```nix
+modules = {
+  python.enable = false;  # Pre-installed in Codespaces
+  node.enable = false;    # Pre-installed in Codespaces  
+  java.enable = false;    # Not needed by default
+  ai.enable = true;       # AI tools are useful everywhere!
+};
+```
 
 ### Adding Custom Packages
 
