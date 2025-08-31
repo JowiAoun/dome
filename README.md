@@ -42,7 +42,8 @@ A modern, cross-platform dotfiles setup using **Nix** and **Home Manager** with 
 dome/
 ├── README.md              # This file
 ├── bootstrap.sh           # Interactive setup script (collects user info & module preferences)
-├── user-config.nix        # Centralized user configuration & module selections
+├── user-config.template.nix # Template for user configuration (safe to commit)
+├── user-config.nix        # Personal configuration (git-ignored, created from template)
 ├── flake.nix             # Nix flake definition
 ├── home.nix              # Adaptive Home Manager configuration (works everywhere)
 └── modules/              # Modular development environments
@@ -146,7 +147,7 @@ gh copilot suggest -t shell     # Shell command suggestions
 
 ### User Configuration
 
-All personal information (name, email, preferences) is centralized in `user-config.nix`. The bootstrap script will automatically prompt for this information on first run:
+All personal information is stored in `user-config.nix` (which is git-ignored for privacy). The bootstrap script creates this from `user-config.template.nix` and prompts for your information:
 
 ```bash
 # When you run bootstrap.sh, you'll be prompted:
@@ -154,7 +155,7 @@ Enter your full name [John Doe]: Your Actual Name
 Enter your email [john.doe@example.com]: your.actual@email.com
 ```
 
-You can also manually edit `user-config.nix`:
+You can also manually edit `user-config.nix` (your personal copy, not the template):
 
 ```nix
 {
@@ -310,4 +311,4 @@ This configuration is free under the MIT license to use and modify for personal 
 
 ---
 
-**Note**: The bootstrap script will automatically collect your personal information on first run. No manual editing of multiple files is required!
+**Note**: Your personal `user-config.nix` is git-ignored for privacy - you'll never accidentally commit your personal information! The repository only contains the safe template.

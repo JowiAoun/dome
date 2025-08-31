@@ -1,7 +1,10 @@
 { config, pkgs, lib, ... }:
 
 let
-  userConfig = import ./user-config.nix;
+  # Fallback to template if user-config.nix doesn't exist
+  userConfig = if builtins.pathExists ./user-config.nix 
+    then import ./user-config.nix 
+    else import ./user-config.template.nix;
   isCodespaces = userConfig.environment.isCodespaces;
 in
 

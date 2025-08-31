@@ -119,8 +119,14 @@ collect_module_preferences() {
 collect_user_info() {
     echo "👤 Setting up user configuration..."
     
-    # Check if user-config.nix already has real values (not defaults)
-    if grep -q "John Doe\|john.doe@example.com" user-config.nix 2>/dev/null; then
+    # Create user-config.nix from template if it doesn't exist
+    if [ ! -f user-config.nix ]; then
+        echo "📋 Creating personal configuration from template..."
+        cp user-config.template.nix user-config.nix
+    fi
+    
+    # Check if user-config.nix has placeholder values
+    if grep -q "Your Full Name\|your.email@example.com" user-config.nix 2>/dev/null; then
         echo "🔧 Collecting user information for personalization..."
         
         # Get user's name with default
