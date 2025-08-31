@@ -217,34 +217,41 @@ in
       
       # Language/runtime configurations
       nodejs = {
-        symbol = " ";
-        style = "bold green";
-        format = "[$symbol($version )]($style)";
+        disabled = true;
       };
       
       python = {
-        symbol = " ";
+        symbol = "🐍 ";
         style = "bold yellow";
         format = "[$symbol$pyenv_prefix($version )(\($virtualenv\) )]($style)";
+        version_format = "v\${major}.\${minor}";
       };
       
       java = {
-        symbol = " ";
-        style = "bold red";
-        format = "[$symbol($version )]($style)";
+        disabled = true;
+      };
+      
+      ruby = {
+        disabled = true;
+      };
+      
+      golang = {
+        disabled = true;
+      };
+      
+      rust = {
+        disabled = true;
       };
       
       docker_context = {
-        symbol = " ";
+        symbol = "🐳 ";
         style = "bold blue";
         format = "[$symbol$context]($style) ";
       };
       
-      # Package version
+      # Package version (disabled)
       package = {
-        symbol = "📦 ";
-        style = "bold 208";
-        format = "[$symbol$version]($style) ";
+        disabled = true;
       };
       
       # Command duration
