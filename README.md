@@ -38,7 +38,8 @@ A modern, cross-platform dotfiles setup using **Nix** and **Home Manager** with 
 ```
 dome/
 ├── README.md              # This file
-├── bootstrap.sh           # GitHub Codespaces installation script
+├── bootstrap.sh           # GitHub Codespaces installation script (collects user info)
+├── user-config.nix        # Centralized user configuration
 ├── flake.nix             # Nix flake definition
 ├── home.nix              # Main Home Manager configuration (local)
 ├── home-codespaces.nix   # Codespaces-optimized configuration
@@ -116,7 +117,32 @@ lg        # lazygit (alternative)
 - **Navigation**: `prefix + h/j/k/l` (vim-like pane switching)
 - **Features**: Mouse support, 50k history, base index 1
 
-## 📝 Customization
+## 👤 Personalization
+
+### User Configuration
+
+All personal information (name, email, preferences) is centralized in `user-config.nix`. The bootstrap script will automatically prompt for this information on first run:
+
+```bash
+# When you run bootstrap.sh, you'll be prompted:
+Enter your full name [John Doe]: Your Actual Name
+Enter your email [john.doe@example.com]: your.actual@email.com
+```
+
+You can also manually edit `user-config.nix`:
+
+```nix
+{
+  name = "Your Actual Name";
+  email = "your.actual@email.com";
+  
+  # Additional preferences
+  gitDefaultBranch = "main";
+  gitEditor = "vim";
+  preferredShell = "zsh";
+  preferredEditor = "vim";
+}
+```
 
 ### Enabling/Disabling Development Modules
 
@@ -160,15 +186,17 @@ programs.bash.shellAliases = {
 
 ### Git Configuration
 
-Update the git settings in your configuration:
+Git configuration is automatically populated from `user-config.nix`. All files reference the centralized configuration:
 
 ```nix
+# This is automatically configured from user-config.nix
 programs.git = {
   enable = true;
-  userName = "Your Name Here";
-  userEmail = "your.email@example.com";
+  userName = userConfig.name;     # From user-config.nix
+  userEmail = userConfig.email;   # From user-config.nix
   extraConfig = {
-    # Add custom git config here
+    init.defaultBranch = userConfig.gitDefaultBranch;
+    core.editor = userConfig.gitEditor;
   };
 };
 ```
@@ -241,4 +269,4 @@ This configuration is free under the MIT license to use and modify for personal 
 
 ---
 
-**Note**: Remember to update `userName`, `userEmail`, and repository URLs with your actual information!
+**Note**: The bootstrap script will automatically collect your personal information on first run. No manual editing of multiple files is required!
