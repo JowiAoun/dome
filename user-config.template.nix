@@ -1,6 +1,6 @@
 {
   # User configuration template - copied to user-config.nix by bootstrap.sh
-  # DO NOT commit user-config.nix - it contains personal information
+  # DO NOT commit user-config.nix - it may contain personal information
   name = "Your Full Name";
   email = "your.email@example.com";
   
@@ -9,15 +9,15 @@
     python = false;
     node = false;
     java = false;
-    ai = true;  # AI tools enabled by default
+    ai = true;
   };
   
   # Environment detection - auto-detected by bootstrap
   environment = {
     isCodespaces = false;
-    isWSL = false;
-    username = "user";
-    homeDirectory = "/home/user";
+    isWSL = true;
+    username = "jaoun";
+    homeDirectory = "/home/jaoun";
   };
   
   # Additional user preferences

@@ -70,42 +70,43 @@ in
 
   programs.vscode = {
     enable = true;
-    extensions = with pkgs.vscode-extensions; [
-      # Theme
-      enkia.tokyo-night
-      
-      # GitHub & Remote development
-      github.codespaces
-      
-      # Nix language support
-      jnoortheen.nix-ide
-      
-      # Essential extensions
-      redhat.vscode-yaml
+    profiles.default = {
+      extensions = with pkgs.vscode-extensions; [
+        # Theme
+        enkia.tokyo-night
+        
+        # GitHub & Remote development
+        github.codespaces
+        
+        # Nix language support
+        jnoortheen.nix-ide
+        
+        # Essential extensions
+        redhat.vscode-yaml
 
-      # Utils
-      wayou.vscode-todo-highlight
-      gruntfuggly.todo-tree
-    ] ++ lib.optionals (!isCodespaces) [
-      # Remote development extensions (local environments only)
-      ms-vscode-remote.remote-wsl
-      ms-vscode-remote.remote-ssh
-    ];
-    
-    userSettings = {
-      "workbench.colorTheme" = "Tokyo Night";
-      "editor.fontFamily" = "'Fira Code', 'Droid Sans Mono', monospace";
-      "editor.fontLigatures" = true;
-      "editor.fontSize" = 14;
-      "editor.tabSize" = 2;
-      "editor.insertSpaces" = true;
-      "editor.formatOnSave" = true;
-      "editor.minimap.enabled" = false;
-      "workbench.startupEditor" = "none";
-      "explorer.confirmDelete" = false;
-      "git.enableSmartCommit" = true;
-      "git.confirmSync" = false;
-      "terminal.integrated.fontSize" = 13;
+        # Utils
+        gruntfuggly.todo-tree
+      ] ++ lib.optionals (!isCodespaces) [
+        # Remote development extensions (local environments only)
+        ms-vscode-remote.remote-wsl
+        ms-vscode-remote.remote-ssh
+      ];
+      
+      userSettings = {
+        "workbench.colorTheme" = "Tokyo Night";
+        "editor.fontFamily" = "'Fira Code', 'Droid Sans Mono', monospace";
+        "editor.fontLigatures" = true;
+        "editor.fontSize" = 14;
+        "editor.tabSize" = 2;
+        "editor.insertSpaces" = true;
+        "editor.formatOnSave" = true;
+        "editor.minimap.enabled" = false;
+        "workbench.startupEditor" = "none";
+        "explorer.confirmDelete" = false;
+        "git.enableSmartCommit" = true;
+        "git.confirmSync" = false;
+        "terminal.integrated.fontSize" = 13;
+      };
     };
   };
 

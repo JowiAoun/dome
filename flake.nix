@@ -12,26 +12,30 @@
   outputs = { self, nixpkgs, home-manager, ... }:
   let
     system = "x86_64-linux";
-    pkgs = import nixpkgs { inherit system; };
+    pkgs = import nixpkgs { inherit system; config.allowUnfree = true; };
+    
+    # Get current user from environment or fallback
+    username = builtins.getEnv "USER";
+    
+    # Create configuration that works for any user
+    makeConfig = username: home-manager.lib.homeManagerConfiguration {
+      inherit pkgs;
+      modules = [ ./home.nix ];
+    };
   in {
     homeConfigurations = {
-      # Single adaptive configuration for all environments
-      default = home-manager.lib.homeManagerConfiguration {
-        inherit pkgs;
-        modules = [ ./home.nix ];
-      };
+      # Dynamic configuration based on current user
+      ${username} = makeConfig username;
+      
+      # Fallback configurations
+      default = makeConfig (if username != "" then username else "user");
+      user = makeConfig "user";
+      jaoun = makeConfig "jaoun";
+      codespace = makeConfig "codespace";
       
       # Alias for backward compatibility
-      vscode = home-manager.lib.homeManagerConfiguration {
-        inherit pkgs;
-        modules = [ ./home.nix ];
-      };
-      
-      # Alias for backward compatibility
-      codespaces = home-manager.lib.homeManagerConfiguration {
-        inherit pkgs;
-        modules = [ ./home.nix ];
-      };
+      vscode = makeConfig username;
+      codespaces = makeConfig username;
     };
   };
 }

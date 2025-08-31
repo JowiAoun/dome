@@ -167,13 +167,16 @@ if [ "$USER" = "codespace" ] || [ ! -z "$CODESPACES" ] || [ ! -z "$CODESPACE_NAM
 fi
 
 # Check if Nix is already installed
-if command -v nix &> /dev/null; then
+if [ -f "/nix/var/nix/profiles/default/bin/nix" ] || command -v nix &> /dev/null; then
     echo "✅ Nix is already installed"
-    # Source nix for current session
+    # Source nix for current session and add to PATH
+    export PATH="/nix/var/nix/profiles/default/bin:$PATH"
     if [ -e "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
         . "$HOME/.nix-profile/etc/profile.d/nix.sh"
     elif [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then
         . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'
+    elif [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix.sh' ]; then
+        . '/nix/var/nix/profiles/default/etc/profile.d/nix.sh'
     fi
 else
     # For Codespaces, use the single-user Nix installation to avoid permission issues
@@ -234,7 +237,7 @@ echo "🔧 Applying Home Manager configuration..."
 echo "📁 Backing up existing dotfiles..."
 
 # Retry the home-manager installation
-if retry nix run home-manager/master -- switch --flake .#default -b backup; then
+if retry nix --extra-experimental-features nix-command --extra-experimental-features flakes run home-manager/master -- switch --flake .#$USER -b backup; then
     echo "✅ Home Manager configuration applied successfully!"
 else
     echo "❌ Home Manager configuration failed"
