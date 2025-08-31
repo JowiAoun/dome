@@ -14,9 +14,9 @@ in
     ./modules/default.nix
   ];
   
-  # Environment-aware configuration
-  home.username = userConfig.environment.username;
-  home.homeDirectory = userConfig.environment.homeDirectory;
+  # Environment-aware configuration (defaults that can be overridden)
+  home.username = lib.mkDefault userConfig.environment.username;
+  home.homeDirectory = lib.mkDefault userConfig.environment.homeDirectory;
   
   home.stateVersion = "24.05";
 

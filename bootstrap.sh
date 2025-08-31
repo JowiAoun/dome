@@ -152,6 +152,8 @@ collect_user_info() {
         detect_environment
     else
         echo "✅ User configuration already personalized"
+        # Always update environment detection even if config exists
+        detect_environment
     fi
 }
 

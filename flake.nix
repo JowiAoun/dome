@@ -20,7 +20,14 @@
     # Create configuration that works for any user
     makeConfig = username: home-manager.lib.homeManagerConfiguration {
       inherit pkgs;
-      modules = [ ./home.nix ];
+      modules = [ 
+        ./home.nix 
+        {
+          # Override username and home directory at runtime
+          home.username = username;
+          home.homeDirectory = if username == "codespace" then "/home/codespace" else "/home/${username}";
+        }
+      ];
     };
   in {
     homeConfigurations = {

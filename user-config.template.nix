@@ -15,9 +15,9 @@
   # Environment detection - auto-detected by bootstrap
   environment = {
     isCodespaces = false;
-    isWSL = true;
-    username = "jaoun";
-    homeDirectory = "/home/jaoun";
+    isWSL = false;
+    username = "user";
+    homeDirectory = "/home/user";
   };
   
   # Additional user preferences
