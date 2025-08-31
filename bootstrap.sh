@@ -47,6 +47,74 @@ wait_for_system() {
     echo "⚠️  System readiness check timed out, proceeding anyway..."
 }
 
+# Function to detect environment
+detect_environment() {
+    local is_codespaces=false
+    local is_wsl=false
+    local username="$USER"
+    local home_dir="$HOME"
+    
+    # Detect Codespaces
+    if [ "$USER" = "codespace" ] || [ ! -z "$CODESPACES" ] || [ ! -z "$CODESPACE_NAME" ]; then
+        is_codespaces=true
+        username="codespace"
+        home_dir="/home/codespace"
+    fi
+    
+    # Detect WSL
+    if grep -qi microsoft /proc/version 2>/dev/null; then
+        is_wsl=true
+    fi
+    
+    echo "🔍 Environment detected:"
+    echo "   Codespaces: $is_codespaces"
+    echo "   WSL: $is_wsl" 
+    echo "   User: $username"
+    
+    # Update environment in user-config.nix
+    sed -i "s|isCodespaces = .*;|isCodespaces = $is_codespaces;|" user-config.nix
+    sed -i "s|isWSL = .*;|isWSL = $is_wsl;|" user-config.nix
+    sed -i "s|username = \".*\";|username = \"$username\";|" user-config.nix
+    sed -i "s|homeDirectory = \".*\";|homeDirectory = \"$home_dir\";|" user-config.nix
+}
+
+# Function to collect module preferences
+collect_module_preferences() {
+    echo ""
+    echo "📦 Choose development modules to install:"
+    echo "   (This determines which tools and VS Code extensions are installed)"
+    echo ""
+    
+    # Python module
+    read -p "Install Python development tools? (y/N): " python_choice
+    python_enabled=$([ "$python_choice" = "y" ] || [ "$python_choice" = "Y" ] && echo "true" || echo "false")
+    
+    # Node.js module
+    read -p "Install Node.js development tools? (y/N): " node_choice
+    node_enabled=$([ "$node_choice" = "y" ] || [ "$node_choice" = "Y" ] && echo "true" || echo "false")
+    
+    # Java module
+    read -p "Install Java development tools? (y/N): " java_choice
+    java_enabled=$([ "$java_choice" = "y" ] || [ "$java_choice" = "Y" ] && echo "true" || echo "false")
+    
+    # AI module (default yes)
+    read -p "Install AI tools (Claude Code)? (Y/n): " ai_choice
+    ai_enabled=$([ "$ai_choice" = "n" ] || [ "$ai_choice" = "N" ] && echo "false" || echo "true")
+    
+    # Update module selections in user-config.nix
+    sed -i "s|python = .*;|python = $python_enabled;|" user-config.nix
+    sed -i "s|node = .*;|node = $node_enabled;|" user-config.nix
+    sed -i "s|java = .*;|java = $java_enabled;|" user-config.nix
+    sed -i "s|ai = .*;|ai = $ai_enabled;|" user-config.nix
+    
+    echo ""
+    echo "✅ Module preferences saved:"
+    echo "   Python: $python_enabled"
+    echo "   Node.js: $node_enabled"  
+    echo "   Java: $java_enabled"
+    echo "   AI Tools: $ai_enabled"
+}
+
 # Function to collect user information
 collect_user_info() {
     echo "👤 Setting up user configuration..."
@@ -70,6 +138,12 @@ collect_user_info() {
         echo "✅ User configuration updated with:"
         echo "   Name: $user_name"
         echo "   Email: $user_email"
+        
+        # Collect module preferences
+        collect_module_preferences
+        
+        # Detect and update environment
+        detect_environment
     else
         echo "✅ User configuration already personalized"
     fi

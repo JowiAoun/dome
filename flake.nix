@@ -15,19 +15,22 @@
     pkgs = import nixpkgs { inherit system; };
   in {
     homeConfigurations = {
+      # Single adaptive configuration for all environments
+      default = home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
+        modules = [ ./home.nix ];
+      };
+      
+      # Alias for backward compatibility
       vscode = home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
         modules = [ ./home.nix ];
       };
-
+      
+      # Alias for backward compatibility
       codespaces = home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
-        modules = [ ./home-codespaces.nix ];
-      };
-
-      default = home-manager.lib.homeManagerConfiguration {
-        inherit pkgs;
-        modules = [ ./home-codespaces.nix ];
+        modules = [ ./home.nix ];
       };
     };
   };
