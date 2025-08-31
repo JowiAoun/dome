@@ -19,10 +19,12 @@ in
     python.enable = true;
     node.enable = true;
     java.enable = false;
+    ai.enable = true;
   };
 
   home.packages = with pkgs; [
     git
+    gh
     curl
     wget
     htop

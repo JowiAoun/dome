@@ -6,15 +6,27 @@ in
 
 {
   nixpkgs.config.allowUnfree = true;
+  imports = [
+    ./modules/default.nix
+  ];
   
   home.username = "codespace";
   home.homeDirectory = "/home/codespace";
   
   home.stateVersion = "24.05";
 
+  # Enable/disable development modules (lightweight for Codespaces)
+  modules = {
+    python.enable = false;  # Pre-installed in Codespaces
+    node.enable = false;    # Pre-installed in Codespaces
+    java.enable = false;    # Not needed by default
+    ai.enable = true;       # AI tools are useful in Codespaces
+  };
+
   # Minimal packages to avoid conflicts with Codespaces pre-installed tools
   home.packages = with pkgs; [
     git
+    gh
     curl
     wget
     htop
