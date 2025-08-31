@@ -25,6 +25,7 @@ in
 
   # Minimal packages to avoid conflicts with Codespaces pre-installed tools
   home.packages = with pkgs; [
+    # Core tools (some may be pre-installed)
     git
     gh
     curl
@@ -39,9 +40,54 @@ in
     bat
     neofetch
     lazygit
+    
+    # Essential development tools (less likely to conflict)
+    jq
+    yq
+    httpie
+    age
+    hyperfine
+    bottom
   ];
 
   programs.home-manager.enable = true;
+
+  programs.vscode = {
+    enable = true;
+    extensions = with pkgs.vscode-extensions; [
+      # Theme
+      enkia.tokyo-night
+      
+      # GitHub & Remote development
+      github.codespaces
+      
+      # Nix language support
+      jnoortheen.nix-ide
+      
+      # Essential extensions
+      redhat.vscode-yaml
+
+      # Utils
+      wayou.vscode-todo-highlight
+      gruntfuggly.todo-tree
+    ];
+    
+    userSettings = {
+      "workbench.colorTheme" = "Tokyo Night";
+      "editor.fontFamily" = "'Fira Code', 'Droid Sans Mono', monospace";
+      "editor.fontLigatures" = true;
+      "editor.fontSize" = 14;
+      "editor.tabSize" = 2;
+      "editor.insertSpaces" = true;
+      "editor.formatOnSave" = true;
+      "editor.minimap.enabled" = false;
+      "workbench.startupEditor" = "none";
+      "explorer.confirmDelete" = false;
+      "git.enableSmartCommit" = true;
+      "git.confirmSync" = false;
+      "terminal.integrated.fontSize" = 13;
+    };
+  };
 
   programs.bash = {
     enable = true;

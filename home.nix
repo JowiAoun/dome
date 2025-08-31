@@ -23,6 +23,7 @@ in
   };
 
   home.packages = with pkgs; [
+    # Core tools
     git
     gh
     curl
@@ -37,9 +38,71 @@ in
     bat
     neofetch
     lazygit
+    
+    # Development tools
+    docker
+    docker-compose
+    jq
+    yq
+    unzip
+    zip
+    wslu
+    
+    # Network & system tools
+    httpie
+    nmap
+    netcat
+    
+    # Performance & monitoring
+    bottom
+    hyperfine
+    
+    # Security
+    gnupg
+    openssh
+    age
   ];
 
   programs.home-manager.enable = true;
+
+  programs.vscode = {
+    enable = true;
+    extensions = with pkgs.vscode-extensions; [
+      # Theme
+      enkia.tokyo-night
+      
+      # GitHub & Remote development
+      github.codespaces
+      ms-vscode-remote.remote-wsl
+      ms-vscode-remote.remote-ssh
+      
+      # Nix language support
+      jnoortheen.nix-ide
+      
+      # Essential extensions
+      redhat.vscode-yaml
+
+      # Utils
+      wayou.vscode-todo-highlight
+      gruntfuggly.todo-tree
+    ];
+    
+    userSettings = {
+      "workbench.colorTheme" = "Tokyo Night";
+      "editor.fontFamily" = "'Fira Code', 'Droid Sans Mono', monospace";
+      "editor.fontLigatures" = true;
+      "editor.fontSize" = 14;
+      "editor.tabSize" = 2;
+      "editor.insertSpaces" = true;
+      "editor.formatOnSave" = true;
+      "editor.minimap.enabled" = false;
+      "workbench.startupEditor" = "none";
+      "explorer.confirmDelete" = false;
+      "git.enableSmartCommit" = true;
+      "git.confirmSync" = false;
+      "terminal.integrated.fontSize" = 13;
+    };
+  };
 
   programs.bash = {
     enable = true;
