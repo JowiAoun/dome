@@ -69,16 +69,12 @@ in
       '';
     };
 
-    # Make scripts executable and auto-install Claude Code extension
+    # Make scripts executable
     home.activation.aiScripts = lib.hm.dag.entryAfter ["writeBoundary"] ''
-      chmod +x ~/.local/bin/ai-setup
-      
-      # Auto-install Claude Code VS Code extension if VS Code is available
-      if command -v code >/dev/null 2>&1; then
-        echo "🤖 Auto-installing Claude Code VS Code extension..."
-        code --install-extension anthropic.claude-code --force 2>/dev/null || true
-        echo "✅ Claude Code extension installation attempted"
+      if [ -f ~/.local/bin/ai-setup ]; then
+        chmod +x ~/.local/bin/ai-setup || true
       fi
+      echo "✅ AI tools configured"
     '';
   };
 }
