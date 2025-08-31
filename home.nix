@@ -1,7 +1,8 @@
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
 let
   userConfig = import ./user-config.nix;
+  isCodespaces = userConfig.environment.isCodespaces;
 in
 
 {
@@ -9,21 +10,24 @@ in
   imports = [
     ./modules/default.nix
   ];
-  home.username = "vscode";
-  home.homeDirectory = "/home/vscode";
+  
+  # Environment-aware configuration
+  home.username = userConfig.environment.username;
+  home.homeDirectory = userConfig.environment.homeDirectory;
   
   home.stateVersion = "24.05";
 
-  # Enable/disable development modules
+  # Module selections from user-config.nix
   modules = {
-    python.enable = true;
-    node.enable = true;
-    java.enable = false;
-    ai.enable = true;
+    python.enable = userConfig.modules.python;
+    node.enable = userConfig.modules.node;
+    java.enable = userConfig.modules.java;
+    ai.enable = userConfig.modules.ai;
   };
 
+  # Environment-aware package selection
   home.packages = with pkgs; [
-    # Core tools
+    # Core tools (always installed)
     git
     gh
     curl
@@ -39,28 +43,24 @@ in
     neofetch
     lazygit
     
-    # Development tools
-    docker
-    docker-compose
+    # Essential development tools (always installed)
     jq
     yq
+    httpie
+    age
+    hyperfine
+    bottom
+  ] ++ lib.optionals (!isCodespaces) [
+    # Additional tools for local environments only (avoid Codespaces conflicts)
+    docker
+    docker-compose
     unzip
     zip
     wslu
-    
-    # Network & system tools
-    httpie
     nmap
     netcat
-    
-    # Performance & monitoring
-    bottom
-    hyperfine
-    
-    # Security
     gnupg
     openssh
-    age
   ];
 
   programs.home-manager.enable = true;
@@ -73,8 +73,6 @@ in
       
       # GitHub & Remote development
       github.codespaces
-      ms-vscode-remote.remote-wsl
-      ms-vscode-remote.remote-ssh
       
       # Nix language support
       jnoortheen.nix-ide
@@ -85,6 +83,10 @@ in
       # Utils
       wayou.vscode-todo-highlight
       gruntfuggly.todo-tree
+    ] ++ lib.optionals (!isCodespaces) [
+      # Remote development extensions (local environments only)
+      ms-vscode-remote.remote-wsl
+      ms-vscode-remote.remote-ssh
     ];
     
     userSettings = {

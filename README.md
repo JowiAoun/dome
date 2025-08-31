@@ -11,7 +11,10 @@ A modern, cross-platform dotfiles setup using **Nix** and **Home Manager** with 
    - Check "Automatically install dotfiles"
    - Set repository to `your-username/dome`
 
-2. **Create a new Codespace** - Your dotfiles will be automatically installed!
+2. **Create a new Codespace** - You'll be prompted to:
+   - Enter your name and email
+   - Choose which development modules to install
+   - Everything else is automatic!
 
 ### For Local/Other Environments
 
@@ -30,7 +33,7 @@ A modern, cross-platform dotfiles setup using **Nix** and **Home Manager** with 
    ```bash
    git clone https://github.com/your-username/dome.git ~/.dotfiles
    cd ~/.dotfiles
-   nix run home-manager/master -- switch --flake .#default
+   ./bootstrap.sh  # Interactive setup - choose your modules!
    ```
 
 ## 📁 Repository Structure
@@ -38,11 +41,10 @@ A modern, cross-platform dotfiles setup using **Nix** and **Home Manager** with 
 ```
 dome/
 ├── README.md              # This file
-├── bootstrap.sh           # GitHub Codespaces installation script (collects user info)
-├── user-config.nix        # Centralized user configuration
+├── bootstrap.sh           # Interactive setup script (collects user info & module preferences)
+├── user-config.nix        # Centralized user configuration & module selections
 ├── flake.nix             # Nix flake definition
-├── home.nix              # Main Home Manager configuration (local)
-├── home-codespaces.nix   # Codespaces-optimized configuration
+├── home.nix              # Adaptive Home Manager configuration (works everywhere)
 └── modules/              # Modular development environments
     ├── default.nix       # Module system setup
     ├── python.nix        # Python development tools
@@ -51,23 +53,22 @@ dome/
     └── ai.nix            # AI development tools (Claude Code)
 ```
 
-## ⚙️ Configurations
+## ⚙️ Interactive Configuration
 
-### Two Configuration Profiles
+### Smart Adaptive Setup
 
-1. **`home.nix`** - Full configuration for local environments
-   - Includes all development modules
-   - Full system integration
+The dotfiles now use a **single adaptive configuration** that works everywhere:
 
-2. **`home-codespaces.nix`** - Streamlined for GitHub Codespaces
-   - Avoids package conflicts with pre-installed tools
-   - Optimized for container environments
+- **Environment Detection** - Automatically detects Codespaces, WSL, or local environments
+- **Interactive Module Selection** - Choose which development tools to install during setup
+- **Optimized Package Selection** - Lightweight packages for Codespaces, full toolkit for local
+- **Single Maintenance** - No duplicate configurations to maintain
 
 ### Available Configurations
 
-- **`default`** - Uses Codespaces config (auto-detects environment)
-- **`codespaces`** - Explicitly uses Codespaces config
-- **`vscode`** - Uses full local config
+- **`default`** - Adaptive configuration (recommended)
+- **`vscode`** - Same adaptive configuration (alias for compatibility)
+- **`codespaces`** - Same adaptive configuration (alias for compatibility)
 
 ## 🛠️ What Gets Installed
 
@@ -168,27 +169,34 @@ You can also manually edit `user-config.nix`:
 }
 ```
 
-### Enabling/Disabling Development Modules
+### Interactive Module Selection
 
-Edit the configuration files:
+During the bootstrap process, you'll be prompted to choose which development modules to install:
 
-**For local environments** (`home.nix`):
-```nix
-modules = {
-  python.enable = true;   # Python tools
-  node.enable = true;     # Node.js tools  
-  java.enable = false;    # Java tools (disabled)
-  ai.enable = true;       # AI development tools
-};
+```bash
+📦 Choose development modules to install:
+   (This determines which tools and VS Code extensions are installed)
+
+Install Python development tools? (y/N): y
+Install Node.js development tools? (y/N): n  
+Install Java development tools? (y/N): n
+Install AI tools (Claude Code)? (Y/n): y
+
+✅ Module preferences saved:
+   Python: true
+   Node.js: false
+   Java: false
+   AI Tools: true
 ```
 
-**For Codespaces**: Development tools are minimal to avoid conflicts, but AI tools are enabled:
+Your selections are saved in `user-config.nix` and can be modified anytime:
+
 ```nix
 modules = {
-  python.enable = false;  # Pre-installed in Codespaces
-  node.enable = false;    # Pre-installed in Codespaces  
-  java.enable = false;    # Not needed by default
-  ai.enable = true;       # AI tools are useful everywhere!
+  python = true;   # Selected during setup
+  node = false;    # Not selected
+  java = false;    # Not selected  
+  ai = true;       # Selected during setup (default)
 };
 ```
 
