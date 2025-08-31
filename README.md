@@ -72,7 +72,7 @@ dome/
 ## 🛠️ What Gets Installed
 
 ### Core Tools (Always Installed)
-- **Shell**: Zsh with completions, syntax highlighting, and vi-mode
+- **Shell**: Zsh with oh-my-zsh, completions, syntax highlighting, and vi-mode
 - **Editor**: Vim with sensible defaults
 - **Git**: Configured with aliases and settings
 - **GitHub**: CLI tool (`gh`) with Copilot extensions
@@ -105,7 +105,8 @@ dome/
 ## 🎨 Shell Features
 
 ### Zsh Configuration
-- **Theme**: Clean adam1 prompt
+- **Framework**: Oh My Zsh with robbyrussell theme
+- **Plugins**: git, docker, kubectl, npm, node, python, vscode
 - **Vi Mode**: Enabled with proper keybindings
 - **History**: 10k entries with smart search
 - **Completions**: Auto-suggestions and syntax highlighting

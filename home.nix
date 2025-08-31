@@ -64,6 +64,11 @@ in
     enableCompletion = true;
     autosuggestion.enable = true;
     syntaxHighlighting.enable = true;
+    oh-my-zsh = {
+      enable = true;
+      plugins = [ "git" "docker" "kubectl" "npm" "node" "python" "vscode" ];
+      theme = "robbyrussell";
+    };
     
     history = {
       size = 10000;
