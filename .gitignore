@@ -25,3 +25,6 @@ Thumbs.db
 # Local environment
 .env
 .env.local
+
+# Personal configuration (contains sensitive user info)
+user-config.nix
