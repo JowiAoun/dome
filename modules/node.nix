@@ -13,6 +13,16 @@ in
       nodePackages.typescript
     ];
 
+    # VS Code extensions for Node.js development
+    programs.vscode = lib.mkIf config.programs.vscode.enable {
+      extensions = with pkgs.vscode-extensions; [
+        dbaeumer.vscode-eslint
+        esbenp.prettier-vscode
+        bradlc.vscode-tailwindcss
+        postman.postman-for-vscode
+      ];
+    };
+
     home.sessionVariables = {
       NODE_PATH = "$HOME/.npm-global/lib/node_modules:$NODE_PATH";
       PATH = "$HOME/.npm-global/bin:$PATH";
@@ -22,7 +32,6 @@ in
       prefix=~/.npm-global
       init-author-name=${userConfig.name}
       init-author-email=${userConfig.email}
-      init-license=MIT
       save-exact=true
     '';
 
