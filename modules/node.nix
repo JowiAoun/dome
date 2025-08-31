@@ -8,9 +8,10 @@ in
   config = lib.mkIf cfg.enable {
     home.packages = with pkgs; [
       nodejs_20
-      nodePackages.npm
+      nodePackages.npm  
       nodePackages.pnpm
       nodePackages.typescript
+      nodenv  # Node version manager similar to pyenv
     ];
 
     # VS Code extensions for Node.js development
@@ -26,6 +27,7 @@ in
     home.sessionVariables = {
       NODE_PATH = "$HOME/.npm-global/lib/node_modules:$NODE_PATH";
       PATH = "$HOME/.npm-global/bin:$PATH";
+      NODENV_ROOT = "$HOME/.nodenv";
     };
 
     home.file.".npmrc".text = ''
@@ -43,5 +45,38 @@ in
       pd = "pnpm dev";
       px = "pnpm dlx";
     };
+
+    # Initialize nodenv in shell
+    programs.bash.initExtra = lib.mkIf config.programs.bash.enable ''
+      # Initialize nodenv
+      if command -v nodenv >/dev/null 2>&1; then
+        export NODENV_ROOT="$HOME/.nodenv"
+        export PATH="$NODENV_ROOT/bin:$PATH"
+        eval "$(nodenv init - bash)"
+      fi
+      
+      # Also keep nvm support for the existing ~/.nvm installation
+      export NVM_DIR="$HOME/.nvm"
+      if [ -s "$NVM_DIR/nvm.sh" ]; then
+        source "$NVM_DIR/nvm.sh"
+        [ -s "$NVM_DIR/bash_completion" ] && source "$NVM_DIR/bash_completion"
+      fi
+    '';
+
+    programs.zsh.initExtra = lib.mkIf config.programs.zsh.enable ''
+      # Initialize nodenv
+      if command -v nodenv >/dev/null 2>&1; then
+        export NODENV_ROOT="$HOME/.nodenv"
+        export PATH="$NODENV_ROOT/bin:$PATH"
+        eval "$(nodenv init - zsh)"
+      fi
+      
+      # Also keep nvm support for the existing ~/.nvm installation
+      export NVM_DIR="$HOME/.nvm"
+      if [ -s "$NVM_DIR/nvm.sh" ]; then
+        source "$NVM_DIR/nvm.sh"
+        [ -s "$NVM_DIR/bash_completion" ] && source "$NVM_DIR/bash_completion"
+      fi
+    '';
   };
 }
