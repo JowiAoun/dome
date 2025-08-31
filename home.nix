@@ -136,7 +136,7 @@ in
     oh-my-zsh = {
       enable = true;
       plugins = [ "git" "docker" "kubectl" "npm" "node" "python" "vscode" ];
-      theme = "robbyrussell";
+      theme = ""; # Disable oh-my-zsh theme to use Starship
     };
     
     history = {
@@ -176,6 +176,120 @@ in
       bindkey "^[[A" up-line-or-beginning-search
       bindkey "^[[B" down-line-or-beginning-search
     '';
+  };
+
+  programs.starship = {
+    enable = true;
+    enableZshIntegration = true;
+    enableBashIntegration = true;
+    settings = {
+      # Main prompt configuration
+      format = "$all$character";
+      
+      # Character configuration
+      character = {
+        success_symbol = "[❯](bold green)";
+        error_symbol = "[❯](bold red)";
+        vicmd_symbol = "[❮](bold yellow)";
+      };
+      
+      # Directory configuration
+      directory = {
+        truncation_length = 3;
+        truncation_symbol = "…/";
+        home_symbol = "~";
+        truncate_to_repo = false;
+        style = "bold cyan";
+      };
+      
+      # Git branch configuration
+      git_branch = {
+        symbol = " ";
+        style = "bold purple";
+        format = "[$symbol$branch(:$remote_branch)]($style) ";
+      };
+      
+      # Git status configuration (disabled - using lazygit instead)
+      git_status = {
+        disabled = true;
+      };
+      
+      # Language/runtime configurations
+      nodejs = {
+        symbol = " ";
+        style = "bold green";
+        format = "[$symbol($version )]($style)";
+      };
+      
+      python = {
+        symbol = " ";
+        style = "bold yellow";
+        format = "[$symbol$pyenv_prefix($version )(\($virtualenv\) )]($style)";
+      };
+      
+      java = {
+        symbol = " ";
+        style = "bold red";
+        format = "[$symbol($version )]($style)";
+      };
+      
+      docker_context = {
+        symbol = " ";
+        style = "bold blue";
+        format = "[$symbol$context]($style) ";
+      };
+      
+      # Package version
+      package = {
+        symbol = "📦 ";
+        style = "bold 208";
+        format = "[$symbol$version]($style) ";
+      };
+      
+      # Command duration
+      cmd_duration = {
+        min_time = 2000;
+        format = "⏱️  [$duration]($style) ";
+        style = "yellow bold";
+      };
+      
+      # Time (disabled - not dynamic)
+      time = {
+        disabled = true;
+      };
+      
+      # Battery (for laptops)
+      battery = {
+        full_symbol = "🔋 ";
+        charging_symbol = "🔌 ";
+        discharging_symbol = "⚡ ";
+        unknown_symbol = "❓ ";
+        empty_symbol = "❗ ";
+        format = "[$symbol$percentage]($style) ";
+      };
+      
+      # Memory usage
+      memory_usage = {
+        disabled = true; # Enable if you want to see memory usage
+        threshold = 70;
+        format = "🐏 [\${ram}( | \${swap})]($style) ";
+        style = "bold dimmed green";
+      };
+      
+      # Username (always show instead of hostname)
+      username = {
+        style_user = "bold dimmed green";
+        style_root = "red bold";
+        format = "@ [$user]($style) ";
+        disabled = false;
+        show_always = true;
+      };
+      
+      # Hostname (disabled - showing username instead)
+      hostname = {
+        disabled = true;
+      };
+    };
   };
 
   programs.git = {
