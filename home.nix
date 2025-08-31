@@ -6,6 +6,7 @@ let
     then import ./user-config.nix 
     else import ./user-config.template.nix;
   isCodespaces = userConfig.environment.isCodespaces;
+  isWSL = userConfig.environment.isWSL;
 in
 
 {
@@ -69,7 +70,7 @@ in
   programs.home-manager.enable = true;
 
   programs.vscode = {
-    enable = true;
+    enable = !isWSL;
     profiles.default = {
       extensions = with pkgs.vscode-extensions; [
         # Theme

@@ -31,9 +31,6 @@
     };
   in {
     homeConfigurations = {
-      # Dynamic configuration based on current user
-      ${username} = makeConfig username;
-      
       # Fallback configurations
       default = makeConfig (if username != "" then username else "user");
       user = makeConfig "user";
