@@ -15,5 +15,16 @@
       java.enable = lib.mkEnableOption "Java development environment";
       ai.enable = lib.mkEnableOption "AI development tools (Claude, Ollama, Copilot, etc.)";
     };
+    
+    user = {
+      name = lib.mkOption {
+        type = lib.types.str;
+        description = "User's full name";
+      };
+      email = lib.mkOption {
+        type = lib.types.str;
+        description = "User's email address";
+      };
+    };
   };
 }
