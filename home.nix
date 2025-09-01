@@ -29,6 +29,12 @@ in
     ai.enable = userConfig.modules.ai;
   };
 
+  # Pass user info to modules
+  user = {
+    name = userConfig.name;
+    email = userConfig.email;
+  };
+
   # Environment-aware package selection
   home.packages = with pkgs; [
     # Core tools (always installed)
