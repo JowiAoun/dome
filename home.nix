@@ -126,6 +126,7 @@ in
       grep = "grep --color=auto";
       ".." = "cd ..";
       l = "lazygit";
+      c = "claude";
     };
     initExtra = ''
       # Source Nix if available
@@ -160,6 +161,7 @@ in
       ".." = "cd ..";
       l = "lazygit";
       lg = "lazygit";
+      c = "claude";
     };
 
     initContent = ''
