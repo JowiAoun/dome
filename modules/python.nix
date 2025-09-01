@@ -12,6 +12,7 @@ in
         setuptools
       ]))
       pyenv
+      pipx
     ];
 
     # VS Code extensions for Python development
