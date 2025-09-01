@@ -23,6 +23,16 @@ in
         ms-python.black-formatter
         ms-python.flake8
       ];
+      
+      userSettings = {
+        "python.defaultInterpreterPath" = "python";
+        "python.terminal.activateEnvironment" = true;
+        "python.venvPath" = "./venv";
+        "python.venvFolders" = [ "envs" ".pyenv" ".direnv" "venv" ".venv" ];
+        "python.analysis.autoSearchPaths" = true;
+        "python.analysis.extraPaths" = [];
+        "python.analysis.autoImportCompletions" = true;
+      };
     };
 
     home.sessionVariables = {
