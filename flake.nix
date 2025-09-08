@@ -26,6 +26,9 @@
           # Override username and home directory at runtime
           home.username = username;
           home.homeDirectory = if username == "codespace" then "/home/codespace" else "/home/${username}";
+          
+          # Pass user config explicitly to fix path resolution in flakes
+          _module.args.userConfigPath = ./user-config.nix;
         }
       ];
     };
