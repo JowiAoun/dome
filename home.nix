@@ -1,8 +1,10 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, userConfigPath ? null, ... }:
 
 let
-  # Fallback to template if user-config.nix doesn't exist
-  userConfig = if builtins.pathExists ./user-config.nix 
+  # Use explicit path from flake, fallback to local path, then template
+  userConfig = if userConfigPath != null && builtins.pathExists userConfigPath
+    then import userConfigPath
+    else if builtins.pathExists ./user-config.nix 
     then import ./user-config.nix 
     else import ./user-config.template.nix;
   isCodespaces = userConfig.environment.isCodespaces;
@@ -27,6 +29,7 @@ in
     node.enable = userConfig.modules.node;
     java.enable = userConfig.modules.java;
     ai.enable = userConfig.modules.ai;
+    cloud.enable = userConfig.modules.cloud;
   };
 
   # Pass user info to modules
@@ -62,7 +65,6 @@ in
     bottom
   ] ++ lib.optionals (!isCodespaces) [
     # Additional tools for local environments only (avoid Codespaces conflicts)
-    docker
     docker-compose
     unzip
     zip

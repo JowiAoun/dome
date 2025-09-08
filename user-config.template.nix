@@ -10,6 +10,7 @@
     node = false;
     java = false;
     ai = true;
+    cloud = true;
   };
   
   # Environment detection - auto-detected by bootstrap
