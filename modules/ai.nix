@@ -6,10 +6,8 @@ let
 in
 {
   config = lib.mkIf cfg.enable {
-    home.packages = with pkgs; [
-      # Core AI development tools
-      claude-code
-    ];
+    # Note: Claude Code now installed via official installer script
+    # No longer using Nix package manager for Claude Code
 
     # VS Code workspace recommendations for Claude Code extension
     home.file.".vscode/extensions.json" = lib.mkIf config.programs.vscode.enable {
@@ -23,13 +21,20 @@ in
     # Configuration files for AI tools
     home.file = {
       
-      # Sample AI development scripts
-      ".local/bin/ai-setup".text = ''
+      # Claude Code installer script
+      ".local/bin/install-claude".text = ''
         #!/bin/bash
-        echo "🤖 Setting up AI development environment..."
+        echo "🤖 Installing Claude Code from official installer..."
         
-        # Claude Code is ready to use out of the box!
-        echo "🔧 Claude Code installed and ready"
+        # Download and run the official Claude Code installer
+        if curl -fsSL https://claude.ai/install.sh | bash; then
+          echo "✅ Claude Code installed successfully!"
+          echo "💡 You can now use 'claude' command in your terminal"
+        else
+          echo "❌ Failed to install Claude Code"
+          echo "💡 Try running manually: curl -fsSL https://claude.ai/install.sh | bash"
+          exit 1
+        fi
         
         # Install Claude Code VS Code extension automatically
         if command -v code >/dev/null 2>&1; then
@@ -47,6 +52,20 @@ in
         
         echo "✅ AI tools ready!"
         echo "💡 Try: claude for AI development assistance"
+      '';
+      
+      # Sample AI development scripts
+      ".local/bin/ai-setup".text = ''
+        #!/bin/bash
+        echo "🤖 Setting up AI development environment..."
+        
+        # Install Claude Code if not already installed
+        if ! command -v claude >/dev/null 2>&1; then
+          echo "📦 Installing Claude Code..."
+          ~/.local/bin/install-claude
+        else
+          echo "🔧 Claude Code already installed and ready"
+        fi
       '';
       
       # AI development tips
@@ -69,11 +88,25 @@ in
       '';
     };
 
-    # Make scripts executable
+    # Make scripts executable and install Claude Code
     home.activation.aiScripts = lib.hm.dag.entryAfter ["writeBoundary"] ''
+      if [ -f ~/.local/bin/install-claude ]; then
+        chmod +x ~/.local/bin/install-claude || true
+      fi
       if [ -f ~/.local/bin/ai-setup ]; then
         chmod +x ~/.local/bin/ai-setup || true
       fi
+      
+      # Install Claude Code if not already present
+      if ! command -v claude >/dev/null 2>&1; then
+        echo "📦 Installing Claude Code automatically..."
+        if [ -f ~/.local/bin/install-claude ]; then
+          ~/.local/bin/install-claude || echo "⚠️ Claude Code installation failed, run ~/.local/bin/install-claude manually"
+        fi
+      else
+        echo "✅ Claude Code already installed"
+      fi
+      
       echo "✅ AI tools configured"
     '';
   };
