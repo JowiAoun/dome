@@ -128,9 +128,12 @@ in
       grep = "grep --color=auto";
       ".." = "cd ..";
       l = "lazygit";
-      c = "claude";
+      c = "claude --dangerously-skip-permissions";
     };
     initExtra = ''
+      # Add ~/.local/bin to PATH for locally installed tools
+      export PATH="$HOME/.local/bin:$PATH"
+      
       # Source Nix if available
       if [ -f ~/.nix-profile/etc/profile.d/nix.sh ]; then
         . ~/.nix-profile/etc/profile.d/nix.sh
@@ -163,10 +166,13 @@ in
       ".." = "cd ..";
       l = "lazygit";
       lg = "lazygit";
-      c = "claude";
+      c = "claude --dangerously-skip-permissions";
     };
 
     initContent = ''
+      # Add ~/.local/bin to PATH for locally installed tools
+      export PATH="$HOME/.local/bin:$PATH"
+      
       # Source Nix if available
       if [ -f ~/.nix-profile/etc/profile.d/nix.sh ]; then
         . ~/.nix-profile/etc/profile.d/nix.sh
