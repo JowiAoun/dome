@@ -55,7 +55,7 @@ in
     bat
     neofetch
     lazygit
-    
+
     # Essential development tools (always installed)
     jq
     yq
@@ -63,6 +63,26 @@ in
     age
     hyperfine
     bottom
+
+    # C libraries for pip packages with binary dependencies (numpy, opencv, pytorch, etc.)
+    stdenv.cc.cc.lib  # libstdc++
+    zlib              # compression
+    libGL             # OpenGL
+    glib              # libgthread, GLib
+    xorg.libX11       # X11
+    xorg.libXext      # X11 extensions
+    xorg.libXrender   # X11 rendering
+    xorg.libXi        # X11 input
+    xorg.libSM        # X11 session management
+    xorg.libICE       # X11 ICE
+    fontconfig        # font configuration
+    freetype          # font rendering
+    libxkbcommon      # keyboard
+    dbus              # D-Bus
+    nss               # network security
+    nspr              # Netscape runtime
+    expat             # XML parsing
+    alsa-lib          # audio
   ] ++ lib.optionals (!isCodespaces) [
     # Additional tools for local environments only (avoid Codespaces conflicts)
     docker-compose
@@ -132,9 +152,31 @@ in
       g = "gemini --model gemini-3-flash";
     };
     initExtra = ''
+      # LD_LIBRARY_PATH for pip packages with binary dependencies (numpy, opencv, pytorch, etc.)
+      export LD_LIBRARY_PATH="${lib.makeLibraryPath [
+        pkgs.stdenv.cc.cc.lib  # libstdc++
+        pkgs.zlib              # compression
+        pkgs.libGL             # OpenGL
+        pkgs.glib              # libgthread, GLib
+        pkgs.xorg.libX11       # X11
+        pkgs.xorg.libXext      # X11 extensions
+        pkgs.xorg.libXrender   # X11 rendering
+        pkgs.xorg.libXi        # X11 input
+        pkgs.xorg.libSM        # X11 session management
+        pkgs.xorg.libICE       # X11 ICE
+        pkgs.fontconfig        # font configuration
+        pkgs.freetype          # font rendering
+        pkgs.libxkbcommon      # keyboard
+        pkgs.dbus              # D-Bus
+        pkgs.nss               # network security
+        pkgs.nspr              # Netscape runtime
+        pkgs.expat             # XML parsing
+        pkgs.alsa-lib          # audio
+      ]}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
       # Add ~/.local/bin to PATH for locally installed tools
       export PATH="$HOME/.local/bin:$PATH"
-      
+
       # Source Nix if available
       if [ -f ~/.nix-profile/etc/profile.d/nix.sh ]; then
         . ~/.nix-profile/etc/profile.d/nix.sh
@@ -172,9 +214,31 @@ in
     };
 
     initContent = ''
+      # LD_LIBRARY_PATH for pip packages with binary dependencies (numpy, opencv, pytorch, etc.)
+      export LD_LIBRARY_PATH="${lib.makeLibraryPath [
+        pkgs.stdenv.cc.cc.lib  # libstdc++
+        pkgs.zlib              # compression
+        pkgs.libGL             # OpenGL
+        pkgs.glib              # libgthread, GLib
+        pkgs.xorg.libX11       # X11
+        pkgs.xorg.libXext      # X11 extensions
+        pkgs.xorg.libXrender   # X11 rendering
+        pkgs.xorg.libXi        # X11 input
+        pkgs.xorg.libSM        # X11 session management
+        pkgs.xorg.libICE       # X11 ICE
+        pkgs.fontconfig        # font configuration
+        pkgs.freetype          # font rendering
+        pkgs.libxkbcommon      # keyboard
+        pkgs.dbus              # D-Bus
+        pkgs.nss               # network security
+        pkgs.nspr              # Netscape runtime
+        pkgs.expat             # XML parsing
+        pkgs.alsa-lib          # audio
+      ]}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
       # Add ~/.local/bin to PATH for locally installed tools
       export PATH="$HOME/.local/bin:$PATH"
-      
+
       # Source Nix if available
       if [ -f ~/.nix-profile/etc/profile.d/nix.sh ]; then
         . ~/.nix-profile/etc/profile.d/nix.sh
@@ -186,7 +250,7 @@ in
 
       # Enable Vi mode
       bindkey -v
-      
+
       # Better history search
       autoload -U up-line-or-beginning-search
       autoload -U down-line-or-beginning-search
