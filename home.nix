@@ -129,6 +129,7 @@ in
       ".." = "cd ..";
       l = "lazygit";
       c = "claude --dangerously-skip-permissions";
+      g = "gemini --model gemini-3-flash";
     };
     initExtra = ''
       # Add ~/.local/bin to PATH for locally installed tools
@@ -167,6 +168,7 @@ in
       l = "lazygit";
       lg = "lazygit";
       c = "claude --dangerously-skip-permissions";
+      g = "gemini --model gemini-3-flash";
     };
 
     initContent = ''
