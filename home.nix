@@ -174,8 +174,8 @@ in
         pkgs.alsa-lib          # audio
       ]}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-      # Add ~/.local/bin to PATH for locally installed tools
-      export PATH="$HOME/.local/bin:$PATH"
+      # Add npm global bin and ~/.local/bin to PATH for locally installed tools
+      export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
 
       # Source Nix if available
       if [ -f ~/.nix-profile/etc/profile.d/nix.sh ]; then
@@ -236,8 +236,8 @@ in
         pkgs.alsa-lib          # audio
       ]}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-      # Add ~/.local/bin to PATH for locally installed tools
-      export PATH="$HOME/.local/bin:$PATH"
+      # Add npm global bin and ~/.local/bin to PATH for locally installed tools
+      export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
 
       # Source Nix if available
       if [ -f ~/.nix-profile/etc/profile.d/nix.sh ]; then
