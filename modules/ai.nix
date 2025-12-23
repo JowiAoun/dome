@@ -6,9 +6,10 @@ let
 in
 {
   config = lib.mkIf cfg.enable {
-    # Gemini CLI installed via Nix
+    # Gemini CLI installed via npm (for latest version 0.22.2)
+    # Note: Removed pkgs.gemini-cli as we use npm version for latest updates
     home.packages = with pkgs; [
-      gemini-cli
+      # gemini-cli package removed - using npm installation for latest version
     ];
 
     # Note: Claude Code installed via official installer script (not in nixpkgs)
@@ -75,9 +76,13 @@ in
             echo "🔧 Claude Code already installed and ready"
           fi
 
-          # Gemini CLI is installed via Nix
+          # Gemini CLI is installed via npm for latest version
           if command -v gemini >/dev/null 2>&1; then
-            echo "🔧 Gemini CLI ready (installed via Nix)"
+            echo "🔧 Gemini CLI ready (installed via npm)"
+            echo "   Version: $(gemini --version 2>/dev/null || echo 'unknown')"
+          else
+            echo "📦 Installing Gemini CLI..."
+            npm install -g @google/gemini-cli@latest
           fi
         '';
       };
@@ -95,10 +100,11 @@ in
 
         ## Gemini CLI
         - Interactive AI development assistant: `gemini` (alias: `g`)
-        - Installed via Nix - works out of the box!
+        - Installed via npm - latest version (0.22.2+)
         - Open-source AI agent powered by Google Gemini
         - Free tier: 60 requests/min and 1,000 requests/day
         - Built-in tools: Google Search, file operations, shell commands
+        - Update: npm install -g @google/gemini-cli@latest
 
         ## VS Code Integration
         - Extension automatically installed: anthropic.claude-code
