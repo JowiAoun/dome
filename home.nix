@@ -181,6 +181,13 @@ in
       if [ -f ~/.nix-profile/etc/profile.d/nix.sh ]; then
         . ~/.nix-profile/etc/profile.d/nix.sh
       fi
+
+      # Initialize nodenv if available (shims must come before nix paths)
+      if command -v nodenv >/dev/null 2>&1; then
+        export NODENV_ROOT="$HOME/.nodenv"
+        export PATH="$NODENV_ROOT/shims:$NODENV_ROOT/bin:$PATH"
+        eval "$(nodenv init - bash)"
+      fi
     '';
   };
 
@@ -242,6 +249,13 @@ in
       # Source Nix if available
       if [ -f ~/.nix-profile/etc/profile.d/nix.sh ]; then
         . ~/.nix-profile/etc/profile.d/nix.sh
+      fi
+
+      # Initialize nodenv if available (shims must come before nix paths)
+      if command -v nodenv >/dev/null 2>&1; then
+        export NODENV_ROOT="$HOME/.nodenv"
+        export PATH="$NODENV_ROOT/shims:$NODENV_ROOT/bin:$PATH"
+        eval "$(nodenv init - zsh)"
       fi
 
       # Set prompt
@@ -449,10 +463,9 @@ in
         sidePanelWidth = 0.3333;
       };
       git = {
-        paging = {
-          colorArg = "always";
-          pager = "delta --dark --paging=never";
-        };
+        pagers = [
+          { pager = "delta --dark --paging=never"; }
+        ];
         commit = {
           signOff = false;
         };
