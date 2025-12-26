@@ -77,5 +77,18 @@ in
         [ -s "$NVM_DIR/bash_completion" ] && source "$NVM_DIR/bash_completion"
       fi
     '';
+
+    # Install node-build plugin for nodenv (provides `nodenv install` command)
+    home.activation.nodenvPlugins = lib.hm.dag.entryAfter ["writeBoundary"] ''
+      NODENV_ROOT="$HOME/.nodenv"
+      NODE_BUILD_DIR="$NODENV_ROOT/plugins/node-build"
+
+      if [ ! -d "$NODE_BUILD_DIR" ]; then
+        echo "Installing node-build plugin for nodenv..."
+        mkdir -p "$NODENV_ROOT/plugins"
+        ${pkgs.git}/bin/git clone https://github.com/nodenv/node-build.git "$NODE_BUILD_DIR"
+        echo "node-build plugin installed"
+      fi
+    '';
   };
 }
