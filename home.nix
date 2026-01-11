@@ -64,6 +64,15 @@ in
     hyperfine
     bottom
 
+    # Manim dependencies
+    cairo         # Required by pycairo
+    pango         # Required by manim for text rendering
+    ffmpeg        # Required by manim for video encoding
+    pkg-config    # Helps pip find system libraries
+    xorg.libxcb   # XCB headers for cairo
+    harfbuzz      # Text shaping (pango dependency)
+    fribidi       # Bidirectional text (pango dependency)
+
     # C libraries for pip packages with binary dependencies (numpy, opencv, pytorch, etc.)
     stdenv.cc.cc.lib  # libstdc++
     zlib              # compression
@@ -158,6 +167,8 @@ in
         pkgs.zlib              # compression
         pkgs.libGL             # OpenGL
         pkgs.glib              # libgthread, GLib
+        pkgs.cairo             # cairo graphics (manim)
+        pkgs.pango             # text rendering (manim)
         pkgs.xorg.libX11       # X11
         pkgs.xorg.libXext      # X11 extensions
         pkgs.xorg.libXrender   # X11 rendering
@@ -174,6 +185,12 @@ in
         pkgs.alsa-lib          # audio
       ]}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
+      # PKG_CONFIG_PATH for pip packages that need to find system libraries
+      export PKG_CONFIG_PATH="${pkgs.cairo.dev}/lib/pkgconfig:${pkgs.pango.dev}/lib/pkgconfig:${pkgs.glib.dev}/lib/pkgconfig:${pkgs.harfbuzz.dev}/lib/pkgconfig:${pkgs.freetype.dev}/lib/pkgconfig:${pkgs.fribidi.dev}/lib/pkgconfig''${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+
+      # C_INCLUDE_PATH for headers needed during pip builds
+      export C_INCLUDE_PATH="${pkgs.xorg.libxcb.dev}/include''${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}"
+
       # Add npm global bin and ~/.local/bin to PATH for locally installed tools
       export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
 
@@ -188,6 +205,9 @@ in
         export PATH="$NODENV_ROOT/shims:$NODENV_ROOT/bin:$PATH"
         eval "$(nodenv init - bash)"
       fi
+
+      # Source ghcup environment for Haskell development
+      [ -f "$HOME/.ghcup/env" ] && source "$HOME/.ghcup/env"
     '';
   };
 
@@ -227,6 +247,8 @@ in
         pkgs.zlib              # compression
         pkgs.libGL             # OpenGL
         pkgs.glib              # libgthread, GLib
+        pkgs.cairo             # cairo graphics (manim)
+        pkgs.pango             # text rendering (manim)
         pkgs.xorg.libX11       # X11
         pkgs.xorg.libXext      # X11 extensions
         pkgs.xorg.libXrender   # X11 rendering
@@ -243,8 +265,15 @@ in
         pkgs.alsa-lib          # audio
       ]}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
+      # PKG_CONFIG_PATH for pip packages that need to find system libraries
+      export PKG_CONFIG_PATH="${pkgs.cairo.dev}/lib/pkgconfig:${pkgs.pango.dev}/lib/pkgconfig:${pkgs.glib.dev}/lib/pkgconfig:${pkgs.harfbuzz.dev}/lib/pkgconfig:${pkgs.freetype.dev}/lib/pkgconfig:${pkgs.fribidi.dev}/lib/pkgconfig''${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+
+      # C_INCLUDE_PATH for headers needed during pip builds
+      export C_INCLUDE_PATH="${pkgs.xorg.libxcb.dev}/include''${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}"
+
       # Add npm global bin and ~/.local/bin to PATH for locally installed tools
       export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
+
 
       # Source Nix if available
       if [ -f ~/.nix-profile/etc/profile.d/nix.sh ]; then
@@ -272,6 +301,9 @@ in
       zle -N down-line-or-beginning-search
       bindkey "^[[A" up-line-or-beginning-search
       bindkey "^[[B" down-line-or-beginning-search
+
+      # Source ghcup environment for Haskell development (must be at the end)
+      [ -f "$HOME/.ghcup/env" ] && source "$HOME/.ghcup/env"
     '';
   };
 
