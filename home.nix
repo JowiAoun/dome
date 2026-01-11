@@ -63,6 +63,7 @@ in
     age
     hyperfine
     bottom
+    swi-prolog  # Prolog interpreter
 
     # Manim dependencies
     cairo         # Required by pycairo
