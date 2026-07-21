@@ -63,7 +63,7 @@ in
       fi
     '';
 
-    programs.zsh.initExtra = lib.mkIf config.programs.zsh.enable ''
+    programs.zsh.initContent = lib.mkIf config.programs.zsh.enable ''
       # Initialize pyenv
       if command -v pyenv >/dev/null 2>&1; then
         export PYENV_ROOT="$HOME/.pyenv"

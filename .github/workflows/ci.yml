@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  shell:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: bash syntax
+        run: |
+          for f in bootstrap.sh install.sh system/*.sh duo/bin/duo duo/helper/zenduo-helper; do
+            bash -n "$f"
+          done
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          shellcheck -x system/*.sh install.sh bootstrap.sh duo/bin/duo duo/helper/zenduo-helper
+      - name: python bytecompile
+        run: python3 -m py_compile duo/lib/*.py
+
+  hygiene:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # gitleaks scans the commit history, not just HEAD
+      - name: personal config must never be tracked
+        run: |
+          if git ls-files | grep -qx user-config.nix; then
+            echo "user-config.nix is tracked — it is personal and must stay git-ignored" >&2
+            exit 1
+          fi
+      - name: secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  flake-eval:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: evaluate all home configurations
+        run: |
+          nix eval .#homeConfigurations.generic.activationPackage.drvPath
+          nix eval .#homeConfigurations.zenbook-duo.activationPackage.drvPath

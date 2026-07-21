@@ -53,7 +53,7 @@ in
     ripgrep
     fd
     bat
-    neofetch
+    fastfetch  # neofetch was removed from nixpkgs (unmaintained upstream)
     lazygit
 
     # Essential development tools (always installed)
@@ -98,7 +98,6 @@ in
     docker-compose
     unzip
     zip
-    wslu
     nmap
     netcat
     gnupg

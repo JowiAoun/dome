@@ -2,7 +2,27 @@
 
 Here's my simple development environment that works in WSL, GitHub Codespaces, and local environment.
 
-## Quick Start
+> **ZenDuo project:** this repo also provisions a full Ubuntu 24.04 dual-boot on the
+> ASUS Zenbook Duo (2024) UX8406MA. Start at **[docs/PLAN.md](docs/PLAN.md)** — the
+> exhaustive, phase-gated master plan (research archive in
+> [docs/research/](docs/research/)). The moving parts:
+>
+> - `system/` — idempotent root-layer scripts (`sudo make system HOST=zenbook-duo`,
+>   `DRY_RUN=1` to preview)
+> - `duo/` — **zenduo** hardware tooling; `duo doctor` is the read-only probe used as
+>   the live-USB install gate
+> - `hosts/` + `flake.nix` — per-machine home-manager profiles
+>   (`home-manager switch --flake .#generic` or `.#zenbook-duo`)
+> - `install.sh` — one-command setup on a fresh Ubuntu machine
+
+## Quick Start — pick your machine's path
+
+| Machine | Path |
+|---------|------|
+| GitHub Codespaces | Enable dotfiles (below) — `bootstrap.sh` runs automatically |
+| WSL / existing Linux that already has (or wants only) Nix | `./bootstrap.sh` (interactive) |
+| **Fresh Ubuntu 24.04 machine — any hardware** | `./install.sh --host generic` |
+| ASUS Zenbook Duo (2024) UX8406MA | Follow [docs/PLAN.md](docs/PLAN.md) + [docs/CHECKLIST.md](docs/CHECKLIST.md), then `./install.sh --host zenbook-duo` |
 
 ### GitHub Codespaces
 1. Go to [GitHub Settings → Codespaces](https://github.com/settings/codespaces)
@@ -10,16 +30,38 @@ Here's my simple development environment that works in WSL, GitHub Codespaces, a
 3. Set repository to your fork or clone of this repo
 4. Create a new Codespace - setup runs automatically!
 
-### Local Setup
+### Fresh Ubuntu machine (any hardware)
+```bash
+git clone https://github.com/JowiAoun/dome.git ~/.dotfiles
+cd ~/.dotfiles
+./install.sh --host generic
+```
+That runs, in order: the **system layer** (apt basics, HWE+GA kernels, GRUB
+os-prober — duo-only steps are skipped on generic hosts), the official **Nix**
+installer, and **home-manager** for `hosts/generic`. Re-run it any time; every
+step is idempotent. Preview root-level changes with
+`DRY_RUN=1 sudo make system`. Non-Ubuntu distros: only `bootstrap.sh` applies
+(the system layer refuses to run without `FORCE=1`).
+
+### WSL / existing Linux
 ```bash
 # Install Nix
 sh <(curl -L https://nixos.org/nix/install) --daemon
 
 # Clone and setup
-git clone https://github.com/your-username/dome.git ~/.dotfiles
+git clone https://github.com/JowiAoun/dome.git ~/.dotfiles
 cd ~/.dotfiles
 ./bootstrap.sh
 ```
+
+### Adding a new machine profile
+1. `cp -r hosts/generic hosts/<name>` and edit it (import machine modules, set options)
+2. Add `homeConfigurations.<name> = mkHome "<name>";` in `flake.nix`
+3. `./install.sh --host <name>`
+
+Machine-specific code lives in `modules/<name>/` and is imported **only** by
+that host's profile — every other machine never evaluates it (that's how the
+Zenbook Duo tooling stays out of generic setups).
 
 ## What You Get
 
@@ -77,11 +119,14 @@ nodenv global 20.0.0    # Set global Node
 
 # Update dotfiles
 cd ~/.dotfiles && git pull
-home-manager switch --flake .#$USER
+home-manager switch --flake path:.#generic -b backup   # or your host profile
 
 # Update packages
 nix flake update
 ```
+
+Note the `path:.` — a plain `.` flake ref copies only git-*tracked* files, which
+would silently skip your git-ignored `user-config.nix`.
 
 ## Why This Setup?
 
@@ -95,17 +140,38 @@ nix flake update
 
 ```
 dome/
-├── bootstrap.sh           # Setup script
-├── user-config.nix        # Your settings (git-ignored)
+├── install.sh             # Full-machine setup (system layer + Nix + home-manager)
+├── bootstrap.sh           # User-layer-only setup (Codespaces/WSL)
+├── Makefile               # make system / home / doctor / update
+├── user-config.nix        # Your settings (git-ignored, never committed)
 ├── user-config.template.nix # Template for user-config.nix
-├── flake.nix              # Nix flake definition
-├── home.nix               # Main configuration
-└── modules/               # Development environments
-    ├── python.nix         # Python + pyenv
-    ├── node.nix           # Node.js + nodenv  
-    ├── java.nix           # Java development
-    └── ai.nix             # AI tools
+├── flake.nix              # Nix flake definition (host-profile outputs)
+├── home.nix               # Main home-manager configuration
+├── hosts/                 # Per-machine profiles (generic, zenbook-duo, ...)
+├── modules/               # Development environments + machine modules
+│   ├── python.nix         # Python + pyenv
+│   ├── node.nix           # Node.js + nodenv
+│   ├── java.nix           # Java development
+│   ├── ai.nix             # AI tools
+│   ├── cloud.nix          # Terraform/Pulumi/cloud CLIs/k8s
+│   └── zenbook-duo/       # Duo-only home-manager wiring
+├── system/                # Idempotent root-layer scripts (Ubuntu)
+├── duo/                   # zenduo hardware tooling (self-contained, MIT)
+└── docs/                  # PLAN.md, CHECKLIST.md, research archive
 ```
+
+## Secrets policy
+
+This is a public repository — treat it accordingly:
+
+- `user-config.nix` (name, email, host, module choices) is **git-ignored**;
+  only the neutral template is tracked, and CI fails if the real file ever
+  becomes tracked.
+- No keys, tokens, or passphrases belong anywhere in the tree. CI runs a
+  gitleaks scan on every push/PR as a backstop.
+- Future encrypted secrets (API tokens etc.) are planned via `sops-nix`
+  (age-encrypted, safe to commit — see docs/PLAN.md G6). Until then, keep
+  secrets out entirely.
 
 ## Troubleshooting
 
@@ -116,7 +182,7 @@ source ~/.nix-profile/etc/profile.d/nix.sh
 
 **File conflicts during setup:**
 ```bash
-home-manager switch --flake .#$USER -b backup
+home-manager switch --flake path:.#generic -b backup   # or your host profile
 ```
 
 ---

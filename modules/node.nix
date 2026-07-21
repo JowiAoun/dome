@@ -62,7 +62,7 @@ in
       fi
     '';
 
-    programs.zsh.initExtra = lib.mkIf config.programs.zsh.enable ''
+    programs.zsh.initContent = lib.mkIf config.programs.zsh.enable ''
       # Initialize nodenv
       if command -v nodenv >/dev/null 2>&1; then
         export NODENV_ROOT="$HOME/.nodenv"

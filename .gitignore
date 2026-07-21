@@ -28,3 +28,14 @@ Thumbs.db
 
 # Personal configuration (contains sensitive user info)
 user-config.nix
+
+# Node artifacts (nothing in this repo needs npm)
+node_modules/
+package-lock.json
+.node-version
+
+# Hardware probe outputs (commit curated copies under docs/ instead)
+doctor-*.txt
+# Python bytecode
+__pycache__/
+*.pyc

@@ -55,7 +55,7 @@ detect_environment() {
     local home_dir="$HOME"
     
     # Detect Codespaces
-    if [ "$USER" = "codespace" ] || [ ! -z "$CODESPACES" ] || [ ! -z "$CODESPACE_NAME" ]; then
+    if [ "$USER" = "codespace" ] || [ -n "$CODESPACES" ] || [ -n "$CODESPACE_NAME" ]; then
         is_codespaces=true
         username="codespace"
         home_dir="/home/codespace"
@@ -86,19 +86,19 @@ collect_module_preferences() {
     echo ""
     
     # Python module
-    read -p "Install Python development tools? (y/N): " python_choice
+    read -rp "Install Python development tools? (y/N): " python_choice
     python_enabled=$([ "$python_choice" = "y" ] || [ "$python_choice" = "Y" ] && echo "true" || echo "false")
     
     # Node.js module
-    read -p "Install Node.js development tools? (y/N): " node_choice
+    read -rp "Install Node.js development tools? (y/N): " node_choice
     node_enabled=$([ "$node_choice" = "y" ] || [ "$node_choice" = "Y" ] && echo "true" || echo "false")
     
     # Java module
-    read -p "Install Java development tools? (y/N): " java_choice
+    read -rp "Install Java development tools? (y/N): " java_choice
     java_enabled=$([ "$java_choice" = "y" ] || [ "$java_choice" = "Y" ] && echo "true" || echo "false")
     
     # AI module (default yes)
-    read -p "Install AI tools (Claude Code)? (Y/n): " ai_choice
+    read -rp "Install AI tools (Claude Code)? (Y/n): " ai_choice
     ai_enabled=$([ "$ai_choice" = "n" ] || [ "$ai_choice" = "N" ] && echo "false" || echo "true")
     
     # Update module selections in user-config.nix
@@ -130,11 +130,11 @@ collect_user_info() {
         echo "🔧 Collecting user information for personalization..."
         
         # Get user's name with default
-        read -p "Enter your full name [Jowi Aoun]: " user_name
+        read -rp "Enter your full name [Jowi Aoun]: " user_name
         user_name=${user_name:-"Jowi Aoun"}
         
         # Get user's email with default
-        read -p "Enter your email [83415433+JowiAoun@users.noreply.github.com]: " user_email
+        read -rp "Enter your email [83415433+JowiAoun@users.noreply.github.com]: " user_email
         user_email=${user_email:-"83415433+JowiAoun@users.noreply.github.com"}
         
         # Update user-config.nix with collected information
@@ -164,7 +164,7 @@ echo "📊 Environment info: USER=$USER, HOME=$HOME"
 collect_user_info
 
 # Wait for Codespaces to be fully ready
-if [ "$USER" = "codespace" ] || [ ! -z "$CODESPACES" ] || [ ! -z "$CODESPACE_NAME" ]; then
+if [ "$USER" = "codespace" ] || [ -n "$CODESPACES" ] || [ -n "$CODESPACE_NAME" ]; then
     wait_for_system
 fi
 
@@ -182,7 +182,7 @@ if [ -f "/nix/var/nix/profiles/default/bin/nix" ] || command -v nix &> /dev/null
     fi
 else
     # For Codespaces, use the single-user Nix installation to avoid permission issues
-    if [ "$USER" = "codespace" ] || [ ! -z "$CODESPACES" ] || [ ! -z "$CODESPACE_NAME" ]; then
+    if [ "$USER" = "codespace" ] || [ -n "$CODESPACES" ] || [ -n "$CODESPACE_NAME" ]; then
         echo "📦 Installing Nix for Codespaces (single-user mode)..."
         
         # Single-user installation for Codespaces with retry
@@ -239,7 +239,9 @@ echo "🔧 Applying Home Manager configuration..."
 echo "📁 Backing up existing dotfiles..."
 
 # Retry the home-manager installation
-if retry nix --extra-experimental-features nix-command --extra-experimental-features flakes run home-manager/master -- switch --flake .#$USER -b backup; then
+# path:. (not plain .) so the gitignored user-config.nix is included in the
+# flake source — a git+file flake copies tracked files only.
+if retry nix --extra-experimental-features nix-command --extra-experimental-features flakes run home-manager/master -- switch --flake path:.#"$USER" -b backup; then
     echo "✅ Home Manager configuration applied successfully!"
 else
     echo "❌ Home Manager configuration failed"

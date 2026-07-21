@@ -13,6 +13,11 @@
     cloud = true;
   };
   
+  # Host profile - selects hosts/<name> for BOTH layers (Nix + system/):
+  #   "generic"      any non-Duo machine (WSL, Codespaces, plain Linux)
+  #   "zenbook-duo"  the ASUS Zenbook Duo (2024) UX8406MA laptop
+  hostProfile = "generic";
+
   # Environment detection - auto-detected by bootstrap
   environment = {
     isCodespaces = false;

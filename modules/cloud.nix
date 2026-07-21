@@ -148,7 +148,7 @@ in
       fi
     '';
 
-    programs.zsh.initExtra = lib.mkIf config.programs.zsh.enable ''
+    programs.zsh.initContent = lib.mkIf config.programs.zsh.enable ''
       # AWS CLI completion
       if command -v aws_completer >/dev/null 2>&1; then
         complete -C aws_completer aws
