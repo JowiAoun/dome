@@ -290,9 +290,10 @@ in
         eval "$(nodenv init - zsh)"
       fi
 
-      # Set prompt
-      autoload -U promptinit; promptinit
-      prompt adam1
+      # Prompt: Starship owns it (programs.starship.enableZshIntegration, below).
+      # Do NOT run `prompt <theme>` here — a zsh prompt theme loads after
+      # Starship's init and clobbers it, dropping you onto a user@host theme
+      # instead of the Starship "@ user … ❯" prompt that bash already shows.
 
       # Enable Vi mode
       bindkey -v
