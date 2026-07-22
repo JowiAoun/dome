@@ -25,8 +25,12 @@ ensure_pkg \
 if [ "${DRY_RUN:-0}" != 1 ]; then
   if ! dpkg -s zsh >/dev/null 2>&1; then
     log "installing zsh (best-effort)"
-    env DEBIAN_FRONTEND=noninteractive apt-get install -y zsh \
-      || warn "zsh install failed (network/mirror?) — login shell unchanged; re-run 'sudo make system' when apt works"
+    if zsh_out="$(env DEBIAN_FRONTEND=noninteractive apt-get install -y zsh 2>&1)"; then
+      log "zsh installed"
+    else
+      warn "zsh install failed — login shell left unchanged; fix apt then re-run 'sudo make system'."
+      printf '%s\n' "$zsh_out" | grep -m2 -E '^(E:|Err:)' | sed 's/^/    /' >&2 || true
+    fi
   else
     log "zsh already installed"
   fi
