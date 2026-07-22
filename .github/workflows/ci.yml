@@ -58,3 +58,13 @@ jobs:
         run: |
           nix eval .#homeConfigurations.generic.activationPackage.drvPath
           nix eval .#homeConfigurations.zenbook-duo.activationPackage.drvPath
+      - name: evaluate with every module enabled
+        # The evals above use the template (python/node/java = false), so those
+        # module bodies are never type-checked. Enable them all and evaluate via
+        # path:. (which includes the untracked user-config.nix, like install.sh)
+        # so a broken attr in python/node/java fails CI instead of a user's switch.
+        run: |
+          cp user-config.template.nix user-config.nix
+          sed -i 's/python = false;/python = true;/;s/node = false;/node = true;/;s/java = false;/java = true;/' user-config.nix
+          nix eval 'path:.#homeConfigurations.generic.activationPackage.drvPath'
+          rm -f user-config.nix

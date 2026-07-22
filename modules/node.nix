@@ -52,15 +52,9 @@ in
       px = "pnpm dlx";
     };
 
-    # Initialize nodenv in shell
+    # nodenv init lives in home.nix (single source of truth, so its shims land
+    # ahead of the Nix profile). Here the node module only wires up nvm.
     programs.bash.initExtra = lib.mkIf config.programs.bash.enable ''
-      # Initialize nodenv
-      if command -v nodenv >/dev/null 2>&1; then
-        export NODENV_ROOT="$HOME/.nodenv"
-        export PATH="$NODENV_ROOT/bin:$PATH"
-        eval "$(nodenv init - bash)"
-      fi
-      
       # Also keep nvm support for the existing ~/.nvm installation
       export NVM_DIR="$HOME/.nvm"
       if [ -s "$NVM_DIR/nvm.sh" ]; then
@@ -70,13 +64,6 @@ in
     '';
 
     programs.zsh.initContent = lib.mkIf config.programs.zsh.enable ''
-      # Initialize nodenv
-      if command -v nodenv >/dev/null 2>&1; then
-        export NODENV_ROOT="$HOME/.nodenv"
-        export PATH="$NODENV_ROOT/bin:$PATH"
-        eval "$(nodenv init - zsh)"
-      fi
-      
       # Also keep nvm support for the existing ~/.nvm installation
       export NVM_DIR="$HOME/.nvm"
       if [ -s "$NVM_DIR/nvm.sh" ]; then

@@ -38,7 +38,9 @@ in
     };
 
     home.sessionVariables = {
-      PYTHONPATH = "$HOME/.local/lib/python3.11/site-packages:$PYTHONPATH";
+      # Derive the interpreter dir from the package so it never drifts (was a
+      # hardcoded python3.11, but pkgs.python3 is 3.13 — the old path was dead).
+      PYTHONPATH = "$HOME/.local/${pkgs.python3.sitePackages}:$PYTHONPATH";
       PYENV_ROOT = "$HOME/.pyenv";
     };
 
@@ -61,7 +63,11 @@ in
         export PYENV_ROOT="$HOME/.pyenv"
         export PATH="$PYENV_ROOT/bin:$PATH"
         eval "$(pyenv init - bash)"
-        eval "$(pyenv virtualenv-init -)"
+        # pyenv-virtualenv is an optional plugin (cloned by the activation below);
+        # only initialize it once present, else it errors on every new shell.
+        if [ -d "$PYENV_ROOT/plugins/pyenv-virtualenv" ]; then
+          eval "$(pyenv virtualenv-init -)"
+        fi
       fi
     '';
 
@@ -71,7 +77,24 @@ in
         export PYENV_ROOT="$HOME/.pyenv"
         export PATH="$PYENV_ROOT/bin:$PATH"
         eval "$(pyenv init - zsh)"
-        eval "$(pyenv virtualenv-init -)"
+        # pyenv-virtualenv is an optional plugin (cloned by the activation below);
+        # only initialize it once present, else it errors on every new shell.
+        if [ -d "$PYENV_ROOT/plugins/pyenv-virtualenv" ]; then
+          eval "$(pyenv virtualenv-init -)"
+        fi
+      fi
+    '';
+
+    # Install the pyenv-virtualenv plugin (provides `pyenv virtualenv` and the
+    # `virtualenv-init` used above), mirroring the node-build clone in node.nix.
+    home.activation.pyenvPlugins = lib.hm.dag.entryAfter ["writeBoundary"] ''
+      PYENV_ROOT="$HOME/.pyenv"
+      PLUGIN_DIR="$PYENV_ROOT/plugins/pyenv-virtualenv"
+      if [ ! -d "$PLUGIN_DIR" ]; then
+        echo "Installing pyenv-virtualenv plugin for pyenv..."
+        mkdir -p "$PYENV_ROOT/plugins"
+        ${pkgs.git}/bin/git clone https://github.com/pyenv/pyenv-virtualenv.git "$PLUGIN_DIR"
+        echo "pyenv-virtualenv plugin installed"
       fi
     '';
   };

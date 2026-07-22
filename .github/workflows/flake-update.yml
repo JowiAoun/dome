@@ -1,0 +1,37 @@
+name: update-flake-lock
+
+# Keeps the pinned inputs in flake.lock (nixpkgs + home-manager, and therefore
+# every pkgs.* package) from going stale. Runs weekly and can be kicked off by
+# hand; it opens a PR with the updated lockfile rather than pushing to a branch,
+# so CI reviews the bump before anything lands.
+
+on:
+  schedule:
+    - cron: "0 5 * * 1"  # Mondays 05:00 UTC
+  workflow_dispatch:      # allow manual runs from the Actions tab
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  lockfile:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Update flake.lock and open a PR
+        uses: DeterminateSystems/update-flake-lock@main
+        with:
+          pr-title: "chore(flake): update flake.lock"
+          commit-msg: "chore(flake): update flake.lock"
+          pr-labels: |
+            dependencies
+            automated
+        # Note: this uses the default GITHUB_TOKEN, so the opened PR will not
+        # auto-trigger the `ci` workflow (GitHub blocks that recursion). Re-run
+        # its checks from the PR page, or supply a PAT via the `token:` input to
+        # have CI fire automatically.

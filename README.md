@@ -95,7 +95,7 @@ Zenbook Duo tooling stays out of generic setups).
 - VS Code extensions: Python, Pylance, Black, Flake8
 
 #### Node.js (`modules.node = true`) 
-- Node.js v24 LTS (global) with npm and pnpm
+- Node.js v22 LTS (global) with npm and pnpm
 - **nodenv** for version management
 - VS Code extensions: ESLint, Prettier, TailwindCSS
 
