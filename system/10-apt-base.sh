@@ -6,11 +6,7 @@ source ./lib.sh
 
 require_root
 
-if [ "$DRY_RUN" = 1 ]; then
-  log "DRY RUN: apt-get update"
-else
-  apt-get update
-fi
+apt_update
 
 ensure_pkg \
   build-essential \
