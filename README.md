@@ -54,9 +54,10 @@ The install runs, in order: **user-config.nix** environment re-detection, the
 **system layer** (apt basics, HWE+GA kernels, GRUB os-prober — duo-only steps
 are skipped on generic hosts), the official **Nix** installer, and
 **home-manager** for the chosen host. Re-run any time; every step is
-idempotent. Preview root-level changes with `DRY_RUN=1 sudo make system`.
-Non-Ubuntu distros: only `bootstrap.sh` applies (the system layer refuses to
-run without `FORCE=1`).
+idempotent. Preview root-level changes with
+`DRY_RUN=1 sudo bash system/run.sh --host <profile>` (the `make system` alias
+works too, once `build-essential` is installed). Non-Ubuntu distros: only
+`bootstrap.sh` applies (the system layer refuses to run without `FORCE=1`).
 
 ### WSL / existing Linux
 ```bash

@@ -63,6 +63,21 @@ list_hosts() { # every hosts/<name>/ directory is a selectable profile
   done
 }
 
+run_install() { # <host> — run install.sh as a CHILD (never exec: exec would
+                # close the terminal window when install.sh exits), teed to a log
+  local host="$1" log="$HOME/dome-install.log"
+  echo "[dome] running ./install.sh --host $host  (logging to $log)"
+  set +e
+  ./install.sh --host "$host" 2>&1 | tee "$log"
+  local rc=${PIPESTATUS[0]}
+  set -e
+  if [ "$rc" -ne 0 ]; then
+    echo "[dome] install exited with status $rc — see $log (last lines below):" >&2
+    tail -n 15 "$log" >&2
+    return "$rc"
+  fi
+}
+
 write_config() { # <host> <name> <email> then module vars m_python.. in env
   local host="$1" name="$2" email="$3"
   local username homedir
@@ -191,12 +206,18 @@ modules:"
 Write user-config.nix?" 18 60 || { echo "aborted, nothing written"; exit 1; }
 
   write_config "$HOST" "$NAME" "$EMAIL"
-  echo "[dome] wrote user-config.nix (host=$HOST)"
 
-  if whiptail --title "dome setup" --yesno "Run the full install now?\n\n(system layer via sudo, Nix, home-manager — ./install.sh --host $HOST)" 12 60; then
-    exec ./install.sh --host "$HOST"
+  RUN_NOW=no
+  whiptail --title "dome setup" --yesno \
+    "Run the full install now?\n\nsystem layer (sudo) -> Nix -> home-manager.\nOutput is logged to ~/dome-install.log" 12 64 && RUN_NOW=yes
+  # whiptail has torn down here — back on the normal terminal, so sudo/Nix
+  # prompts below are visible and the shell survives (no exec).
+  echo "[dome] wrote user-config.nix (host=$HOST)"
+  if [ "$RUN_NOW" = yes ]; then
+    run_install "$HOST"
+  else
+    echo "[dome] done. Run ./install.sh --host $HOST when ready."
   fi
-  echo "[dome] done. Run ./install.sh --host $HOST when ready."
 else
   # plain-prompt fallback (no whiptail or no TTY-attached UI possible)
   echo "== dome setup =="
@@ -224,6 +245,8 @@ else
   echo "[dome] wrote user-config.nix (host=$HOST)"
   printf 'Run the full install now (./install.sh --host %s)? (y/N): ' "$HOST"
   read -r go
-  case "${go:-}" in y|Y) exec ./install.sh --host "$HOST" ;; esac
-  echo "[dome] done. Run ./install.sh --host $HOST when ready."
+  case "${go:-}" in
+    y|Y) run_install "$HOST" ;;
+    *) echo "[dome] done. Run ./install.sh --host $HOST when ready." ;;
+  esac
 fi

@@ -76,15 +76,31 @@ PROFILE="${HOST_PROFILE:-$(sed -nE 's/.*hostProfile *= *"([^"]+)".*/\1/p' user-c
 PROFILE="${PROFILE:-generic}"
 echo "[dome] host profile: $PROFILE"
 
+banner() { printf '\n\033[1;36m========== %s ==========\033[0m\n' "$*"; }
+
 # ── 2. system layer (root) ───────────────────────────────────────────────────
-sudo make system HOST="$PROFILE"
+# Invoke the system layer directly with bash, NOT via `make`: `make` is not
+# installed on a fresh Ubuntu desktop (it ships in build-essential, which the
+# system layer itself installs) — going through make would fail before the
+# first package is installed. `make system` stays as a convenience alias for
+# later, interactive re-runs once build-essential is present.
+banner "system layer (needs root — you'll be prompted for your password)"
+sudo -v || { echo "[dome] sudo is required for the system layer" >&2; exit 1; }
+sudo --preserve-env=DRY_RUN bash system/run.sh --host "$PROFILE"
 
 # ── 3. Nix (official upstream installer, multi-user daemon) ──────────────────
 if ! command -v nix >/dev/null 2>&1; then
-  echo "[dome] installing Nix (official installer, --daemon)"
+  banner "installing Nix (official installer, --daemon)"
   sh <(curl -L https://nixos.org/nix/install) --daemon
   # shellcheck disable=SC1091
   [ -f /etc/profile.d/nix.sh ] && . /etc/profile.d/nix.sh
+  # Make nix reachable in THIS shell so step 4 runs without a re-login.
+  if ! command -v nix >/dev/null 2>&1 && [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
+    # shellcheck disable=SC1091
+    . "$HOME/.nix-profile/etc/profile.d/nix.sh"
+  fi
+else
+  echo "[dome] Nix already installed"
 fi
 
 mkdir -p "$HOME/.config/nix"
@@ -93,9 +109,17 @@ if ! grep -qs 'experimental-features' "$HOME/.config/nix/nix.conf"; then
 fi
 
 # ── 4. user layer (home-manager) ─────────────────────────────────────────────
+banner "home-manager (first run downloads a lot — be patient)"
+if ! command -v nix >/dev/null 2>&1; then
+  echo "[dome] 'nix' is not on PATH in this shell yet." >&2
+  echo "[dome] Open a NEW terminal (so the Nix profile loads), then run:" >&2
+  echo "         cd ~/.dotfiles && nix run home-manager/master -- switch --flake \"path:.#$PROFILE\" -b backup" >&2
+  exit 1
+fi
 # path:. (not plain .) so the gitignored user-config.nix is included in the
 # flake source — a git+file flake copies tracked files only.
 nix run home-manager/master -- switch --flake "path:.#$PROFILE" -b backup
 
-echo "[dome] done. If 'make system' changed the kernel or GRUB, reboot to apply."
-echo "[dome] on the Duo, verify with: duo doctor"
+banner "done"
+echo "[dome] If the system layer changed the kernel or GRUB, reboot to apply."
+echo "[dome] On the Duo, verify with: duo doctor"
