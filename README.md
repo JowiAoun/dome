@@ -32,14 +32,16 @@ Here's my simple development environment that works in WSL, GitHub Codespaces, a
 
 ### Fresh Ubuntu machine (any hardware)
 ```bash
+sudo apt install -y git   # the only manual prerequisite (dome's base layer also installs it)
 git clone https://github.com/JowiAoun/dome.git ~/.dotfiles
 cd ~/.dotfiles
-./install.sh --host generic
+./install.sh --host generic --disable cloud   # module toggles: --enable/--disable python,node,java,ai,cloud
 ```
-That runs, in order: the **system layer** (apt basics, HWE+GA kernels, GRUB
-os-prober — duo-only steps are skipped on generic hosts), the official **Nix**
-installer, and **home-manager** for `hosts/generic`. Re-run it any time; every
-step is idempotent. Preview root-level changes with
+That runs, in order: **user-config.nix** creation with environment detection
+(re-detected on every run), the **system layer** (apt basics, HWE+GA kernels,
+GRUB os-prober — duo-only steps are skipped on generic hosts), the official
+**Nix** installer, and **home-manager** for the chosen host. Re-run it any
+time; every step is idempotent. Preview root-level changes with
 `DRY_RUN=1 sudo make system`. Non-Ubuntu distros: only `bootstrap.sh` applies
 (the system layer refuses to run without `FORCE=1`).
 
