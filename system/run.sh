@@ -37,12 +37,12 @@ for script in 10-apt-base.sh 20-kernel.sh 30-grub-params.sh; do
 done
 
 if [ "$PROFILE" = zenbook-duo ]; then
-  for script in 40-duo-deps.sh 45-duo-udev.sh 50-duo-sudoers.sh; do
+  for script in 40-duo-deps.sh 45-duo-udev.sh 50-duo-sudoers.sh 55-touchpad-quirks.sh; do
     log "── $script"
     bash "./$script"
   done
 else
-  log "skipping duo-only scripts (40, 45, 50) for profile '$PROFILE'"
+  log "skipping duo-only scripts (40, 45, 50, 55) for profile '$PROFILE'"
 fi
 
 log "system layer complete. If GRUB or the kernel changed, reboot to apply."
