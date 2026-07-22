@@ -482,11 +482,17 @@ in
   home.sessionVariables = {
     EDITOR = userConfig.preferredEditor;
     BROWSER = "firefox";
-    # Do NOT export SHELL to a /nix/store path here. On non-NixOS the login
-    # session sources this via ~/.profile, and a SHELL outside /etc/shells makes
-    # Wayland GDM eject the GNOME session right after login (session goes
-    # straight to exit.target). Set the login shell the OS way instead — the
-    # system layer installs zsh and `chsh -s "$(command -v zsh)"` picks it.
+    # gnome-terminal (VTE) chooses the shell it spawns from $SHELL, NOT from the
+    # passwd entry — so `chsh -s zsh` in the system layer sets the login shell but
+    # new terminals still come up on bash (VTE reads $SHELL=/bin/bash). Export it
+    # here so terminals — and anything that launches "$SHELL": tmux, vim's :sh,
+    # editors — land on zsh.
+    #
+    # This MUST be the apt path /usr/bin/zsh, which apt registers in /etc/shells
+    # as a valid login shell. Do NOT point it at a /nix/store zsh: a $SHELL that
+    # is not in /etc/shells makes Wayland GDM eject the GNOME session the instant
+    # you log in (straight to exit.target — the login loop we hit once already).
+    SHELL = "/usr/bin/zsh";
   };
 
   programs.lazygit = {
