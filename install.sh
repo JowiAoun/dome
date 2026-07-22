@@ -89,18 +89,37 @@ sudo -v || { echo "[dome] sudo is required for the system layer" >&2; exit 1; }
 sudo --preserve-env=DRY_RUN,SNAPSHOT bash system/run.sh --host "$PROFILE"
 
 # ── 3. Nix (official upstream installer, multi-user daemon) ──────────────────
-if ! command -v nix >/dev/null 2>&1; then
+# Detection must NOT lean on `command -v nix` alone. `nix` is only on $PATH once
+# a shell has sourced the daemon profile, and that sourcing is per-shell: a bash
+# login gets it from /etc/bash.bashrc, but a zsh login on Ubuntu frequently does
+# not. So source the daemon profile ourselves (a no-op if Nix is absent) and
+# check the on-disk binary — otherwise merely switching login shells makes this
+# step re-run the installer, which then aborts on the leftover
+# *.backup-before-nix files the original, successful install left behind.
+source_nix_profile() {
+  local f
+  for f in \
+    /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh \
+    /etc/profile.d/nix.sh \
+    "$HOME/.nix-profile/etc/profile.d/nix.sh"; do
+    if [ -e "$f" ]; then
+      set +eu  # these vendor profile scripts predate set -euo pipefail
+      # shellcheck disable=SC1090
+      . "$f"
+      set -eu
+      break
+    fi
+  done
+}
+
+source_nix_profile
+if command -v nix >/dev/null 2>&1 || [ -x /nix/var/nix/profiles/default/bin/nix ]; then
+  echo "[dome] Nix already installed"
+  source_nix_profile  # guarantee nix is on PATH for the home-manager step below
+else
   banner "installing Nix (official installer, --daemon)"
   sh <(curl -L https://nixos.org/nix/install) --daemon
-  # shellcheck disable=SC1091
-  [ -f /etc/profile.d/nix.sh ] && . /etc/profile.d/nix.sh
-  # Make nix reachable in THIS shell so step 4 runs without a re-login.
-  if ! command -v nix >/dev/null 2>&1 && [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
-    # shellcheck disable=SC1091
-    . "$HOME/.nix-profile/etc/profile.d/nix.sh"
-  fi
-else
-  echo "[dome] Nix already installed"
+  source_nix_profile
 fi
 
 mkdir -p "$HOME/.config/nix"

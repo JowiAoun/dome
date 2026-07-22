@@ -197,8 +197,13 @@ in
       # Add npm global bin and ~/.local/bin to PATH for locally installed tools
       export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
 
-      # Source Nix if available
-      if [ -f ~/.nix-profile/etc/profile.d/nix.sh ]; then
+      # Source Nix. A multi-user (daemon) install puts the profile under
+      # /nix/var/nix/..., NOT ~/.nix-profile — the latter only exists for a
+      # single-user install. Try the daemon path first so `nix` is on PATH in
+      # interactive shells; Ubuntu's zsh does not source it system-wide.
+      if [ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
+        . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+      elif [ -f ~/.nix-profile/etc/profile.d/nix.sh ]; then
         . ~/.nix-profile/etc/profile.d/nix.sh
       fi
 
@@ -278,8 +283,13 @@ in
       export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
 
 
-      # Source Nix if available
-      if [ -f ~/.nix-profile/etc/profile.d/nix.sh ]; then
+      # Source Nix. A multi-user (daemon) install puts the profile under
+      # /nix/var/nix/..., NOT ~/.nix-profile — the latter only exists for a
+      # single-user install. Try the daemon path first so `nix` is on PATH in
+      # interactive shells; Ubuntu's zsh does not source it system-wide.
+      if [ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
+        . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+      elif [ -f ~/.nix-profile/etc/profile.d/nix.sh ]; then
         . ~/.nix-profile/etc/profile.d/nix.sh
       fi
 
