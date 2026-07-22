@@ -10,14 +10,18 @@
 HOST ?=
 DRY_RUN ?=
 
-.PHONY: help system home doctor update
+.PHONY: help setup system home doctor update
 
 help:
 	@echo "dome targets:"
+	@echo "  make setup                                       - interactive machine setup (writes user-config.nix)"
 	@echo "  sudo make system [HOST=zenbook-duo] [DRY_RUN=1]  - apply system layer (apt/kernel/GRUB/duo helper)"
 	@echo "  make home [HOST=zenbook-duo]                     - home-manager switch for the host profile"
 	@echo "  make doctor                                      - run 'duo doctor' (read-only hardware probe)"
 	@echo "  make update                                      - git pull + nix flake update"
+
+setup:
+	bash setup.sh
 
 system:
 	DRY_RUN="$(DRY_RUN)" HOST="$(HOST)" bash system/run.sh

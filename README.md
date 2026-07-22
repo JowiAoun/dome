@@ -35,15 +35,28 @@ Here's my simple development environment that works in WSL, GitHub Codespaces, a
 sudo apt install -y git   # the only manual prerequisite (dome's base layer also installs it)
 git clone https://github.com/JowiAoun/dome.git ~/.dotfiles
 cd ~/.dotfiles
-./install.sh --host generic --disable cloud   # module toggles: --enable/--disable python,node,java,ai,cloud
+./setup.sh                # guided TUI: detects the machine, picks the host
+                          # profile, toggles modules, writes user-config.nix,
+                          # and offers to run the full install
 ```
-That runs, in order: **user-config.nix** creation with environment detection
-(re-detected on every run), the **system layer** (apt basics, HWE+GA kernels,
-GRUB os-prober — duo-only steps are skipped on generic hosts), the official
-**Nix** installer, and **home-manager** for the chosen host. Re-run it any
-time; every step is idempotent. Preview root-level changes with
-`DRY_RUN=1 sudo make system`. Non-Ubuntu distros: only `bootstrap.sh` applies
-(the system layer refuses to run without `FORCE=1`).
+`setup.sh` detects distro/hardware/WSL/Codespaces, suggests the right
+`hosts/<name>` profile (e.g. the Zenbook Duo is auto-recognized by DMI model),
+seeds the module checklist from that host's committed defaults
+(`hosts/<name>/setup-defaults.env` — the Duo ships with `cloud` off), and
+preserves your saved choices on re-runs.
+
+Headless/scripted alternative (same result, no prompts):
+```bash
+./setup.sh --defaults zenbook-duo         # write user-config.nix from host seeds
+./install.sh --host zenbook-duo           # flags: --enable/--disable python,node,java,ai,cloud
+```
+The install runs, in order: **user-config.nix** environment re-detection, the
+**system layer** (apt basics, HWE+GA kernels, GRUB os-prober — duo-only steps
+are skipped on generic hosts), the official **Nix** installer, and
+**home-manager** for the chosen host. Re-run any time; every step is
+idempotent. Preview root-level changes with `DRY_RUN=1 sudo make system`.
+Non-Ubuntu distros: only `bootstrap.sh` applies (the system layer refuses to
+run without `FORCE=1`).
 
 ### WSL / existing Linux
 ```bash
