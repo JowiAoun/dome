@@ -90,17 +90,18 @@ in
     # and never fail the whole switch on a network error.
     home.activation.installClaudeCode = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       export PATH="${lib.makeBinPath [ pkgs.curl pkgs.bash pkgs.coreutils pkgs.gnugrep pkgs.gnused pkgs.gawk pkgs.gnutar pkgs.gzip ]}:$PATH"
-      if command -v claude >/dev/null 2>&1 || [ -x "$HOME/.local/bin/claude" ]; then
-        echo "✅ Claude Code already installed (it keeps itself up to date) — skipping"
-      elif [ -n "''${DRY_RUN_CMD:-}" ]; then
-        echo "(dry run) would install the latest Claude Code from https://claude.ai/install.sh"
-      else
-        echo "📦 Installing the latest Claude Code (official installer)…"
-        curl -fsSL https://claude.ai/install.sh | bash || true
-        if command -v claude >/dev/null 2>&1 || [ -x "$HOME/.local/bin/claude" ]; then
-          echo "✅ Claude Code installed to ~/.local/bin (on PATH via the shell config)"
+      # Already installed (it self-updates) → do nothing, quietly.
+      if ! { command -v claude >/dev/null 2>&1 || [ -x "$HOME/.local/bin/claude" ]; }; then
+        if [ -n "''${DRY_RUN_CMD:-}" ]; then
+          echo "(dry run) would install the latest Claude Code from https://claude.ai/install.sh"
         else
-          echo "⚠️ Claude Code install did not complete (network?). Re-run later: curl -fsSL https://claude.ai/install.sh | bash" >&2
+          echo "📦 Installing the latest Claude Code (official installer)…"
+          curl -fsSL https://claude.ai/install.sh | bash || true
+          if command -v claude >/dev/null 2>&1 || [ -x "$HOME/.local/bin/claude" ]; then
+            echo "✅ Claude Code installed to ~/.local/bin (on PATH via the shell config)"
+          else
+            echo "⚠️ Claude Code install did not complete (network?). Re-run later: curl -fsSL https://claude.ai/install.sh | bash" >&2
+          fi
         fi
       fi
     '';
