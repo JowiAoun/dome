@@ -6,10 +6,15 @@ in
 {
   config = lib.mkIf cfg.enable {
     home.packages = with pkgs; [
-      nodejs_20
-      nodePackages.npm  
-      nodePackages.pnpm
-      nodePackages.typescript
+      # Single Node version only. An explicit different version (was nodejs_20)
+      # collided with the v22 that the tools pull in, on shared files such as
+      # share/bash-completion/completions/node.bash. npm ships inside nodejs, so
+      # it is not listed separately (that would also collide on bin/npm).
+      # Use TOP-LEVEL pnpm/typescript, not nodePackages.* — that set has been
+      # removed in newer nixpkgs and would break on a future flake update.
+      nodejs_22
+      pnpm
+      typescript
       nodenv  # Node version manager similar to pyenv
     ];
 
