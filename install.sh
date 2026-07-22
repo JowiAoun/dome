@@ -86,7 +86,7 @@ banner() { printf '\n\033[1;36m========== %s ==========\033[0m\n' "$*"; }
 # later, interactive re-runs once build-essential is present.
 banner "system layer (needs root — you'll be prompted for your password)"
 sudo -v || { echo "[dome] sudo is required for the system layer" >&2; exit 1; }
-sudo --preserve-env=DRY_RUN bash system/run.sh --host "$PROFILE"
+sudo --preserve-env=DRY_RUN,SNAPSHOT bash system/run.sh --host "$PROFILE"
 
 # ── 3. Nix (official upstream installer, multi-user daemon) ──────────────────
 if ! command -v nix >/dev/null 2>&1; then

@@ -1,12 +1,23 @@
 #!/usr/bin/env bash
-# 90-timeshift.sh — take a Timeshift snapshot before the system layer
-# changes anything. Numbered 90 to sort last in listings; run.sh invokes
-# it FIRST (right after preflight).
+# 90-timeshift.sh — OPT-IN pre-change Timeshift snapshot (set SNAPSHOT=1).
+#
+# Default is OFF. A Timeshift rsync snapshot copies the whole root filesystem;
+# on the interim ~50 GB Duo install that lands on the same small disk, is slow,
+# briefly needs to duplicate the rootfs, and doesn't survive a disk failure —
+# and it was blocking the (idempotent) install by sitting at "0.00% complete".
+# The real rollback nets here are the GA fallback kernel, git history, and
+# home-manager generations. Enable on roomy machines / before a risky change:
+#   SNAPSHOT=1 sudo bash system/run.sh --host <profile>
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./lib.sh
 
 require_root
+
+if [ "${SNAPSHOT:-0}" != 1 ]; then
+  log "skipping Timeshift snapshot (opt-in: set SNAPSHOT=1 to enable)"
+  exit 0
+fi
 
 if [ "$DRY_RUN" = 1 ]; then
   log "DRY RUN: would take a Timeshift snapshot"
