@@ -19,13 +19,22 @@ ensure_pkg \
   git \
   make \
   unzip \
-  timeshift \
-  zsh
+  timeshift
 
-# zsh installed above lands in /etc/shells, so it's a valid chsh target.
-# Set it as the login user's shell (the OS way — not a /nix/store SHELL export,
-# which breaks Wayland GDM). Idempotent: only chsh if not already zsh.
+# zsh as the login shell is a NICE-TO-HAVE, so it is best-effort: a network
+# blip fetching a new package must never abort the provision (that would also
+# stop the home-manager run that regenerates ~/.profile). zsh from apt lands in
+# /etc/shells, making it a valid chsh target — unlike a /nix/store zsh, which
+# breaks Wayland GDM when exported as SHELL.
 if [ "${DRY_RUN:-0}" != 1 ]; then
+  if ! dpkg -s zsh >/dev/null 2>&1; then
+    log "installing zsh (best-effort)"
+    env DEBIAN_FRONTEND=noninteractive apt-get install -y zsh \
+      || warn "zsh install failed (network/mirror?) — login shell unchanged; re-run 'sudo make system' when apt works"
+  else
+    log "zsh already installed"
+  fi
+
   ZSH_BIN="$(command -v zsh || true)"
   DUO_USER="$(target_user 2>/dev/null || true)"
   if [ -n "$ZSH_BIN" ] && [ -n "$DUO_USER" ]; then
