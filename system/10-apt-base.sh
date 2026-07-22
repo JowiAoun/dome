@@ -8,6 +8,12 @@ require_root
 
 apt_update
 
+# Heal an interrupted dpkg (e.g. a previous run Ctrl-C'd mid-install).
+# No-op with no output when the state is clean.
+if [ "$DRY_RUN" != 1 ]; then
+  dpkg --configure -a 2>&1 | sed 's/^/    /' || warn "dpkg --configure -a needs manual attention"
+fi
+
 ensure_pkg \
   build-essential \
   ca-certificates \
@@ -24,12 +30,13 @@ ensure_pkg \
 # breaks Wayland GDM when exported as SHELL.
 if [ "${DRY_RUN:-0}" != 1 ]; then
   if ! dpkg -s zsh >/dev/null 2>&1; then
-    log "installing zsh (best-effort)"
-    if zsh_out="$(env DEBIAN_FRONTEND=noninteractive apt-get install -y zsh 2>&1)"; then
+    # Stream apt's output: hiding chatter is fine, hiding PROGRESS makes a
+    # working download look like a hang (someone Ctrl-C'd a healthy install).
+    log "installing zsh (best-effort; ~5 MB download — apt output follows)"
+    if env DEBIAN_FRONTEND=noninteractive apt-get install -y zsh; then
       log "zsh installed"
     else
-      warn "zsh install failed — login shell left unchanged; fix apt then re-run 'sudo make system'."
-      printf '%s\n' "$zsh_out" | grep -m2 -E '^(E:|Err:)' | sed 's/^/    /' >&2 || true
+      warn "zsh install failed (details above) — login shell left unchanged; fix apt then re-run 'sudo make system'."
     fi
   else
     log "zsh already installed"
