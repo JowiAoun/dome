@@ -482,7 +482,11 @@ in
   home.sessionVariables = {
     EDITOR = userConfig.preferredEditor;
     BROWSER = "firefox";
-    SHELL = "${pkgs.${userConfig.preferredShell}}/bin/${userConfig.preferredShell}";
+    # Do NOT export SHELL to a /nix/store path here. On non-NixOS the login
+    # session sources this via ~/.profile, and a SHELL outside /etc/shells makes
+    # Wayland GDM eject the GNOME session right after login (session goes
+    # straight to exit.target). Set the login shell the OS way instead — the
+    # system layer installs zsh and `chsh -s "$(command -v zsh)"` picks it.
   };
 
   programs.lazygit = {
