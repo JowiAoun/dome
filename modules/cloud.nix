@@ -25,17 +25,19 @@ in
 
     # VS Code extensions for cloud development
     programs.vscode = lib.mkIf config.programs.vscode.enable {
-      extensions = with pkgs.vscode-extensions; [
-        hashicorp.terraform
-        ms-kubernetes-tools.vscode-kubernetes-tools
-        ms-azuretools.vscode-docker
-      ];
-      
-      userSettings = {
-        "terraform.languageServer.enable" = true;
-        "terraform.validation.enable" = true;
-        "terraform.codelens.referenceCount" = true;
-        "kubernetes.kubectl-path.linux" = "${pkgs.kubectl}/bin/kubectl";
+      profiles.default = {
+        extensions = with pkgs.vscode-extensions; [
+          hashicorp.terraform
+          ms-kubernetes-tools.vscode-kubernetes-tools
+          ms-azuretools.vscode-docker
+        ];
+
+        userSettings = {
+          "terraform.languageServer.enable" = true;
+          "terraform.validation.enable" = true;
+          "terraform.codelens.referenceCount" = true;
+          "kubernetes.kubectl-path.linux" = "${pkgs.kubectl}/bin/kubectl";
+        };
       };
     };
 

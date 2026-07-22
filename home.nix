@@ -23,6 +23,9 @@ in
   
   home.stateVersion = "24.05";
 
+  # Don't print the "N unread news items" notice on every activation.
+  news.display = "silent";
+
   # Module selections from user-config.nix
   modules = {
     python.enable = userConfig.modules.python;
@@ -430,9 +433,9 @@ in
 
   programs.git = {
     enable = true;
-    userName = userConfig.name;
-    userEmail = userConfig.email;
-    extraConfig = {
+    settings = {
+      user.name = userConfig.name;
+      user.email = userConfig.email;
       init.defaultBranch = userConfig.gitDefaultBranch;
       core.editor = userConfig.gitEditor;
       pull.rebase = true;

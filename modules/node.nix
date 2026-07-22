@@ -20,7 +20,7 @@ in
 
     # VS Code extensions for Node.js development
     programs.vscode = lib.mkIf config.programs.vscode.enable {
-      extensions = with pkgs.vscode-extensions; [
+      profiles.default.extensions = with pkgs.vscode-extensions; [
         dbaeumer.vscode-eslint
         esbenp.prettier-vscode
         bradlc.vscode-tailwindcss

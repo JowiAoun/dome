@@ -17,21 +17,23 @@ in
 
     # VS Code extensions for Python development
     programs.vscode = lib.mkIf config.programs.vscode.enable {
-      extensions = with pkgs.vscode-extensions; [
-        ms-python.python
-        ms-python.vscode-pylance
-        ms-python.black-formatter
-        ms-python.flake8
-      ];
-      
-      userSettings = {
-        "python.defaultInterpreterPath" = "python";
-        "python.terminal.activateEnvironment" = true;
-        "python.venvPath" = "./venv";
-        "python.venvFolders" = [ "envs" ".pyenv" ".direnv" "venv" ".venv" ];
-        "python.analysis.autoSearchPaths" = true;
-        "python.analysis.extraPaths" = [];
-        "python.analysis.autoImportCompletions" = true;
+      profiles.default = {
+        extensions = with pkgs.vscode-extensions; [
+          ms-python.python
+          ms-python.vscode-pylance
+          ms-python.black-formatter
+          ms-python.flake8
+        ];
+
+        userSettings = {
+          "python.defaultInterpreterPath" = "python";
+          "python.terminal.activateEnvironment" = true;
+          "python.venvPath" = "./venv";
+          "python.venvFolders" = [ "envs" ".pyenv" ".direnv" "venv" ".venv" ];
+          "python.analysis.autoSearchPaths" = true;
+          "python.analysis.extraPaths" = [];
+          "python.analysis.autoImportCompletions" = true;
+        };
       };
     };
 
