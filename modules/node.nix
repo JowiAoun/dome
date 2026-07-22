@@ -19,7 +19,9 @@ in
         dbaeumer.vscode-eslint
         esbenp.prettier-vscode
         bradlc.vscode-tailwindcss
-        postman.postman-for-vscode
+        # postman.postman-for-vscode: not in the pinned nixpkgs; note that
+        # home-manager forces these lists even when the module is disabled,
+        # so a missing attr here breaks EVERY host with vscode enabled
       ];
     };
 
