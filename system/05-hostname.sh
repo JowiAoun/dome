@@ -116,3 +116,26 @@ log "machine name is now '$NAME'"
 log "log out and back in: the running desktop session baked the old name into"
 log "SESSION_MANAGER, so X11 apps will print '_IceTransSocketUNIXConnect: Cannot"
 log "connect to non-local host ${OLD}' until it is restarted"
+
+# Chromium-family profiles (Brave, Chrome, Electron apps) hold a lock symlink
+# whose target is "<hostname>-<pid>". After a rename it no longer matches, and
+# the app refuses to open the profile — "appears to be in use by another Brave
+# process on another computer" — until the stale link is removed. Only report
+# it: the app may be running right now, and this script is root while the
+# profile belongs to the user.
+if [ -n "$OLD" ] && [ -d "$USER_HOME/.config" ]; then
+  stale=""
+  while IFS= read -r lock; do
+    [ -L "$lock" ] || continue
+    case "$(readlink "$lock" 2>/dev/null || true)" in
+      "$OLD"-*) stale="$stale $lock" ;;
+    esac
+  done < <(find "$USER_HOME/.config" -maxdepth 3 -name SingletonLock 2>/dev/null)
+  if [ -n "$stale" ]; then
+    warn "these browser/Electron profiles still record the old machine name and"
+    warn "will refuse to open until the lock is cleared — close the app, then:"
+    for lock in $stale; do
+      warn "  rm ${lock%SingletonLock}Singleton{Lock,Cookie,Socket}"
+    done
+  fi
+fi
