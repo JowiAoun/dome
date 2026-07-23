@@ -136,6 +136,17 @@ rewritten to absolute `/nix/store` paths — which is why the apps show up
 immediately, with icons, and with no re-login. `extras` are installed as plain
 packages and skip that rewrite.
 
+**GPU:** Nix packages look for DRI drivers under `/run/opengl-driver`, which
+Ubuntu does not have, so out of the box a Nix GUI app gets no GL driver at all —
+Flutter apps (LocalSend) refuse to start with *"No GL Implementation
+Available"*, and Electron apps fall back to software rendering.
+`system/80-nix-gpu.sh` fixes it by installing home-manager's `non-nixos-gpu`
+systemd unit, which points `/run/opengl-driver` at a Mesa build matching the Nix
+closure on every boot (`/run` is a tmpfs, so a plain symlink would not survive).
+It runs as part of `sudo make system` and at the end of `./install.sh`. Re-run
+it after `make update`: the bundle's store path changes, and home-manager will
+say *"GPU drivers require an update"* on the next switch.
+
 **VS Code gets the same treatment**, even though `programs.vscode` (not this
 module) installs it — it has the same bare `Exec=code` and themed `Icon=vscode`,
 so before this it was installed but absent from the app grid entirely. Its

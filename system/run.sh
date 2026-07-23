@@ -12,7 +12,8 @@
 #
 # Order: preflight (read-only) → Timeshift snapshot → base → kernel → GRUB,
 # then the duo-only scripts (40, 45, 50, 55) when the host profile is
-# zenbook-duo, then the config-gated extras (60 docker, 70 docker-desktop).
+# zenbook-duo, then the host-independent extras (60 docker, 70 docker-desktop,
+# 80 nix-gpu).
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -67,7 +68,7 @@ fi
 
 # Host-independent, config-gated extras. Both no-op loudly when their
 # user-config.nix switch is off, so they are safe to run unconditionally.
-for script in 60-docker.sh 70-docker-desktop.sh; do
+for script in 60-docker.sh 70-docker-desktop.sh 80-nix-gpu.sh; do
   log "── $script"
   bash "./$script"
 done

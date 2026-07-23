@@ -199,6 +199,14 @@ fi
 # flake source — a git+file flake copies tracked files only.
 nix run home-manager/master -- switch --flake "path:.#$PROFILE" -b backup
 
+# ── 5. GPU for Nix GUI apps ──────────────────────────────────────────────────
+# Deliberately after home-manager: the setup reads the CURRENT generation's
+# activation script to find the driver bundle, so on a fresh machine there is
+# nothing to read until the switch above has run. Idempotent, so `sudo make
+# system` re-running it later costs nothing.
+banner "GPU drivers for Nix apps"
+sudo bash system/80-nix-gpu.sh || echo "[dome] GPU setup skipped — re-run: sudo bash system/80-nix-gpu.sh" >&2
+
 banner "done"
 echo "[dome] If the system layer changed the kernel or GRUB, reboot to apply."
 echo "[dome] On the Duo, verify with: duo doctor"
