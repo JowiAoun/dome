@@ -92,6 +92,7 @@ APP_PROBES=(
   "joplin|joplin.desktop joplin-desktop.desktop net.cozic.joplin_desktop.desktop joplin_joplin.desktop|joplin-desktop joplin"
   "obs-studio|com.obsproject.Studio.desktop obs-studio.desktop obs-studio_obs-studio.desktop|obs obs-studio"
   "thunderbird|thunderbird.desktop mozilla-thunderbird.desktop net.thunderbird.Thunderbird.desktop thunderbird_thunderbird.desktop|thunderbird"
+  "zoom|Zoom.desktop zoom.desktop us.zoom.Zoom.desktop zoom-client_zoom-client.desktop|zoom zoom-us"
   "vscode|code.desktop visual-studio-code.desktop code_code.desktop com.visualstudio.code.desktop|code"
 )
 

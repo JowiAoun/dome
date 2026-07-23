@@ -122,7 +122,8 @@ the default browser, and the GNOME dash:
   `message/rfc822` (`.eml`) and `mid:`
 - **Discord** — pinned to the dash
 - **Joplin** — pinned to the dash
-- **draw.io**, **LocalSend**, **Bruno**, **OBS Studio** — installed, not pinned
+- **draw.io**, **LocalSend**, **Bruno**, **OBS Studio**, **Zoom** — installed,
+  not pinned
 - **Notion**, **YouTube Music** — pinned **web apps**, see below
 
 Budget roughly **5 GiB** of disk for the set. To hold one back without
@@ -281,7 +282,18 @@ the rest of the system on `apt upgrade`.
 The signing key's fingerprint is pinned and verified before the repository is
 registered: downloading a key over TLS only proves it came from that host,
 whereas a mismatch here fails loudly instead of silently becoming trusted for
-every later upgrade. Turn it off with `claudeDesktop = false;`, or for one run:
+every later upgrade.
+
+It is **pinned to the dash** by the apps module, which is why that module has a
+`systemPins` list: the app comes from apt rather than Nix, so it is pinned only
+once the `.desktop` file is really on the machine (absent = quietly not pinned).
+`install.sh` runs the system layer *before* home-manager, so on a clean
+provision it is already installed by the time the pin is written. The lookup
+tries the known filenames and then falls back to whichever system entry
+actually launches `claude-desktop`, so a renamed entry in a future `.deb` still
+gets found.
+
+Turn it off with `claudeDesktop = false;`, or for one run:
 
 ```bash
 sudo bash system/run.sh --no-claude-desktop

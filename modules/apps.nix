@@ -118,6 +118,17 @@ let
       probeDesktop = [ "thunderbird.desktop" "mozilla-thunderbird.desktop" "net.thunderbird.Thunderbird.desktop" "thunderbird_thunderbird.desktop" ];
       probeCommands = [ "thunderbird" ];
     }
+    {
+      # nixpkgs rewrites the shipped entry to a bare `Exec=zoom`, so it needs
+      # the same absolute-path patching as everything else here.
+      name = "zoom";
+      package = pkgs.zoom-us;
+      ids = [ "Zoom.desktop" ];         # capital Z, like LocalSend
+      pin = false;
+      browser = false;
+      probeDesktop = [ "Zoom.desktop" "zoom.desktop" "us.zoom.Zoom.desktop" "zoom-client_zoom-client.desktop" ];
+      probeCommands = [ "zoom" "zoom-us" ];
+    }
   ];
 
   # VS Code is installed by home-manager's programs.vscode (home.nix), not by
@@ -182,11 +193,31 @@ let
     }
   ];
 
+  # Apps the ROOT layer installs with apt rather than Nix. This module never
+  # installs them and never touches their launcher — it only pins them, and
+  # only when the .desktop file is genuinely on the machine, so it is a no-op
+  # until then. install.sh runs the system layer BEFORE home-manager, so on a
+  # clean provision Claude Desktop is already installed by the time the pin is
+  # written; on a machine where it is switched off, nothing happens.
+  #
+  # `ids` are candidates rather than one known name: the file the .deb ships is
+  # not something this module controls. If none of them match, the script falls
+  # back to finding a system entry whose Exec runs `command`.
+  systemPins = [
+    {
+      name = "claude-desktop";
+      command = "claude-desktop";
+      ids = [ "claude-desktop.desktop" "Claude.desktop" "com.anthropic.claude.desktop" "anthropic-claude.desktop" ];
+    }
+  ];
+
   # Apps listed in modules.apps.skip are dropped entirely: no package, no
   # desktop entry, no pin, never the default browser. setup.sh fills this in
   # automatically for anything it finds already installed outside Nix
   # (./setup.sh --sync-apps-skip), and you can add names by hand.
-  knownNames = map (a: a.name) (desktopApps ++ [ vscodeApp ]) ++ map (a: a.name) webAppDefs;
+  knownNames = map (a: a.name) (desktopApps ++ [ vscodeApp ])
+    ++ map (a: a.name) webAppDefs
+    ++ map (a: a.name) systemPins;
   unknownSkips = lib.filter (n: !(lib.elem n knownNames)) cfg.skip;
   selected = lib.warnIf (unknownSkips != [ ])
     "modules.apps.skip: unknown app name(s) ${lib.concatStringsSep ", " unknownSkips} (known: ${lib.concatStringsSep ", " knownNames})"
@@ -353,6 +384,11 @@ let
     map (a: "${a.name}:${builtins.head a.ids}") (lib.filter (a: a.pin) patched)
     ++ map (a: "${a.name}:${a.id}") (lib.filter (a: a.pin) webApps);
 
+  # "<command>:<candidate ids…>" for the apt-installed apps above. Resolved at
+  # run time, because whether they exist depends on the root layer, not Nix.
+  systemPinSpecs = map (a: "${a.command}:${lib.concatStringsSep " " a.ids}")
+    (lib.filter (a: !(lib.elem a.name cfg.skip)) systemPins);
+
   # Ubuntu 24.04 pins the Firefox snap as firefox_firefox.desktop; the other
   # names cover a deb/flatpak install of the same browser.
   unpinIds = [
@@ -411,6 +447,34 @@ let
       shift
       for item in "$@"; do
         [ "$item" = "$needle" ] && return 0
+      done
+      return 1
+    }
+
+    # Where the distro puts .desktop files for software it installed itself.
+    SYS_APP_DIRS="/usr/share/applications /usr/local/share/applications /var/lib/snapd/desktop/applications /var/lib/flatpak/exports/share/applications"
+
+    # Resolve the .desktop id of an app the ROOT layer installed (apt). The
+    # filename is the .deb's choice, not ours, so the known candidates are
+    # tried first and then any system entry whose Exec actually runs <command>
+    # — a renamed entry still gets found instead of silently losing its pin.
+    system_desktop_id() { # <command> <candidate id>...
+      local cmd="$1" dir base f
+      shift
+      for dir in $SYS_APP_DIRS; do
+        for base in "$@"; do
+          [ -e "$dir/$base" ] && { printf '%s\n' "$base"; return 0; }
+        done
+      done
+      for dir in $SYS_APP_DIRS; do
+        [ -d "$dir" ] || continue
+        for f in "$dir"/*.desktop; do
+          [ -e "$f" ] || continue
+          if grep -qE "^Exec=(.*/)?$cmd([[:space:]]|$)" "$f" 2>/dev/null; then
+            basename "$f"
+            return 0
+          fi
+        done
       done
       return 1
     }
@@ -504,6 +568,7 @@ let
     # ── 3. dash pins ─────────────────────────────────────────────────────────
     merge_dash_pins() {
       local raw cleaned joined="" entry pair name id
+      local spec sys_cmd sys_ids sys_id
       local -a current=() merged=() pins=()
       local -a unpins=(${lib.escapeShellArgs unpinIds})
 
@@ -512,6 +577,19 @@ let
       for pair in ${lib.concatMapStringsSep " " lib.escapeShellArg pinPairs}; do
         name="''${pair%%:*}"
         is_foreign "$name" || pins+=("''${pair#*:}")
+      done
+
+      # Apps the root layer installed with apt. Absent = not pinned, which is
+      # the normal state until the system layer has run.
+      for spec in ${lib.concatMapStringsSep " " lib.escapeShellArg systemPinSpecs}; do
+        sys_cmd="''${spec%%:*}"
+        sys_ids="''${spec#*:}"
+        # shellcheck disable=SC2086  # sys_ids is a space-separated candidate list
+        if sys_id="$(system_desktop_id "$sys_cmd" $sys_ids)"; then
+          in_list "$sys_id" ''${pins[@]+"''${pins[@]}"} || pins+=("$sys_id")
+        else
+          log "not installed yet, so not pinned: $sys_cmd"
+        fi
       done
 
       if [ -z "''${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
