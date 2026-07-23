@@ -117,9 +117,17 @@ the default browser, and the GNOME dash:
   browser for `http`/`https`/`text/html`; the Firefox pin is removed (the snap
   itself is left installed)
 - **Discord** — pinned to the dash
+- **Joplin** — pinned to the dash
 - **draw.io**, **LocalSend**, **Bruno**, **OBS Studio** — installed, not pinned
 
-Budget roughly **4 GiB** of disk for the set.
+Budget roughly **5 GiB** of disk for the set. To hold one back without
+removing it from the module, name it in `appsSkip` — that is the same switch
+the already-installed detection uses, so it also skips the pin and the desktop
+entry:
+
+```nix
+appsSkip = [ "bruno" "obs-studio" "joplin" ];   # install later, keep the config
+```
 
 Add anything else from nixpkgs by name, no module edits needed:
 

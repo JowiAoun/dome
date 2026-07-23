@@ -83,6 +83,19 @@ let
       probeCommands = [ "bruno" ];
     }
     {
+      # Note-taking. `joplin` in nixpkgs is the CLI — the GUI is joplin-desktop.
+      # Its entry is joplin.desktop, not joplin-desktop.desktop: read off the
+      # joplin.desktop.drv input of the derivation rather than by building it,
+      # since this one ships held back (see appsSkip).
+      name = "joplin";
+      package = pkgs.joplin-desktop;
+      ids = [ "joplin.desktop" ];
+      pin = true;
+      browser = false;
+      probeDesktop = [ "joplin.desktop" "joplin-desktop.desktop" "net.cozic.joplin_desktop.desktop" "joplin_joplin.desktop" ];
+      probeCommands = [ "joplin-desktop" "joplin" ];
+    }
+    {
       name = "obs-studio";
       package = pkgs.obs-studio;
       ids = [ "com.obsproject.Studio.desktop" ];
