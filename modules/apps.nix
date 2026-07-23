@@ -415,7 +415,17 @@ in
 
       # home.nix defaults this to firefox with mkDefault, so this wins when the
       # apps module is on.
-      home.sessionVariables.BROWSER = "brave";
+      #
+      # An absolute path, not the bare name "brave". Tools that prefer $BROWSER
+      # over the xdg default (gh, python's webbrowser, many CLIs) run whatever
+      # it names, and the GNOME session's PATH does not contain the Nix profile
+      # — see the header — so a bare name resolves in a login shell and fails
+      # anywhere the session launched. The store path is regenerated on every
+      # switch, so it cannot go stale, and it is guaranteed present because the
+      # same package is in home.packages just above.
+      home.sessionVariables.BROWSER =
+        let hit = lib.findFirst (a: a.browser) null patched;
+        in if hit == null then lib.mkDefault "firefox" else "${hit.package}/bin/${hit.package.meta.mainProgram or "brave"}";
 
       home.file.".local/bin/apps-setup".source = appsSetup;
 

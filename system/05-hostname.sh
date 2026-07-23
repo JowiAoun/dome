@@ -112,4 +112,7 @@ else
   mark_change
 fi
 
-log "machine name is now '$NAME' — already-running programs keep the old one until restarted"
+log "machine name is now '$NAME'"
+log "log out and back in: the running desktop session baked the old name into"
+log "SESSION_MANAGER, so X11 apps will print '_IceTransSocketUNIXConnect: Cannot"
+log "connect to non-local host ${OLD}' until it is restarted"
