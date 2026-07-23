@@ -24,6 +24,10 @@
   dockerEngine = true;    # Docker Engine (CE) from Docker's apt repo: dockerd + docker + compose/buildx plugins
   dockerDesktop = false;  # Docker Desktop GUI: ~450 MB download, needs KVM
 
+  # Machine name - applied to /etc/hostname, the GNOME "Device Name" and
+  # /etc/hosts. Empty leaves whatever the machine is already called.
+  hostName = "";
+
   # Host profile - selects hosts/<name> for BOTH layers (Nix + system/):
   #   "generic"      any non-Duo machine (WSL, Codespaces, plain Linux)
   #   "zenbook-duo"  the ASUS Zenbook Duo (2024) UX8406MA laptop

@@ -33,6 +33,9 @@ jobs:
           grep -q 'dockerDesktop = false;' user-config.nix
           # appsSkip must be a real (here empty) Nix list, never `appsSkip = ;`
           grep -q 'appsSkip = \[ \];' user-config.nix
+          # An empty hostName means "leave the machine name alone" — a first run
+          # must never invent one and rename someone's computer.
+          grep -q 'hostName = "";' user-config.nix
           rm user-config.nix
 
       - name: apps already installed elsewhere are detected and skipped

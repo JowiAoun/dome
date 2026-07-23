@@ -52,7 +52,7 @@ bash ./00-preflight.sh
 log "── 90-timeshift.sh (pre-change snapshot)"
 bash ./90-timeshift.sh
 
-for script in 10-apt-base.sh 20-kernel.sh 30-grub-params.sh; do
+for script in 05-hostname.sh 10-apt-base.sh 20-kernel.sh 30-grub-params.sh; do
   log "── $script"
   bash "./$script"
 done

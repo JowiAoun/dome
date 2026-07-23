@@ -190,6 +190,30 @@ tell a real duplicate from a harmless one.
 Not enabled for the `generic` host profile — it also covers WSL and headless
 machines.
 
+### Renaming the machine
+
+```nix
+# user-config.nix
+hostName = "LAPTOP-JA";   # empty (the default) leaves the current name alone
+```
+
+Applied by `system/05-hostname.sh` on the next `sudo make system` (or
+`./setup.sh`, which prompts for it). Renaming means three things, and doing only
+the first is how machines end up half-renamed:
+
+| | where | what it affects |
+|---|---|---|
+| static | `/etc/hostname` | `hostname`, mDNS `<name>.local`, shell prompts |
+| pretty | `PRETTY_HOSTNAME` in `/etc/machine-info` | GNOME Settings → About "Device Name", the Bluetooth name |
+| hosts | the `127.0.1.1` line in `/etc/hosts` | local name resolution — miss it and **every `sudo` prints "unable to resolve host" after a DNS timeout** |
+
+The `/etc/hosts` edit keeps any other aliases on that line (and anything Docker
+Desktop added), refuses to write a file that lost its `localhost` entry, and
+leaves the previous copy at `/etc/hosts.dome.bak`.
+
+Not to be confused with `hostProfile`, which selects `hosts/<name>/` — the
+per-machine *configuration* profile, nothing to do with the machine's name.
+
 ### Docker
 
 `docker` is **not** a Nix package here: the client is useless without a
