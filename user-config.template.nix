@@ -23,6 +23,7 @@
   # provide on Ubuntu (a systemd daemon, a group, a .deb).
   dockerEngine = true;    # Docker Engine (CE) from Docker's apt repo: dockerd + docker + compose/buildx plugins
   dockerDesktop = false;  # Docker Desktop GUI: ~450 MB download, needs KVM
+  claudeDesktop = true;   # Claude desktop app (Linux beta) from Anthropic's signed apt repo
 
   # Machine name - applied to /etc/hostname, the GNOME "Device Name" and
   # /etc/hosts. Empty leaves whatever the machine is already called.

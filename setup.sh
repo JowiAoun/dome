@@ -91,6 +91,7 @@ APP_PROBES=(
   "bruno|bruno.desktop com.usebruno.Bruno.desktop bruno_bruno.desktop|bruno"
   "joplin|joplin.desktop joplin-desktop.desktop net.cozic.joplin_desktop.desktop joplin_joplin.desktop|joplin-desktop joplin"
   "obs-studio|com.obsproject.Studio.desktop obs-studio.desktop obs-studio_obs-studio.desktop|obs obs-studio"
+  "thunderbird|thunderbird.desktop mozilla-thunderbird.desktop net.thunderbird.Thunderbird.desktop thunderbird_thunderbird.desktop|thunderbird"
   "vscode|code.desktop visual-studio-code.desktop code_code.desktop com.visualstudio.code.desktop|code"
 )
 
@@ -269,7 +270,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   # up its redirection first and truncates the file, so a $(cfg_get ...) inside
   # the heredoc body would read the now-empty file and every saved preference
   # would silently reset to the hard-coded default below on each re-run.
-  local git_branch git_editor pref_shell pref_editor docker_engine docker_desktop
+  local git_branch git_editor pref_shell pref_editor docker_engine docker_desktop claude_desktop
   git_branch="$(cfg_get gitDefaultBranch)"
   git_editor="$(cfg_get gitEditor)"
   pref_shell="$(cfg_get preferredShell)"
@@ -278,6 +279,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   # template's defaults (engine on, desktop off).
   docker_engine="$(cfg_get dockerEngine)"
   docker_desktop="$(cfg_get dockerDesktop)"
+  claude_desktop="$(cfg_get claudeDesktop)"
   # Carried through untouched. There is deliberately no prompt for this:
   # renaming a machine is a one-off, not something to be re-asked on every
   # re-run. Edit hostName in user-config.nix (or pass HOST_NAME=... for a
@@ -307,6 +309,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   # System-layer switches (read by system/*.sh, not by Nix)
   dockerEngine = $docker_engine;
   dockerDesktop = $docker_desktop;
+  claudeDesktop = $claude_desktop;
 
   # Machine name (static + pretty + /etc/hosts). Empty = leave it alone.
   hostName = "$host_name";
@@ -341,6 +344,7 @@ EOF
   # what makes a first run produce a parseable file.
   sed -i 's/dockerEngine = ;/dockerEngine = true;/' user-config.nix
   sed -i 's/dockerDesktop = ;/dockerDesktop = false;/' user-config.nix
+  sed -i 's/claudeDesktop = ;/claudeDesktop = true;/' user-config.nix
 }
 
 # ── non-interactive modes ────────────────────────────────────────────────────

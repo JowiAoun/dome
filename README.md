@@ -118,9 +118,12 @@ the default browser, and the GNOME dash:
 - **Brave** — pinned to the dash (in Firefox's old slot) and set as the default
   browser for `http`/`https`/`text/html`; the Firefox pin is removed (the snap
   itself is left installed)
+- **Thunderbird** — pinned, and set as the default mail client for `mailto:`,
+  `message/rfc822` (`.eml`) and `mid:`
 - **Discord** — pinned to the dash
 - **Joplin** — pinned to the dash
 - **draw.io**, **LocalSend**, **Bruno**, **OBS Studio** — installed, not pinned
+- **Notion**, **YouTube Music** — pinned **web apps**, see below
 
 Budget roughly **5 GiB** of disk for the set. To hold one back without
 removing it from the module, name it in `appsSkip` — that is the same switch
@@ -130,6 +133,30 @@ entry:
 ```nix
 appsSkip = [ "bruno" "obs-studio" "joplin" ];   # install later, keep the config
 ```
+
+`appsSkip` lives in `user-config.nix`, which is gitignored and regenerated on a
+fresh machine — so anything parked there is *held back on this machine only*
+and installs normally on a clean run.
+
+**Web apps.** Some services ship no Linux client at all: Notion publishes macOS
+and Windows builds only (nixpkgs' `notion-app` is macOS-only, and
+`notion-app-enhanced` is a third-party repackage rather than a Notion build),
+and YouTube Music has never had a desktop app. For those the vendor's web app
+*is* the Linux client, so the module writes a launcher that opens it with
+`--app=`: its own window, no tabs or address bar, its own icon and dash pin,
+using the normal browser profile so logins persist. It costs a `.desktop` file
+and an icon, since the browser is already installed.
+
+Two details that are easy to get wrong, both settled by measurement rather than
+guesswork:
+
+- **Window identity.** GNOME matches a window to its launcher via
+  `StartupWMClass`. Chromium ignores `--class` on Wayland (an X11 flag) and
+  derives the id from the URL — `brave-www.notion.so__-Default`, captured with
+  `WAYLAND_DEBUG=1`. Get it wrong and the window shows a generic cog icon.
+- **Window size.** An `--app=` window has no saved geometry the first time it
+  opens, so Chromium falls back to a small default; `--start-maximized` fixes
+  it.
 
 Add anything else from nixpkgs by name, no module edits needed:
 
@@ -244,12 +271,29 @@ alongside rather than instead of the native engine. Turn it on with
 sudo bash system/run.sh --docker-desktop
 ```
 
-Both switches live outside `modules` in `user-config.nix`, because the root
+### Claude Desktop
+
+The Claude desktop app (Linux beta) is **on** by default. It is not a Nix
+package — Anthropic publishes it through their own signed apt repository — so
+`system/75-claude-desktop.sh` installs it at the root layer and it updates with
+the rest of the system on `apt upgrade`.
+
+The signing key's fingerprint is pinned and verified before the repository is
+registered: downloading a key over TLS only proves it came from that host,
+whereas a mismatch here fails loudly instead of silently becoming trusted for
+every later upgrade. Turn it off with `claudeDesktop = false;`, or for one run:
+
+```bash
+sudo bash system/run.sh --no-claude-desktop
+```
+
+These switches live outside `modules` in `user-config.nix`, because the root
 layer reads them with `sed` rather than through Nix:
 
 ```nix
 dockerEngine = true;    # Docker Engine (CE)
 dockerDesktop = false;  # Docker Desktop GUI
+claudeDesktop = true;   # Claude desktop app (beta)
 ```
 
 ## Configuration

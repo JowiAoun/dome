@@ -104,6 +104,20 @@ let
       probeDesktop = [ "com.obsproject.Studio.desktop" "obs-studio.desktop" "obs-studio_obs-studio.desktop" ];
       probeCommands = [ "obs" "obs-studio" ];
     }
+    {
+      # The official Mozilla build. Ubuntu ships Thunderbird as a snap on
+      # installs that include it, so thunderbird_thunderbird.desktop is in the
+      # probe list: if the machine already has it, this copy is not installed
+      # and the existing one keeps owning mailto:.
+      name = "thunderbird";
+      package = pkgs.thunderbird;
+      ids = [ "thunderbird.desktop" ];  # Exec=thunderbird, Icon=thunderbird — both need patching
+      pin = true;
+      browser = false;
+      mailer = true;                    # -> default handler for mailto: and .eml
+      probeDesktop = [ "thunderbird.desktop" "mozilla-thunderbird.desktop" "net.thunderbird.Thunderbird.desktop" "thunderbird_thunderbird.desktop" ];
+      probeCommands = [ "thunderbird" ];
+    }
   ];
 
   # VS Code is installed by home-manager's programs.vscode (home.nix), not by
@@ -122,11 +136,57 @@ let
     probeCommands = [ "code" ];
   };
 
+  # Services with no Linux desktop client at all, given a real launcher instead
+  # of a bookmark. Notion publishes macOS and Windows builds only — nixpkgs'
+  # `notion-app` is macOS-only (it installs Notion.app) and
+  # `notion-app-enhanced` is a third-party notion-enhancer repackage, not a
+  # Notion build — and YouTube Music has never had a desktop app. For both, the
+  # vendor's web app IS the Linux client.
+  #
+  # `--app=` opens it in its own window with no tabs and no address bar, so it
+  # behaves like an application and gets its own dash entry. It costs a .desktop
+  # file and an icon (the browser is already installed) and uses the normal
+  # browser profile, so logins persist and extensions still apply.
+  #
+  # Deliberately kept separate from desktopApps above: these install no package,
+  # so they must not go through the probe/foreign-copy machinery.
+  webAppDefs = [
+    {
+      name = "notion";
+      title = "Notion";
+      comment = "Write, plan, collaborate and get organised";
+      url = "https://www.notion.so/";
+      categories = "Office;ProjectManagement;";
+      pin = true;
+      # Notion's iOS app icon (front-static/logo-ios.png) is an opaque white
+      # square by design — that is the white background behind the mark. This
+      # one is the sticker-style logo with a real alpha channel (all four
+      # corners verified at alpha 0) and a white outline, so it stays legible
+      # against GNOME's dark dash instead of turning into a black-on-black blob.
+      icon = pkgs.fetchurl {
+        url = "https://www.notion.so/front-static/shared/icons/notion-app-icon-3d.png";
+        hash = "sha256-ZlblCHqYTzPYoVO0N3+l1nBcB0N3sbOaHv+7d+OMwB4=";
+      };
+    }
+    {
+      name = "youtube-music";
+      title = "YouTube Music";
+      comment = "Stream music from YouTube Music";
+      url = "https://music.youtube.com/";
+      categories = "AudioVideo;Audio;Player;";
+      pin = true;
+      icon = pkgs.fetchurl {
+        url = "https://music.youtube.com/img/favicon_144.png";
+        hash = "sha256-EeHjawpnPC0RgpdCUJRpeVk8inVqRIUdD0UpcowaRwk=";
+      };
+    }
+  ];
+
   # Apps listed in modules.apps.skip are dropped entirely: no package, no
   # desktop entry, no pin, never the default browser. setup.sh fills this in
   # automatically for anything it finds already installed outside Nix
   # (./setup.sh --sync-apps-skip), and you can add names by hand.
-  knownNames = map (a: a.name) (desktopApps ++ [ vscodeApp ]);
+  knownNames = map (a: a.name) (desktopApps ++ [ vscodeApp ]) ++ map (a: a.name) webAppDefs;
   unknownSkips = lib.filter (n: !(lib.elem n knownNames)) cfg.skip;
   selected = lib.warnIf (unknownSkips != [ ])
     "modules.apps.skip: unknown app name(s) ${lib.concatStringsSep ", " unknownSkips} (known: ${lib.concatStringsSep ", " knownNames})"
@@ -221,6 +281,78 @@ let
       exec ${pkgs.util-linux}/bin/setsid -f "${browserBin}" "$@" </dev/null >/dev/null 2>&1
     '';
 
+  # The app that owns mailto: — same idea as browserApp, read with `or false`
+  # because only the mail client sets the flag.
+  mailerApp = lib.findFirst (a: a.mailer or false) null patched;
+  mailerId = if mailerApp == null then "" else builtins.head mailerApp.ids;
+  mailerName = if mailerApp == null then "" else mailerApp.name;
+
+  # GNOME identifies a window by its Wayland app_id and matches that against
+  # StartupWMClass to decide which launcher (and therefore which icon) it
+  # belongs to. Chromium IGNORES --class on Wayland — it is an X11 flag — and
+  # derives the id from the URL instead, so any hand-picked StartupWMClass
+  # fails to match and the window falls back to a generic cog icon.
+  #
+  # Captured off the wire with WAYLAND_DEBUG=1 rather than guessed:
+  #   set_app_id("brave-www.notion.so__-Default")
+  #
+  # Shape: <browser>-<host>_<path, with / rewritten to _>-<profile>. The bare
+  # "https://host/" case therefore ends in a double underscore. The trailing
+  # segment is the browser PROFILE directory name, so this holds for the
+  # default profile; a second Brave profile would need its own value.
+  webAppWmClass = app:
+    let
+      noScheme = lib.removePrefix "https://" (lib.removePrefix "http://" app.url);
+      parts = builtins.match "([^/]+)(/.*)" noScheme;
+      host = if parts == null then noScheme else builtins.elemAt parts 0;
+      path = if parts == null then "/" else builtins.elemAt parts 1;
+      appName = builtins.replaceStrings [ "/" ] [ "_" ] "${host}_${path}";
+    in app.wmClass or "${browserName}-${appName}-Default";
+
+  # One launcher per web app.
+  #
+  # --class is kept even though Wayland ignores it: it is what sets WM_CLASS
+  # under X11, so the same entry still matches correctly in an X11 session.
+  #
+  # Icon points straight at the fetched file in the store rather than a copy:
+  # it is already an immutable absolute path, which is exactly what the GNOME
+  # session needs (it cannot resolve themed icon names from the Nix profile).
+  #
+  # --start-maximized because an --app= window has no saved geometry the first
+  # time it opens, so Chromium falls back to a small default. It keys saved
+  # placement off the first label of the host (music.youtube.com -> "music",
+  # www.notion.so -> "www"), and both entries in this profile were created with
+  # no bounds at all, which is exactly the "why does it open tiny" symptom.
+  webAppEntry = app: pkgs.writeTextDir "share/applications/${app.name}.desktop" ''
+    [Desktop Entry]
+    Type=Application
+    Version=1.5
+    Name=${app.title}
+    Comment=${app.comment}
+    Exec=${builtins.toString browserBin} --app=${app.url} --class=${app.name} --start-maximized
+    Icon=${app.icon}
+    Terminal=false
+    StartupNotify=true
+    StartupWMClass=${webAppWmClass app}
+    Categories=${app.categories}
+  '';
+
+  # No browser means no way to open a web app, so they drop out entirely rather
+  # than installing a launcher whose Exec points at nothing. That happens only
+  # when the browser is held back via appsSkip (e.g. the machine already has
+  # its own Brave from apt).
+  webApps =
+    if browserBin == null then [ ]
+    else map (a: a // { id = "${a.name}.desktop"; dir = webAppEntry a; })
+      (lib.filter (a: !(lib.elem a.name cfg.skip)) webAppDefs);
+
+  # "name:id" for everything that wants a dash pin, packaged apps and web apps
+  # alike. The name half lets the pin be dropped when the machine already
+  # provides that app itself.
+  pinPairs =
+    map (a: "${a.name}:${builtins.head a.ids}") (lib.filter (a: a.pin) patched)
+    ++ map (a: "${a.name}:${a.id}") (lib.filter (a: a.pin) webApps);
+
   # Ubuntu 24.04 pins the Firefox snap as firefox_firefox.desktop; the other
   # names cover a deb/flatpak install of the same browser.
   unpinIds = [
@@ -238,7 +370,8 @@ let
     # apps-setup — desktop integration for dome's `apps` module.
     #
     #   1. make ${browserId} the default browser (mimeapps.list, via gio)
-    #   2. merge the GNOME dash pins: add this module's apps, drop Firefox
+    #   2. make ${mailerId} the default mail client (same mechanism)
+    #   3. merge the GNOME dash pins: add this module's apps, drop Firefox
     #
     # MERGE, not overwrite: favourites are something you rearrange by hand all
     # the time, so anything you pinned yourself survives. Deliberately no
@@ -252,7 +385,7 @@ let
 
     # Resolve the entries straight out of the store, so this works even when it
     # runs before ~/.local/share/applications has been linked.
-    export XDG_DATA_DIRS="${lib.concatMapStringsSep ":" (d: "${d}/share") (lib.concatMap (a: a.entryDirs) patched)}:''${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+    export XDG_DATA_DIRS="${lib.concatMapStringsSep ":" (d: "${d}/share") (lib.concatMap (a: a.entryDirs) patched ++ map (a: a.dir) webApps)}:''${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 
     log()  { printf '[apps] %s\n' "$*"; }
     warn() { printf '[apps:warn] %s\n' "$*" >&2; }
@@ -349,7 +482,26 @@ let
       log "default browser set to $id"
     }
 
-    # ── 2. dash pins ─────────────────────────────────────────────────────────
+    # ── 2. default mail client ───────────────────────────────────────────────
+    # mailto: is the one that matters (every "email us" link on the web); the
+    # other two make .eml files and mid: links open in it as well. Left alone
+    # if the machine already has its own copy — the same rule as the browser.
+    set_default_mail_client() {
+      local id="${mailerId}" mimeapps type
+      [ -n "$id" ] || return 0
+      if is_foreign ${lib.escapeShellArg mailerName}; then return 0; fi
+      mimeapps="''${XDG_CONFIG_HOME:-$HOME/.config}/mimeapps.list"
+      if grep -qE "^x-scheme-handler/mailto=$id(;|$)" "$mimeapps" 2>/dev/null; then
+        log "default mail client is already $id"
+        return 0
+      fi
+      for type in x-scheme-handler/mailto message/rfc822 x-scheme-handler/mid; do
+        gio_ mime "$type" "$id" >/dev/null 2>&1 || warn "could not set $type -> $id"
+      done
+      log "default mail client set to $id"
+    }
+
+    # ── 3. dash pins ─────────────────────────────────────────────────────────
     merge_dash_pins() {
       local raw cleaned joined="" entry pair name id
       local -a current=() merged=() pins=()
@@ -357,7 +509,7 @@ let
 
       # "name:id" pairs so a pin can be dropped by app name when the machine
       # already provides that app itself.
-      for pair in ${lib.concatMapStringsSep " " (a: lib.escapeShellArg "${a.name}:${builtins.head a.ids}") (lib.filter (a: a.pin) patched)}; do
+      for pair in ${lib.concatMapStringsSep " " lib.escapeShellArg pinPairs}; do
         name="''${pair%%:*}"
         is_foreign "$name" || pins+=("''${pair#*:}")
       done
@@ -426,6 +578,7 @@ let
 
     find_foreign
     set_default_browser
+    set_default_mail_client
     merge_dash_pins
   '';
 in
@@ -435,7 +588,15 @@ in
       home.packages = map (a: a.package) patched ++ extraPkgs;
 
       # Absolute-path desktop entries in XDG_DATA_HOME — see the header comment.
-      xdg.dataFile = lib.listToAttrs (lib.concatMap entriesFor patched);
+      # Web-app launchers land in the same place for the same reason: GNOME
+      # only ever reads ~/.local/share/applications.
+      xdg.dataFile = lib.listToAttrs (
+        lib.concatMap entriesFor patched
+        ++ map (a: {
+          name = "applications/${a.id}";
+          value.source = "${a.dir}/share/applications/${a.id}";
+        }) webApps
+      );
 
       # home.nix defaults this to firefox with mkDefault; the detaching opener
       # (see browserOpener above) wins when the apps module ships a browser. It

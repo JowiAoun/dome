@@ -11,6 +11,7 @@
 #   --disable <m1,m2,...>  turn modules off
 #   --docker-desktop       also install Docker Desktop (~450 MB, needs KVM)
 #   --no-docker            skip Docker Engine in the system layer
+#   --no-claude-desktop    skip the Claude desktop app (on by default)
 #
 # Order: user-config.nix → system layer (sudo) → Nix → home-manager.
 # WSL/Codespaces keep using bootstrap.sh; this script is for full machines.
@@ -23,6 +24,7 @@ ENABLE_MODS=""
 DISABLE_MODS=""
 DOCKER_ENGINE=""
 DOCKER_DESKTOP=""
+CLAUDE_DESKTOP=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --host) HOST_PROFILE="$2"; shift 2 ;;
@@ -30,6 +32,8 @@ while [ $# -gt 0 ]; do
     --disable) DISABLE_MODS="$2"; shift 2 ;;
     --docker-desktop) DOCKER_DESKTOP=true; shift ;;
     --no-docker) DOCKER_ENGINE=false; shift ;;
+    --claude-desktop) CLAUDE_DESKTOP=true; shift ;;
+    --no-claude-desktop) CLAUDE_DESKTOP=false; shift ;;
     -h|--help)
       echo "usage: ./install.sh [--host generic|zenbook-duo] [--enable m1,m2] [--disable m1,m2]"
       echo "                    [--docker-desktop] [--no-docker]"
@@ -103,8 +107,10 @@ ensure_system_flag() { # <key> <default>
 }
 ensure_system_flag dockerEngine true
 ensure_system_flag dockerDesktop false
+ensure_system_flag claudeDesktop true
 if [ -n "$DOCKER_ENGINE" ];  then set_key dockerEngine  "$DOCKER_ENGINE";  echo "[dome] dockerEngine = $DOCKER_ENGINE";  fi
 if [ -n "$DOCKER_DESKTOP" ]; then set_key dockerDesktop "$DOCKER_DESKTOP"; echo "[dome] dockerDesktop = $DOCKER_DESKTOP"; fi
+if [ -n "$CLAUDE_DESKTOP" ]; then set_key claudeDesktop "$CLAUDE_DESKTOP"; echo "[dome] claudeDesktop = $CLAUDE_DESKTOP"; fi
 
 # Record which of the apps module's apps this machine already has from
 # apt/snap/flatpak, so Nix never installs a second copy or hijacks its launcher.

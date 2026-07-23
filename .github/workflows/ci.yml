@@ -31,6 +31,7 @@ jobs:
           # `dockerEngine = ;` and every later Nix eval would fail to parse.
           grep -q 'dockerEngine = true;' user-config.nix
           grep -q 'dockerDesktop = false;' user-config.nix
+          grep -q 'claudeDesktop = true;' user-config.nix
           # appsSkip must be a real (here empty) Nix list, never `appsSkip = ;`
           grep -q 'appsSkip = \[ \];' user-config.nix
           # An empty hostName means "leave the machine name alone" — a first run
