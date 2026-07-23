@@ -19,15 +19,29 @@
 # again at the end of a fresh install; `sudo make system` covers re-runs.
 # Re-run it after a flake update too: the bundle's store path changes, and
 # home-manager prints "GPU drivers require an update" on the next switch.
+#
+# With --check it only reports (exit 0 = already set up, 1 = work to do) and
+# needs no root, so callers can avoid a pointless sudo prompt.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./lib.sh
 
-require_root
+CHECK_ONLY=0
+case "${1:-}" in
+  --check) CHECK_ONLY=1 ;;
+  "") ;;
+  *) die "usage: 80-nix-gpu.sh [--check]" ;;
+esac
+
+[ "$CHECK_ONLY" = 1 ] || require_root
 
 GPU_USER="$(target_user 2>/dev/null || true)"
-if [ -z "$GPU_USER" ] || ! id "$GPU_USER" >/dev/null 2>&1; then
+if [ -z "$GPU_USER" ]; then
   warn "cannot determine the target user — skipping the Nix GPU setup"
+  exit 0
+fi
+if ! id "$GPU_USER" >/dev/null 2>&1; then
+  warn "configured user '$GPU_USER' does not exist here — skipping the Nix GPU setup"
   exit 0
 fi
 USER_HOME="$(getent passwd "$GPU_USER" | cut -d: -f6)"
@@ -64,19 +78,38 @@ if [ -n "$WANT" ] && [ "$HAVE" = "$WANT" ]; then
   log "Nix GPU drivers already set up: /run/opengl-driver -> $WANT"
   exit 0
 fi
+if [ "$CHECK_ONLY" = 1 ]; then
+  log "Nix GPU drivers need setting up"
+  exit 1
+fi
 
 if [ -n "$HAVE" ]; then
   log "updating Nix GPU drivers (was: $HAVE)"
 else
   log "setting up Nix GPU drivers so Nix GUI apps can use the GPU"
 fi
-run "$SETUP"
 
-if [ "$DRY_RUN" != 1 ]; then
-  if [ -e /run/opengl-driver/lib/dri ]; then
-    log "/run/opengl-driver -> $(readlink /run/opengl-driver)"
-    log "restart any Nix GUI app that was already running to pick it up"
-  else
-    warn "setup ran but /run/opengl-driver is still missing — check: systemctl status non-nixos-gpu"
-  fi
+if [ "$DRY_RUN" = 1 ]; then
+  log "DRY RUN: $SETUP"
+  mark_change
+  exit 0
+fi
+
+# Not via run(): a GPU symlink is a nice-to-have, and this script is one of the
+# last things the system layer does. Letting a failure here propagate through
+# set -e would abort the whole provision over an optional step. (run() also
+# swallows the exit status — it ends in mark_change — so it cannot report one.)
+if "$SETUP"; then
+  mark_change
+else
+  warn "GPU setup failed — Nix GUI apps will fall back to software rendering"
+  warn "  retry with:  sudo bash system/80-nix-gpu.sh"
+  exit 0
+fi
+
+if [ -e /run/opengl-driver/lib/dri ]; then
+  log "/run/opengl-driver -> $(readlink /run/opengl-driver)"
+  log "restart any Nix GUI app that was already running to pick it up"
+else
+  warn "setup ran but /run/opengl-driver is still missing — check: systemctl status non-nixos-gpu"
 fi

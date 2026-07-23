@@ -204,8 +204,14 @@ nix run home-manager/master -- switch --flake "path:.#$PROFILE" -b backup
 # activation script to find the driver bundle, so on a fresh machine there is
 # nothing to read until the switch above has run. Idempotent, so `sudo make
 # system` re-running it later costs nothing.
-banner "GPU drivers for Nix apps"
-sudo bash system/80-nix-gpu.sh || echo "[dome] GPU setup skipped — re-run: sudo bash system/80-nix-gpu.sh" >&2
+# --check needs no root, so an already-configured machine never triggers a
+# second password prompt just to learn there is nothing to do.
+if bash system/80-nix-gpu.sh --check >/dev/null 2>&1; then
+  echo "[dome] GPU drivers for Nix apps: already set up"
+else
+  banner "GPU drivers for Nix apps"
+  sudo bash system/80-nix-gpu.sh || echo "[dome] GPU setup skipped — re-run: sudo bash system/80-nix-gpu.sh" >&2
+fi
 
 banner "done"
 echo "[dome] If the system layer changed the kernel or GRUB, reboot to apply."
