@@ -196,6 +196,30 @@ let
   browserApp = lib.findFirst (a: a.browser) null patched;
   browserId = if browserApp == null then "" else builtins.head browserApp.ids;
   browserName = if browserApp == null then "" else browserApp.name;
+  browserBin =
+    if browserApp == null then null
+    else "${browserApp.package}/bin/${browserApp.package.meta.mainProgram or browserApp.name}";
+
+  # What $BROWSER points at — a wrapper, NOT the browser binary directly.
+  #
+  # Tools that honor $BROWSER (gh, git web--browse, xdg-open, python's
+  # webbrowser) exec it as a child of the calling shell, so it inherits the
+  # terminal's stdout/stderr. Chromium/Brave logs to stderr for the entire life
+  # of the process — IPH_* education hints, the sharing service, sync GetUpdates
+  # network errors — and none of it is suppressible upstream (they are
+  # unconditional ERROR-level logs, not gated by any flag or pref). Point
+  # $BROWSER straight at the binary and all of that lands in the shell, and
+  # keeps landing for as long as the browser runs.
+  #
+  # setsid -f starts it in a new session with no controlling terminal and its
+  # own /dev/null fds, so nothing it ever writes reaches the shell, and control
+  # returns immediately. GUI launches are unaffected: they go through the
+  # .desktop entry, which GNOME already starts detached.
+  browserOpener =
+    if browserBin == null then null
+    else pkgs.writeShellScript "dome-browser" ''
+      exec ${pkgs.util-linux}/bin/setsid -f "${browserBin}" "$@" </dev/null >/dev/null 2>&1
+    '';
 
   # Ubuntu 24.04 pins the Firefox snap as firefox_firefox.desktop; the other
   # names cover a deb/flatpak install of the same browser.
@@ -413,19 +437,14 @@ in
       # Absolute-path desktop entries in XDG_DATA_HOME — see the header comment.
       xdg.dataFile = lib.listToAttrs (lib.concatMap entriesFor patched);
 
-      # home.nix defaults this to firefox with mkDefault, so this wins when the
-      # apps module is on.
-      #
-      # An absolute path, not the bare name "brave". Tools that prefer $BROWSER
-      # over the xdg default (gh, python's webbrowser, many CLIs) run whatever
-      # it names, and the GNOME session's PATH does not contain the Nix profile
-      # — see the header — so a bare name resolves in a login shell and fails
-      # anywhere the session launched. The store path is regenerated on every
-      # switch, so it cannot go stale, and it is guaranteed present because the
-      # same package is in home.packages just above.
+      # home.nix defaults this to firefox with mkDefault; the detaching opener
+      # (see browserOpener above) wins when the apps module ships a browser. It
+      # is an absolute /nix/store path, so it resolves everywhere — including
+      # from the GNOME session, whose PATH has no Nix profile — and is
+      # regenerated on every switch, so it cannot go stale. Falls back to plain
+      # firefox when the browser is held back via appsSkip.
       home.sessionVariables.BROWSER =
-        let hit = lib.findFirst (a: a.browser) null patched;
-        in if hit == null then lib.mkDefault "firefox" else "${hit.package}/bin/${hit.package.meta.mainProgram or "brave"}";
+        if browserOpener == null then lib.mkDefault "firefox" else "${browserOpener}";
 
       home.file.".local/bin/apps-setup".source = appsSetup;
 
