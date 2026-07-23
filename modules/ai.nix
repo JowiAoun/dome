@@ -2,6 +2,122 @@
 
 let
   cfg = config.modules.ai;
+
+  # Claude Code probes the clipboard on every paste, to see whether what you
+  # pasted was an image. On Wayland it reaches for wl-clipboard, and that is
+  # what makes an icon blink in the dash on each copy/paste.
+  #
+  # GNOME 46 does not implement wlr-data-control (no `data_control` global is
+  # advertised), so wl-paste/wl-copy have no headless way to reach the
+  # clipboard. They fall back to mapping a real — if 1x1 — toplevel purely to
+  # receive a keyboard-focus serial. WAYLAND_DEBUG=1 wl-paste shows it:
+  #
+  #   -> xdg_toplevel@15.set_title("wl-clipboard")
+  #   -> wl_surface@13.attach(wl_buffer@18, 0, 0)   # mapped => the dash draws it
+  #      wl_keyboard@12.enter(...)                  # the serial it was after
+  #   -> xdg_toplevel@15.destroy()                  # ~20ms later, gone
+  #
+  # It never calls set_app_id, so the shell cannot match it to a .desktop and
+  # falls back to a generic placeholder icon — the flash. xclip does the same
+  # job through Xwayland using a window it never maps, so nothing is drawn.
+  #
+  # These shims are put in front of Claude Code ONLY (see the shell hook
+  # below), never installed into the profile: they cover just the flags Claude
+  # Code passes, so they must not shadow the real wl-clipboard for anything
+  # else on the system.
+  clipboardShims = pkgs.symlinkJoin {
+    name = "claude-clipboard-shims";
+    paths = [
+      (pkgs.writeShellScriptBin "wl-paste" ''
+        # No X server to borrow means no xclip: a brief window beats a broken
+        # clipboard, so hand back to the real tool.
+        if [ -z "''${DISPLAY:-}" ]; then
+          for real in /usr/bin/wl-paste /run/current-system/sw/bin/wl-paste; do
+            [ -x "$real" ] && exec "$real" "$@"
+          done
+          exit 1
+        fi
+
+        # Asked for a specific type, xclip hands back the default selection
+        # rather than failing when that type is not on offer -- so a request for
+        # image/png against a text clipboard would answer with the text. Real
+        # wl-paste exits non-zero there, and callers rely on that, so check
+        # TARGETS first and only then ask for the type.
+        paste_type() {
+          ${pkgs.xclip}/bin/xclip -selection clipboard -t TARGETS -o 2>/dev/null \
+            | grep -qxF "$1" || exit 1
+          exec ${pkgs.xclip}/bin/xclip -selection clipboard -t "$1" -o
+        }
+
+        case "''${1:-}" in
+          -l|--list-types)
+            exec ${pkgs.xclip}/bin/xclip -selection clipboard -t TARGETS -o
+            ;;
+          -t|--type)
+            paste_type "''${2:-}"
+            ;;
+          --type=*)
+            paste_type "''${1#--type=}"
+            ;;
+          *)
+            exec ${pkgs.xclip}/bin/xclip -selection clipboard -o
+            ;;
+        esac
+      '')
+      (pkgs.writeShellScriptBin "wl-copy" ''
+        if [ -z "''${DISPLAY:-}" ]; then
+          for real in /usr/bin/wl-copy /run/current-system/sw/bin/wl-copy; do
+            [ -x "$real" ] && exec "$real" "$@"
+          done
+          exit 1
+        fi
+
+        sel=clipboard
+        type=""
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            -p|--primary)  sel=primary ;;
+            -t|--type)     type="''${2:-}"; shift ;;
+            --type=*)      type="''${1#--type=}" ;;
+            -c|--clear)    exec ${pkgs.xclip}/bin/xclip -selection "$sel" -i /dev/null ;;
+            # Flags that only shape wl-copy's own process behaviour; xclip
+            # already backgrounds itself to serve the selection.
+            -n|--trim-newline|-f|--foreground|-o|--paste-once) : ;;
+            --)            shift; break ;;
+            -*)            : ;;  # unknown flag: ignore, never treat it as text
+            *)             break ;;
+          esac
+          shift
+        done
+
+        run_xclip() {
+          if [ -n "$type" ]; then
+            ${pkgs.xclip}/bin/xclip -selection "$sel" -t "$type" -i
+          else
+            ${pkgs.xclip}/bin/xclip -selection "$sel" -i
+          fi
+        }
+
+        # Anything left over is the text to copy, joined like wl-copy does.
+        # With no arguments the payload comes from stdin, which run_xclip
+        # inherits untouched.
+        if [ $# -gt 0 ]; then
+          printf '%s' "$*" | run_xclip
+        else
+          run_xclip
+        fi
+      '')
+    ];
+  };
+
+  # Prepend the shims for Claude Code alone. `command` bypasses this function,
+  # so the real binary is still resolved from PATH (~/.local/bin/claude) and
+  # keeps self-updating; nothing is shadowed permanently.
+  claudeWrapper = ''
+    claude() {
+      PATH="${clipboardShims}/bin:$PATH" command claude "$@"
+    }
+  '';
 in
 {
   config = lib.mkIf cfg.enable {
@@ -15,6 +131,16 @@ in
     # binary runs as-is without Nix's autoPatchelf.
     #
     # Gemini CLI is installed via npm (for the latest 0.22.x) by `ai-setup`.
+
+    # Ubuntu ships neither xclip nor wl-clipboard by default — on this machine
+    # they only exist because `pass` recommends them. Without one of the two,
+    # Claude Code has no clipboard helper at all and pasting a screenshot into
+    # it silently does nothing, so install the one that draws no window.
+    home.packages = [ pkgs.xclip ];
+
+    # Keep wl-clipboard's throwaway toplevel out of the dash — Claude Code only.
+    programs.zsh.initContent = lib.mkIf config.programs.zsh.enable claudeWrapper;
+    programs.bash.initExtra = lib.mkIf config.programs.bash.enable claudeWrapper;
 
     # VS Code workspace recommendations for Claude Code extension
     home.file.".vscode/extensions.json" = lib.mkIf config.programs.vscode.enable {

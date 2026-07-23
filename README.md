@@ -308,6 +308,39 @@ dockerDesktop = false;  # Docker Desktop GUI
 claudeDesktop = true;   # Claude desktop app (beta)
 ```
 
+### No icon flashing in the dash on copy/paste
+
+Claude Code checks the clipboard on every paste to see whether you pasted an
+image. On Wayland it reaches for `wl-clipboard`, and that used to make an icon
+blink in the dash on every copy and paste.
+
+GNOME 46 does not implement `wlr-data-control`, so `wl-paste`/`wl-copy` have no
+headless way to read the clipboard. They map a real (1x1) toplevel purely to
+receive a keyboard-focus serial — visible in `WAYLAND_DEBUG=1 wl-paste`:
+
+```
+-> xdg_toplevel@15.set_title("wl-clipboard")
+-> wl_surface@13.attach(wl_buffer@18, 0, 0)   # mapped, so the dash draws it
+   wl_keyboard@12.enter(...)                  # the serial it was after
+-> xdg_toplevel@15.destroy()                  # ~20ms later
+```
+
+It never calls `set_app_id`, so the shell cannot match it to a `.desktop` and
+draws a generic placeholder — the flash. `xclip` does the same job through
+Xwayland with a window it never maps, so nothing is drawn.
+
+`modules/ai.nix` therefore installs `xclip` and puts tiny `wl-paste`/`wl-copy`
+shims in front of **Claude Code only**, via a `claude` shell function. They are
+deliberately not installed into the profile: they cover just the flags Claude
+Code passes, so they must not shadow the real `wl-clipboard` system-wide. With
+no `DISPLAY` to borrow they hand back to the real tool — a brief window beats a
+broken clipboard.
+
+Installing `xclip` matters on its own: Ubuntu ships neither `xclip` nor
+`wl-clipboard` by default (they arrive only as *Recommends* of packages like
+`pass`), so without it Claude Code has no clipboard helper at all and pasting a
+screenshot into it silently does nothing.
+
 ## Configuration
 
 Your personal settings are stored in `user-config.nix` (git-ignored):
