@@ -384,7 +384,16 @@ in
 
       home.file.".local/bin/apps-setup".source = appsSetup;
 
-      home.activation.appsDesktopIntegration = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      # AFTER linkGeneration, not writeBoundary. GNOME Shell renders a pinned
+      # favourite only if it can resolve the .desktop id at the moment the
+      # favorite-apps key changes; ids it cannot resolve are silently dropped
+      # from the dash. writeBoundary runs at activation step 3 and
+      # linkGeneration at step 9, so pinning from there wrote the ids before
+      # ~/.local/share/applications existed — the key looked correct in dconf
+      # and the icons never appeared. Worse, the next switch saw the key
+      # already "up to date" and never re-pinned, so it stayed broken until the
+      # next login.
+      home.activation.appsDesktopIntegration = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
         if [ -n "''${DRY_RUN_CMD:-}" ]; then
           echo "(dry run) would run apps-setup (default browser + GNOME dash pins)"
         else

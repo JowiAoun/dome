@@ -13,7 +13,7 @@
 # Order: preflight (read-only) → Timeshift snapshot → base → kernel → GRUB,
 # then the duo-only scripts (40, 45, 50, 55) when the host profile is
 # zenbook-duo, then the host-independent extras (60 docker, 70 docker-desktop,
-# 80 nix-gpu).
+# 80 nix-gpu, 85 apparmor-userns).
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -66,9 +66,10 @@ else
   log "skipping duo-only scripts (40, 45, 50, 55) for profile '$PROFILE'"
 fi
 
-# Host-independent, config-gated extras. Both no-op loudly when their
-# user-config.nix switch is off, so they are safe to run unconditionally.
-for script in 60-docker.sh 70-docker-desktop.sh 80-nix-gpu.sh; do
+# Host-independent extras. Each one either honors a user-config.nix switch
+# (docker) or detects that it has nothing to do (GPU, AppArmor), and every one
+# of them logs why it is skipping — so they are safe to run unconditionally.
+for script in 60-docker.sh 70-docker-desktop.sh 80-nix-gpu.sh 85-apparmor-userns.sh; do
   log "── $script"
   bash "./$script"
 done
