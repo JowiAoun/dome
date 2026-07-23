@@ -18,7 +18,7 @@ DRY_RUN ?=
 HOST_RESOLVED := $(if $(HOST),$(HOST),$(shell sed -nE 's/.*hostProfile *= *"([^"]+)".*/\1/p' user-config.nix 2>/dev/null | head -n1))
 HOST_RESOLVED := $(if $(HOST_RESOLVED),$(HOST_RESOLVED),generic)
 
-.PHONY: help setup system home doctor update rollback
+.PHONY: help setup system home doctor audit-apps update rollback
 
 help:
 	@echo "dome targets:"
@@ -26,6 +26,7 @@ help:
 	@echo "  sudo make system [HOST=zenbook-duo] [DRY_RUN=1]  - apply system layer (apt/kernel/GRUB/duo helper)"
 	@echo "  make home [HOST=zenbook-duo]                     - home-manager switch for the host profile"
 	@echo "  make doctor                                      - run 'duo doctor' (read-only hardware probe)"
+	@echo "  make audit-apps                                  - report duplicate apps / colliding .desktop ids"
 	@echo "  make update                                      - git pull + nix flake update"
 	@echo "  make rollback                                    - undo a bad update (restore flake.lock + re-activate)"
 
@@ -42,6 +43,10 @@ home:
 
 doctor:
 	bash duo/bin/duo doctor
+
+# Read-only: which apps are installed from where, and which .desktop ids clash.
+audit-apps:
+	bash setup.sh --audit-apps
 
 update:
 	git pull --ff-only

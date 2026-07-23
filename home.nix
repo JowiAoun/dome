@@ -140,7 +140,11 @@ in
   programs.home-manager.enable = true;
 
   programs.vscode = {
-    enable = !isWSL;
+    # Off when VS Code is already installed from apt/snap/flatpak (detected by
+    # ./setup.sh --sync-apps-skip): two VS Codes on one machine is exactly the
+    # kind of duplicate the apps module exists to avoid. modules/apps.nix gives
+    # this one a working app-grid entry.
+    enable = !isWSL && !(builtins.elem "vscode" (userConfig.appsSkip or [ ]));
     profiles.default = {
       extensions = with pkgs.vscode-extensions; [
         # Theme

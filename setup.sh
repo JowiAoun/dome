@@ -6,6 +6,7 @@
 #                                    host's seed defaults (used by scripts/CI)
 #   ./setup.sh --detect-apps         list apps the machine already has outside Nix
 #   ./setup.sh --sync-apps-skip      refresh appsSkip in an existing user-config.nix
+#   ./setup.sh --audit-apps          report duplicate apps / colliding .desktop ids
 #
 # What it does: detects the machine (distro, hardware model, WSL/Codespaces),
 # suggests a host profile, lets you toggle the language/tool modules, writes
@@ -86,22 +87,47 @@ APP_PROBES=(
   "brave|brave-browser.desktop brave.desktop com.brave.Browser.desktop brave_brave.desktop|brave-browser brave"
   "discord|discord.desktop com.discordapp.Discord.desktop discord_discord.desktop|discord Discord"
   "drawio|drawio.desktop com.jgraph.drawio.desktop.desktop drawio_drawio.desktop|drawio"
+  "localsend|LocalSend.desktop localsend.desktop org.localsend.localsend_app.desktop localsend_localsend.desktop|localsend localsend_app"
+  "bruno|bruno.desktop com.usebruno.Bruno.desktop bruno_bruno.desktop|bruno"
+  "obs-studio|com.obsproject.Studio.desktop obs-studio.desktop obs-studio_obs-studio.desktop|obs obs-studio"
+  "vscode|code.desktop visual-studio-code.desktop code_code.desktop com.visualstudio.code.desktop|code"
 )
 
-app_installed_outside_nix() { # <name>
+app_outside_nix() { # <name> — print where a non-Nix copy lives; 1 if there is none
   local want="$1" probe name desktops commands dir id cmd
   for probe in "${APP_PROBES[@]}"; do
     IFS='|' read -r name desktops commands <<< "$probe"
     [ "$name" = "$want" ] || continue
     for dir in "${SYSTEM_APP_DIRS[@]}"; do
       for id in $desktops; do
-        [ -e "$dir/$id" ] && return 0
+        if [ -e "$dir/$id" ]; then echo "$dir/$id"; return 0; fi
       done
     done
     for dir in "${SYSTEM_BIN_DIRS[@]}"; do
       for cmd in $commands; do
-        [ -x "$dir/$cmd" ] && return 0
+        if [ -x "$dir/$cmd" ]; then echo "$dir/$cmd"; return 0; fi
       done
+    done
+    return 1
+  done
+  return 1
+}
+
+app_installed_outside_nix() { # <name>
+  app_outside_nix "$1" >/dev/null
+}
+
+app_from_nix() { # <name> — print where dome's own copy lives; 1 if not installed
+  local want="$1" probe name desktops commands id cmd
+  for probe in "${APP_PROBES[@]}"; do
+    IFS='|' read -r name desktops commands <<< "$probe"
+    [ "$name" = "$want" ] || continue
+    for id in $desktops; do
+      if [ -e "$HOME/.local/share/applications/$id" ]; then echo "$HOME/.local/share/applications/$id"; return 0; fi
+      if [ -e "$HOME/.nix-profile/share/applications/$id" ]; then echo "$HOME/.nix-profile/share/applications/$id"; return 0; fi
+    done
+    for cmd in $commands; do
+      if [ -x "$HOME/.nix-profile/bin/$cmd" ]; then echo "$HOME/.nix-profile/bin/$cmd"; return 0; fi
     done
     return 1
   done
@@ -125,6 +151,65 @@ apps_skip_literal() { # -> `"brave" "discord"` for the Nix list, or empty
     out="$out \"$name\""
   done < <(detect_installed_apps)
   printf '%s' "${out# }"
+}
+
+# ── duplicate audit ──────────────────────────────────────────────────────────
+# The table above only covers apps dome knows about. This also does a generic
+# sweep for the failure mode behind it: the same .desktop id existing in two
+# places, which is what puts two icons of one app in the app grid.
+audit_apps() {
+  local probe name mine theirs shell_pid shell_dirs
+  local dir sys f base hits
+  local nix_dir="$HOME/.nix-profile/share/applications"
+  local home_dir="$HOME/.local/share/applications"
+
+  echo "== apps dome knows about =="
+  printf '  %-12s %-9s %s\n' APP "FROM DOME" "ALSO OUTSIDE NIX"
+  for probe in "${APP_PROBES[@]}"; do
+    name="${probe%%|*}"
+    mine="$(app_from_nix "$name" || true)"
+    theirs="$(app_outside_nix "$name" || true)"
+    printf '  %-12s %-9s %s\n' \
+      "$name" \
+      "$( [ -n "$mine" ] && echo yes || echo no )" \
+      "${theirs:-no}"
+  done
+  echo
+  echo "  Both columns yes = a duplicate. Fix it with ./setup.sh --sync-apps-skip"
+  echo "  (records the app in appsSkip), then re-run ./setup.sh."
+
+  # A colliding .desktop id only puts two icons in the app grid if gnome-shell
+  # can see BOTH directories, so report what it actually has.
+  echo
+  echo "== desktop-entry collisions =="
+  shell_pid="$(pgrep -u "$USER" -x gnome-shell 2>/dev/null | head -1 || true)"
+  if [ -n "$shell_pid" ] && [ -r "/proc/$shell_pid/environ" ]; then
+    shell_dirs="$(tr '\0' '\n' < "/proc/$shell_pid/environ" | sed -nE 's/^XDG_DATA_DIRS=(.*)/\1/p')"
+    echo "  gnome-shell reads: $shell_dirs"
+    echo "  (~/.local/share/applications is always read on top of those)"
+    case "$shell_dirs" in
+      *nix-profile*) ;;
+      *) echo "  the Nix profile is NOT among them, so entries there are invisible to GNOME" ;;
+    esac
+  fi
+  for dir in "$home_dir" "$nix_dir"; do
+    echo "  $dir:"
+    hits=0
+    for f in "$dir"/*.desktop; do
+      [ -e "$f" ] || continue
+      base="$(basename "$f")"
+      for sys in "${SYSTEM_APP_DIRS[@]}"; do
+        if [ -e "$sys/$base" ]; then
+          printf '    %-32s also in %s\n' "$base" "$sys"
+          hits=$((hits + 1))
+        fi
+      done
+    done
+    if [ "$hits" = 0 ]; then
+      echo "    (no collisions)"
+    fi
+  done
+  return 0
 }
 
 merged_apps_skip() { # -> a complete Nix list literal for appsSkip
@@ -253,6 +338,12 @@ EOF
 # Report which of the apps module's apps this machine already has elsewhere.
 if [ "${1:-}" = "--detect-apps" ]; then
   detect_installed_apps
+  exit 0
+fi
+
+# Read-only report: which apps exist where, and which .desktop ids collide.
+if [ "${1:-}" = "--audit-apps" ]; then
+  audit_apps
   exit 0
 fi
 

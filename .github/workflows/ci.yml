@@ -47,6 +47,9 @@ jobs:
             echo "brave still detected after removing the foreign copy" >&2
             exit 1
           fi
+          # The audit is read-only and must survive a machine with no GNOME,
+          # no Nix profile and no colliding entries.
+          ./setup.sh --audit-apps
           rm user-config.nix
       - name: python bytecompile
         run: python3 -m py_compile duo/lib/*.py

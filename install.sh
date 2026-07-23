@@ -116,6 +116,28 @@ echo "[dome] host profile: $PROFILE"
 
 banner() { printf '\n\033[1;36m========== %s ==========\033[0m\n' "$*"; }
 
+# ── disk check ───────────────────────────────────────────────────────────────
+# The heavy parts of a full run are downloads: Docker Engine, optionally Docker
+# Desktop (~450 MB / ~2 GB installed), and the apps module's browser/Electron
+# closures. Running out of space halfway leaves the switch unapplied and the
+# store full of half a generation, so say so up front while it is still cheap
+# to stop.
+avail_gib=$(( $(df -Pk / | awk 'NR==2 {print $4}') / 1048576 ))
+if [ "$avail_gib" -lt 10 ]; then
+  echo
+  echo "[dome] WARNING: only ${avail_gib} GiB free on / — a full install wants ~10 GiB" >&2
+  echo "[dome]          (apps module ~4 GiB, Docker Engine ~1 GiB, Docker Desktop ~2 GiB)" >&2
+  echo "[dome]          Free space first, or disable modules: ./install.sh --disable apps --no-docker" >&2
+  if [ -t 0 ]; then
+    printf '[dome] Continue anyway? (y/N): '
+    read -r go
+    case "${go:-}" in
+      y|Y) ;;
+      *) echo "[dome] stopped — nothing was changed"; exit 1 ;;
+    esac
+  fi
+fi
+
 # ── 2. system layer (root) ───────────────────────────────────────────────────
 # Invoke the system layer directly with bash, NOT via `make`: `make` is not
 # installed on a fresh Ubuntu desktop (it ships in build-essential, which the

@@ -26,10 +26,11 @@
 let
   cfg = config.modules.apps;
 
-  # GUI apps that get the full treatment: package + patched desktop entry
-  # (+ dash pin where pin = true). `id` is the .desktop file name inside
-  # ${package}/share/applications — verified against the built packages, not
-  # guessed. To add an app, add a line here.
+  # GUI apps that get the full treatment: package + patched desktop entries
+  # (+ dash pin where pin = true). `ids` are the .desktop file names inside
+  # ${package}/share/applications — read off the built packages, not guessed
+  # (LocalSend's is capitalised; VS Code ships two). The first id is the one
+  # that gets pinned. To add an app, add a line here.
   #
   # probeDesktop/probeCommands answer "does this machine already have this app
   # from apt/snap/flatpak?", so an existing install is never duplicated or
@@ -39,16 +40,16 @@ let
     {
       name = "brave";
       package = pkgs.brave;
-      id = "brave-browser.desktop";  # brave also ships com.brave.Browser.desktop
+      ids = [ "brave-browser.desktop" ];  # also ships com.brave.Browser.desktop; one launcher is enough
       pin = true;
-      browser = true;                # -> default handler for http/https/html
+      browser = true;                     # -> default handler for http/https/html
       probeDesktop = [ "brave-browser.desktop" "brave.desktop" "com.brave.Browser.desktop" "brave_brave.desktop" ];
       probeCommands = [ "brave-browser" "brave" ];
     }
     {
       name = "discord";
       package = pkgs.discord;
-      id = "discord.desktop";        # Exec=Discord — bare name, needs patching
+      ids = [ "discord.desktop" ];        # Exec=Discord — bare name, needs patching
       pin = true;
       browser = false;
       probeDesktop = [ "discord.desktop" "com.discordapp.Discord.desktop" "discord_discord.desktop" ];
@@ -57,19 +58,62 @@ let
     {
       name = "drawio";
       package = pkgs.drawio;
-      id = "drawio.desktop";
-      pin = false;                   # installed, not pinned
+      ids = [ "drawio.desktop" ];
+      pin = false;                        # installed, not pinned
       browser = false;
       probeDesktop = [ "drawio.desktop" "com.jgraph.drawio.desktop.desktop" "drawio_drawio.desktop" ];
       probeCommands = [ "drawio" ];
     }
+    {
+      name = "localsend";
+      package = pkgs.localsend;
+      ids = [ "LocalSend.desktop" ];      # capital L, and Exec=localsend_app
+      pin = false;
+      browser = false;
+      probeDesktop = [ "LocalSend.desktop" "localsend.desktop" "org.localsend.localsend_app.desktop" "localsend_localsend.desktop" ];
+      probeCommands = [ "localsend" "localsend_app" ];
+    }
+    {
+      name = "bruno";
+      package = pkgs.bruno;
+      ids = [ "bruno.desktop" ];
+      pin = false;
+      browser = false;
+      probeDesktop = [ "bruno.desktop" "com.usebruno.Bruno.desktop" "bruno_bruno.desktop" ];
+      probeCommands = [ "bruno" ];
+    }
+    {
+      name = "obs-studio";
+      package = pkgs.obs-studio;
+      ids = [ "com.obsproject.Studio.desktop" ];
+      pin = false;
+      browser = false;
+      probeDesktop = [ "com.obsproject.Studio.desktop" "obs-studio.desktop" "obs-studio_obs-studio.desktop" ];
+      probeCommands = [ "obs" "obs-studio" ];
+    }
   ];
+
+  # VS Code is installed by home-manager's programs.vscode (home.nix), not by
+  # this module — but it has exactly the same problem as the apps above: its
+  # entry has a bare `Exec=code` and a themed `Icon=vscode`, and nothing in
+  # ~/.nix-profile is visible to gnome-shell, so it never appears in the app
+  # grid at all. Give it the same patched entries. code-url-handler.desktop is
+  # what makes vscode:// links work.
+  vscodeApp = {
+    name = "vscode";
+    package = config.programs.vscode.package;
+    ids = [ "code.desktop" "code-url-handler.desktop" ];
+    pin = false;
+    browser = false;
+    probeDesktop = [ "code.desktop" "visual-studio-code.desktop" "code_code.desktop" "com.visualstudio.code.desktop" ];
+    probeCommands = [ "code" ];
+  };
 
   # Apps listed in modules.apps.skip are dropped entirely: no package, no
   # desktop entry, no pin, never the default browser. setup.sh fills this in
   # automatically for anything it finds already installed outside Nix
   # (./setup.sh --sync-apps-skip), and you can add names by hand.
-  knownNames = map (a: a.name) desktopApps;
+  knownNames = map (a: a.name) (desktopApps ++ [ vscodeApp ]);
   unknownSkips = lib.filter (n: !(lib.elem n knownNames)) cfg.skip;
   selected = lib.warnIf (unknownSkips != [ ])
     "modules.apps.skip: unknown app name(s) ${lib.concatStringsSep ", " unknownSkips} (known: ${lib.concatStringsSep ", " knownNames})"
@@ -85,10 +129,10 @@ let
     cfg.extras;
 
   # Copy one .desktop entry out of a package, making every path absolute.
-  patchDesktop = app: pkgs.runCommand "dome-desktop-${app.id}" { } ''
-    src="${app.package}/share/applications/${app.id}"
+  patchDesktop = app: id: pkgs.runCommand "dome-desktop-${id}" { } ''
+    src="${app.package}/share/applications/${id}"
     if [ ! -f "$src" ]; then
-      echo "modules.apps: ${app.package.name} does not ship ${app.id}" >&2
+      echo "modules.apps: ${app.package.name} does not ship ${id}" >&2
       echo "available:" >&2
       ls "${app.package}/share/applications" >&2 || true
       exit 1
@@ -110,6 +154,7 @@ let
       *)
         for candidate in \
           "${app.package}/share/icons/hicolor/scalable/apps/$icon.svg" \
+          "${app.package}/share/icons/hicolor/1024x1024/apps/$icon.png" \
           "${app.package}/share/icons/hicolor/512x512/apps/$icon.png" \
           "${app.package}/share/icons/hicolor/256x256/apps/$icon.png" \
           "${app.package}/share/icons/hicolor/128x128/apps/$icon.png" \
@@ -124,13 +169,19 @@ let
         ;;
     esac
 
-    install -Dm444 entry.desktop "$out/share/applications/${app.id}"
+    install -Dm444 entry.desktop "$out/share/applications/${id}"
   '';
 
-  patched = map (app: app // { entry = patchDesktop app; }) selected;
+  # One xdg.dataFile entry per .desktop file an app ships.
+  entriesFor = app: map (id: {
+    name = "applications/${id}";
+    value.source = "${patchDesktop app id}/share/applications/${id}";
+  }) app.ids;
+
+  patched = map (app: app // { entryDirs = map (patchDesktop app) app.ids; }) selected;
 
   browserApp = lib.findFirst (a: a.browser) null patched;
-  browserId = if browserApp == null then "" else browserApp.id;
+  browserId = if browserApp == null then "" else builtins.head browserApp.ids;
   browserName = if browserApp == null then "" else browserApp.name;
 
   # Ubuntu 24.04 pins the Firefox snap as firefox_firefox.desktop; the other
@@ -164,7 +215,7 @@ let
 
     # Resolve the entries straight out of the store, so this works even when it
     # runs before ~/.local/share/applications has been linked.
-    export XDG_DATA_DIRS="${lib.concatMapStringsSep ":" (a: "${a.entry}/share") patched}:''${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+    export XDG_DATA_DIRS="${lib.concatMapStringsSep ":" (d: "${d}/share") (lib.concatMap (a: a.entryDirs) patched)}:''${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 
     log()  { printf '[apps] %s\n' "$*"; }
     warn() { printf '[apps:warn] %s\n' "$*" >&2; }
@@ -258,7 +309,7 @@ let
 
       # "name:id" pairs so a pin can be dropped by app name when the machine
       # already provides that app itself.
-      for pair in ${lib.concatMapStringsSep " " (a: lib.escapeShellArg "${a.name}:${a.id}") (lib.filter (a: a.pin) patched)}; do
+      for pair in ${lib.concatMapStringsSep " " (a: lib.escapeShellArg "${a.name}:${builtins.head a.ids}") (lib.filter (a: a.pin) patched)}; do
         name="''${pair%%:*}"
         is_foreign "$name" || pins+=("''${pair#*:}")
       done
@@ -320,27 +371,35 @@ let
   '';
 in
 {
-  config = lib.mkIf cfg.enable {
-    home.packages = map (a: a.package) patched ++ extraPkgs;
+  config = lib.mkMerge [
+    (lib.mkIf cfg.enable {
+      home.packages = map (a: a.package) patched ++ extraPkgs;
 
-    # Absolute-path desktop entries in XDG_DATA_HOME — see the header comment.
-    xdg.dataFile = lib.listToAttrs (map (a: {
-      name = "applications/${a.id}";
-      value.source = "${a.entry}/share/applications/${a.id}";
-    }) patched);
+      # Absolute-path desktop entries in XDG_DATA_HOME — see the header comment.
+      xdg.dataFile = lib.listToAttrs (lib.concatMap entriesFor patched);
 
-    # home.nix defaults this to firefox with mkDefault, so this wins when the
-    # apps module is on.
-    home.sessionVariables.BROWSER = "brave";
+      # home.nix defaults this to firefox with mkDefault, so this wins when the
+      # apps module is on.
+      home.sessionVariables.BROWSER = "brave";
 
-    home.file.".local/bin/apps-setup".source = appsSetup;
+      home.file.".local/bin/apps-setup".source = appsSetup;
 
-    home.activation.appsDesktopIntegration = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      if [ -n "''${DRY_RUN_CMD:-}" ]; then
-        echo "(dry run) would run apps-setup (default browser + GNOME dash pins)"
-      else
-        ${appsSetup} || echo "⚠️ apps-setup did not finish — re-run it from a desktop session" >&2
-      fi
-    '';
-  };
+      home.activation.appsDesktopIntegration = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+        if [ -n "''${DRY_RUN_CMD:-}" ]; then
+          echo "(dry run) would run apps-setup (default browser + GNOME dash pins)"
+        else
+          ${appsSetup} || echo "⚠️ apps-setup did not finish — re-run it from a desktop session" >&2
+        fi
+      '';
+    })
+
+    # VS Code's entries, independent of modules.apps: it is installed by
+    # programs.vscode on every non-WSL host, and without this it is invisible
+    # to the app grid there too. home.nix already turns programs.vscode off
+    # when "vscode" is in appsSkip; the second guard keeps that true even if a
+    # host profile enables it by hand.
+    (lib.mkIf (config.programs.vscode.enable && !(lib.elem "vscode" cfg.skip)) {
+      xdg.dataFile = lib.listToAttrs (entriesFor vscodeApp);
+    })
+  ];
 }

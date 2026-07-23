@@ -117,13 +117,15 @@ the default browser, and the GNOME dash:
   browser for `http`/`https`/`text/html`; the Firefox pin is removed (the snap
   itself is left installed)
 - **Discord** — pinned to the dash
-- **draw.io** — installed, not pinned
+- **draw.io**, **LocalSend**, **Bruno**, **OBS Studio** — installed, not pinned
+
+Budget roughly **4 GiB** of disk for the set.
 
 Add anything else from nixpkgs by name, no module edits needed:
 
 ```nix
 # hosts/<name>/default.nix
-modules.apps.extras = [ "obsidian" "localsend" "vlc" "bruno" ];
+modules.apps.extras = [ "obsidian" "vlc" "dbeaver-bin" ];
 ```
 
 Worth knowing: on Ubuntu the GNOME session does **not** have the Nix profile on
@@ -134,6 +136,11 @@ rewritten to absolute `/nix/store` paths — which is why the apps show up
 immediately, with icons, and with no re-login. `extras` are installed as plain
 packages and skip that rewrite.
 
+**VS Code gets the same treatment**, even though `programs.vscode` (not this
+module) installs it — it has the same bare `Exec=code` and themed `Icon=vscode`,
+so before this it was installed but absent from the app grid entirely. Its
+entries are written whenever `programs.vscode.enable` is on, apps module or not.
+
 The pins and default browser are **merged, not overwritten** (anything you
 pinned yourself survives), by `~/.local/bin/apps-setup`. It runs during
 `make home`; re-run it by hand if you activate from a TTY or over SSH, where
@@ -143,15 +150,23 @@ there is no D-Bus session to write to.
 alone — no second copy, no pin, no change to its defaults:
 
 ```bash
-./setup.sh --detect-apps      # what this machine already has
-./setup.sh --sync-apps-skip   # record it in user-config.nix (install.sh does this too)
+./setup.sh --audit-apps       # full report: what is installed where, and what collides
+./setup.sh --detect-apps      # just the names of apps already installed elsewhere
+./setup.sh --sync-apps-skip   # record them in user-config.nix (install.sh does this too)
 ```
 
 That writes `appsSkip = [ "brave" ];`, which drops the app from the module
-entirely. Names you add by hand are kept. Detection only looks at system
-locations (`/usr/share/applications`, snap and flatpak exports, `/usr/bin`,
-`/snap/bin`) — deliberately never at the Nix profile, or the module would
-detect its own installs and remove them on the next run.
+entirely — no package, no desktop entry, no pin, never the default browser.
+`vscode` is skippable the same way, and turns `programs.vscode` off with it.
+Names you add by hand are kept. Detection only looks at system locations
+(`/usr/share/applications`, snap and flatpak exports, `/usr/bin`, `/snap/bin`)
+— deliberately never at the Nix profile, or the module would detect its own
+installs and remove them on the next run.
+
+`--audit-apps` also sweeps generically for the underlying failure mode: the
+same `.desktop` id existing in two places, which is what puts two icons of one
+app in the app grid. It reports what `gnome-shell` can actually see, so it can
+tell a real duplicate from a harmless one.
 
 Not enabled for the `generic` host profile — it also covers WSL and headless
 machines.
