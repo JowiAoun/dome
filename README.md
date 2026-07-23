@@ -144,6 +144,38 @@ nix flake update
 Note the `path:.` — a plain `.` flake ref copies only git-*tracked* files, which
 would silently skip your git-ignored `user-config.nix`.
 
+## Updating & recovering
+
+`make update` bumps the pinned inputs in `flake.lock` — nixpkgs, home-manager,
+and therefore every `pkgs.*` package. The repo tracks `nixos-unstable`, which is
+newest but occasionally ships a **mid-transition snapshot** (e.g. a glibc
+mass-rebuild in progress) where core tools like `git` or `vscode` fail at runtime
+with `GLIBC_ABI_* not found` errors.
+
+If an update misbehaves, undo it with one command:
+
+```bash
+make rollback   # restore flake.lock to the committed pin and re-activate
+```
+
+`make rollback` reverts the lockfile and rebuilds via `nix run
+home-manager/master`, which works **even when the bad update left the profile's
+`git`/`home-manager` broken** (nix's own fetcher doesn't depend on those). It's
+just `git restore flake.lock` + a re-activation — safe to run any time.
+
+**Prefer stability over newest?** Point the flake at a stable release instead of
+unstable. Claude (official installer) and Gemini (npm) stay on the latest either
+way, so the only cost is slightly older system packages — no more mid-rebuild
+breakage:
+
+```nix
+# flake.nix — use the current stable release (25.05 as of mid-2026)
+nixpkgs.url      = "github:NixOS/nixpkgs/nixos-25.05";
+home-manager.url = "github:nix-community/home-manager/release-25.05";
+```
+
+Then `nix flake update && make home` to re-lock onto the stable channel.
+
 ## Why This Setup?
 
 - **Declarative**: Everything defined in code

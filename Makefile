@@ -4,13 +4,14 @@
 #   make home [HOST=zenbook-duo]                      apply the home-manager user layer
 #   make doctor                                       zenduo hardware probe (read-only, live-USB safe)
 #   make update                                       pull repo + update flake inputs
+#   make rollback                                     undo a bad flake update: restore flake.lock + re-activate
 #
 # HOST defaults to the hostProfile in user-config.nix (falling back to "generic").
 
 HOST ?=
 DRY_RUN ?=
 
-.PHONY: help setup system home doctor update
+.PHONY: help setup system home doctor update rollback
 
 help:
 	@echo "dome targets:"
@@ -19,6 +20,7 @@ help:
 	@echo "  make home [HOST=zenbook-duo]                     - home-manager switch for the host profile"
 	@echo "  make doctor                                      - run 'duo doctor' (read-only hardware probe)"
 	@echo "  make update                                      - git pull + nix flake update"
+	@echo "  make rollback                                    - undo a bad update (restore flake.lock + re-activate)"
 
 setup:
 	bash setup.sh
@@ -37,3 +39,11 @@ doctor:
 update:
 	git pull --ff-only
 	nix flake update
+	@echo "[dome] flake.lock updated — if 'make home' misbehaves, run 'make rollback'"
+
+# Undo a bad `make update`: revert flake.lock to the committed pin and re-activate
+# via `nix run` (works even when the profile's git/home-manager got broken by the
+# bad update — nix's own fetcher doesn't depend on the profile binaries).
+rollback:
+	git restore flake.lock 2>/dev/null || git checkout -- flake.lock
+	nix run home-manager/master -- switch --flake path:.#$(if $(HOST),$(HOST),generic) -b backup
