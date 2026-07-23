@@ -9,6 +9,21 @@ let
     else import ./user-config.template.nix;
   isCodespaces = userConfig.environment.isCodespaces;
   isWSL = userConfig.environment.isWSL;
+
+  # nixpkgs flattened the xorg.* set to lowercase top-level attrs and deprecated
+  # the old path (warns on the post-2026 flake.lock). Prefer the new attr, fall
+  # back to xorg.* on the previous pin — `x or y` short-circuits, so xorg.* is
+  # never touched (no warning) when the new attr exists, yet it still evaluates on
+  # the old pin. Lets this land without waiting on the flake.lock push.
+  xlibs = {
+    libxcb     = pkgs.libxcb     or pkgs.xorg.libxcb;
+    libX11     = pkgs.libx11     or pkgs.xorg.libX11;
+    libXext    = pkgs.libxext    or pkgs.xorg.libXext;
+    libXrender = pkgs.libxrender or pkgs.xorg.libXrender;
+    libXi      = pkgs.libxi      or pkgs.xorg.libXi;
+    libSM      = pkgs.libsm      or pkgs.xorg.libSM;
+    libICE     = pkgs.libice     or pkgs.xorg.libICE;
+  };
 in
 
 {
@@ -73,7 +88,7 @@ in
     pango         # Required by manim for text rendering
     ffmpeg        # Required by manim for video encoding
     pkg-config    # Helps pip find system libraries
-    xorg.libxcb   # XCB headers for cairo
+    xlibs.libxcb  # XCB headers for cairo
     harfbuzz      # Text shaping (pango dependency)
     fribidi       # Bidirectional text (pango dependency)
 
@@ -82,12 +97,12 @@ in
     zlib              # compression
     libGL             # OpenGL
     glib              # libgthread, GLib
-    xorg.libX11       # X11
-    xorg.libXext      # X11 extensions
-    xorg.libXrender   # X11 rendering
-    xorg.libXi        # X11 input
-    xorg.libSM        # X11 session management
-    xorg.libICE       # X11 ICE
+    xlibs.libX11      # X11
+    xlibs.libXext     # X11 extensions
+    xlibs.libXrender  # X11 rendering
+    xlibs.libXi       # X11 input
+    xlibs.libSM       # X11 session management
+    xlibs.libICE      # X11 ICE
     fontconfig        # font configuration
     freetype          # font rendering
     libxkbcommon      # keyboard
@@ -172,12 +187,12 @@ in
         pkgs.glib              # libgthread, GLib
         pkgs.cairo             # cairo graphics (manim)
         pkgs.pango             # text rendering (manim)
-        pkgs.xorg.libX11       # X11
-        pkgs.xorg.libXext      # X11 extensions
-        pkgs.xorg.libXrender   # X11 rendering
-        pkgs.xorg.libXi        # X11 input
-        pkgs.xorg.libSM        # X11 session management
-        pkgs.xorg.libICE       # X11 ICE
+        xlibs.libX11           # X11
+        xlibs.libXext          # X11 extensions
+        xlibs.libXrender       # X11 rendering
+        xlibs.libXi            # X11 input
+        xlibs.libSM            # X11 session management
+        xlibs.libICE           # X11 ICE
         pkgs.fontconfig        # font configuration
         pkgs.freetype          # font rendering
         pkgs.libxkbcommon      # keyboard
@@ -192,7 +207,7 @@ in
       export PKG_CONFIG_PATH="${pkgs.cairo.dev}/lib/pkgconfig:${pkgs.pango.dev}/lib/pkgconfig:${pkgs.glib.dev}/lib/pkgconfig:${pkgs.harfbuzz.dev}/lib/pkgconfig:${pkgs.freetype.dev}/lib/pkgconfig:${pkgs.fribidi.dev}/lib/pkgconfig''${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 
       # C_INCLUDE_PATH for headers needed during pip builds
-      export C_INCLUDE_PATH="${pkgs.xorg.libxcb.dev}/include''${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}"
+      export C_INCLUDE_PATH="${xlibs.libxcb.dev}/include''${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}"
 
       # Add npm global bin and ~/.local/bin to PATH for locally installed tools
       export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
@@ -257,12 +272,12 @@ in
         pkgs.glib              # libgthread, GLib
         pkgs.cairo             # cairo graphics (manim)
         pkgs.pango             # text rendering (manim)
-        pkgs.xorg.libX11       # X11
-        pkgs.xorg.libXext      # X11 extensions
-        pkgs.xorg.libXrender   # X11 rendering
-        pkgs.xorg.libXi        # X11 input
-        pkgs.xorg.libSM        # X11 session management
-        pkgs.xorg.libICE       # X11 ICE
+        xlibs.libX11           # X11
+        xlibs.libXext          # X11 extensions
+        xlibs.libXrender       # X11 rendering
+        xlibs.libXi            # X11 input
+        xlibs.libSM            # X11 session management
+        xlibs.libICE           # X11 ICE
         pkgs.fontconfig        # font configuration
         pkgs.freetype          # font rendering
         pkgs.libxkbcommon      # keyboard
@@ -277,7 +292,7 @@ in
       export PKG_CONFIG_PATH="${pkgs.cairo.dev}/lib/pkgconfig:${pkgs.pango.dev}/lib/pkgconfig:${pkgs.glib.dev}/lib/pkgconfig:${pkgs.harfbuzz.dev}/lib/pkgconfig:${pkgs.freetype.dev}/lib/pkgconfig:${pkgs.fribidi.dev}/lib/pkgconfig''${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 
       # C_INCLUDE_PATH for headers needed during pip builds
-      export C_INCLUDE_PATH="${pkgs.xorg.libxcb.dev}/include''${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}"
+      export C_INCLUDE_PATH="${xlibs.libxcb.dev}/include''${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}"
 
       # Add npm global bin and ~/.local/bin to PATH for locally installed tools
       export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"
