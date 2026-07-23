@@ -197,8 +197,9 @@ machines.
 hostName = "LAPTOP-JA";   # empty (the default) leaves the current name alone
 ```
 
-Applied by `system/05-hostname.sh` on the next `sudo make system` (or
-`./setup.sh`, which prompts for it). Renaming means three things, and doing only
+Edit the field, then apply with `sudo make system` or `./setup.sh`. There is no
+prompt for it — renaming is a one-off, and `setup.sh` carries whatever is
+already there through untouched. Renaming means three things, and doing only
 the first is how machines end up half-renamed:
 
 | | where | what it affects |

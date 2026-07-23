@@ -278,6 +278,10 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   # template's defaults (engine on, desktop off).
   docker_engine="$(cfg_get dockerEngine)"
   docker_desktop="$(cfg_get dockerDesktop)"
+  # Carried through untouched. There is deliberately no prompt for this:
+  # renaming a machine is a one-off, not something to be re-asked on every
+  # re-run. Edit hostName in user-config.nix (or pass HOST_NAME=... for a
+  # scripted run) and the system layer applies it.
   local host_name="${HOST_NAME-$(cfg_get hostName)}"
   local apps_skip
   apps_skip="$(merged_apps_skip)"
@@ -432,11 +436,6 @@ if have_whiptail; then
   EMAIL_DEFAULT="$(cfg_get email)"; EMAIL_DEFAULT="${EMAIL_DEFAULT:-$(git config --global user.email 2>/dev/null || echo '83415433+JowiAoun@users.noreply.github.com')}"
   NAME="$(whiptail --title "dome setup" --inputbox "Your name (git commits):" 10 60 "$NAME_DEFAULT" 3>&1 1>&2 2>&3)" || exit 1
   EMAIL="$(whiptail --title "dome setup" --inputbox "Your email (git commits):" 10 60 "$EMAIL_DEFAULT" 3>&1 1>&2 2>&3)" || exit 1
-  HOSTNAME_DEFAULT="$(cfg_get hostName)"; HOSTNAME_DEFAULT="${HOSTNAME_DEFAULT:-$(hostname 2>/dev/null || true)}"
-  HOST_NAME="$(whiptail --title "dome setup" --inputbox \
-    "Computer name (letters, digits, hyphens).\n\nApplied by the system layer to /etc/hostname, the GNOME 'Device Name' and /etc/hosts. Clear it to leave the current name alone." \
-    12 68 "$HOSTNAME_DEFAULT" 3>&1 1>&2 2>&3)" || exit 1
-  export HOST_NAME
 
   SUMMARY="host:    $HOST
 name:    $NAME
@@ -487,9 +486,6 @@ else
   EMAIL_DEFAULT="$(cfg_get email)"; EMAIL_DEFAULT="${EMAIL_DEFAULT:-$(git config --global user.email 2>/dev/null || echo '83415433+JowiAoun@users.noreply.github.com')}"
   printf 'Name [%s]: ' "$NAME_DEFAULT"; read -r NAME; NAME="${NAME:-$NAME_DEFAULT}"
   printf 'Email [%s]: ' "$EMAIL_DEFAULT"; read -r EMAIL; EMAIL="${EMAIL:-$EMAIL_DEFAULT}"
-  HOSTNAME_DEFAULT="$(cfg_get hostName)"; HOSTNAME_DEFAULT="${HOSTNAME_DEFAULT:-$(hostname 2>/dev/null || true)}"
-  printf 'Computer name [%s]: ' "$HOSTNAME_DEFAULT"; read -r HOST_NAME
-  HOST_NAME="${HOST_NAME:-$HOSTNAME_DEFAULT}"; export HOST_NAME
   write_config "$HOST" "$NAME" "$EMAIL"
   echo "[dome] wrote user-config.nix (host=$HOST)"
   printf 'Run the full install now (./install.sh --host %s)? (y/N): ' "$HOST"

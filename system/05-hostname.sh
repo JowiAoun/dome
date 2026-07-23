@@ -38,8 +38,15 @@ fi
 OLD="$(hostnamectl --static 2>/dev/null || cat /etc/hostname 2>/dev/null || true)"
 OLD_PRETTY="$(hostnamectl --pretty 2>/dev/null || true)"
 
+# Is the name already a field on the 127.0.1.1 line? Field-wise via awk, not a
+# regex: matching the name inside the line as text says nothing about whether
+# it is its own entry, and a regex anchored to a following space fails on the
+# common case where the name is last on the line.
 hosts_ok=0
-if grep -qE "^127\.0\.1\.1[[:space:]]+.*(^|[[:space:]])${NAME}([[:space:]]|\$)" /etc/hosts 2>/dev/null; then
+if awk -v n="$NAME" '
+      $1 == "127.0.1.1" { for (i = 2; i <= NF; i++) if ($i == n) found = 1 }
+      END { exit !found }
+    ' /etc/hosts 2>/dev/null; then
   hosts_ok=1
 fi
 
