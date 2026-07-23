@@ -220,10 +220,21 @@ let
     log()  { printf '[apps] %s\n' "$*"; }
     warn() { printf '[apps:warn] %s\n' "$*" >&2; }
 
-    # Prefer the distro's glib tools: their gsettings knows about Ubuntu's
-    # compiled schemas, which the Nix one only finds through XDG_DATA_DIRS.
-    gs()  { if [ -x /usr/bin/gsettings ]; then /usr/bin/gsettings "$@"; else gsettings "$@"; fi; }
-    gio_() { if [ -x /usr/bin/gio ]; then /usr/bin/gio "$@"; else gio "$@"; fi; }
+    # Run the distro's glib tools with a CLEAN library path.
+    #
+    # Both halves matter. Prefer /usr/bin: its gsettings knows Ubuntu's
+    # compiled schemas. And drop LD_LIBRARY_PATH, because home.nix exports
+    # Nix's glib on it (pip packages with binary deps need it) — so a system
+    # binary loads Nix's libgio, which ships no gio/modules, which means no
+    # libdconfsettings.so, which means GSettings silently falls back to the
+    # keyfile backend in ~/.config/glib-2.0/settings/keyfile. GNOME Shell reads
+    # dconf and never looks there, so every write "succeeds" and changes
+    # nothing: the dash kept Firefox and never showed Brave, while this script
+    # cheerfully reported "dash pins already up to date" by reading its own
+    # keyfile back. Nothing warns; the two stores just drift apart.
+    clean_env() { env -u LD_LIBRARY_PATH -u GIO_MODULE_DIR -u GIO_EXTRA_MODULES "$@"; }
+    gs()   { if [ -x /usr/bin/gsettings ]; then clean_env /usr/bin/gsettings "$@"; else clean_env gsettings "$@"; fi; }
+    gio_() { if [ -x /usr/bin/gio ];       then clean_env /usr/bin/gio "$@";       else clean_env gio "$@";       fi; }
 
     in_list() {
       local needle="$1" item
@@ -355,11 +366,22 @@ let
         log "dash pins already up to date"
         return 0
       fi
-      if gs set org.gnome.shell favorite-apps "$joined"; then
-        log "dash pins updated: $joined"
-      else
+      if ! gs set org.gnome.shell favorite-apps "$joined"; then
         warn "could not write org.gnome.shell favorite-apps"
+        return 0
       fi
+      # Read it back. A GSettings write can land in a backend nobody reads (see
+      # the clean_env note above) and still exit 0, so "it returned success" is
+      # not evidence the dash changed. Comparing against dconf directly is the
+      # check that would have caught that immediately.
+      if [ -x /usr/bin/dconf ] &&
+         [ "$(clean_env /usr/bin/dconf read /org/gnome/shell/favorite-apps 2>/dev/null | sed 's/ //g')" \
+           != "$(printf '%s' "$joined" | sed 's/ //g')" ]; then
+        warn "wrote favorite-apps but dconf does not have it — the write went to another backend"
+        warn "  check: dconf read /org/gnome/shell/favorite-apps"
+        return 0
+      fi
+      log "dash pins updated: $joined"
     }
 
     # Refresh the MIME cache so the new entries are picked up without a re-login.
