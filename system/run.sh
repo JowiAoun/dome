@@ -11,13 +11,15 @@
 # ...` and `sudo make system DRY_RUN=1` do work — the flags just remove the trap.)
 #
 # Order: preflight (read-only) → Timeshift snapshot → base → kernel → GRUB,
-# then the duo-only scripts (40, 50) when the host profile is zenbook-duo.
+# then the duo-only scripts (40, 45, 50, 55) when the host profile is
+# zenbook-duo, then the config-gated extras (60 docker, 70 docker-desktop).
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./lib.sh
 
-usage() { die "usage: run.sh [--host <profile>] [--dry-run] [--snapshot]"; }
+usage_text() { echo "usage: run.sh [--host <profile>] [--dry-run] [--snapshot] [--docker-desktop]"; }
+usage() { die "$(usage_text)"; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -27,8 +29,9 @@ while [ $# -gt 0 ]; do
       ;;
     --dry-run)  DRY_RUN=1; export DRY_RUN; shift ;;
     --snapshot) SNAPSHOT=1; export SNAPSHOT; shift ;;
+    --docker-desktop) DOCKER_DESKTOP=1; export DOCKER_DESKTOP; shift ;;
     -h|--help)  usage ;;
-    *) die "unknown argument: $1 (usage: run.sh [--host <profile>] [--dry-run] [--snapshot])" ;;
+    *) die "unknown argument: $1 ($(usage_text))" ;;
   esac
 done
 
@@ -61,5 +64,12 @@ if [ "$PROFILE" = zenbook-duo ]; then
 else
   log "skipping duo-only scripts (40, 45, 50, 55) for profile '$PROFILE'"
 fi
+
+# Host-independent, config-gated extras. Both no-op loudly when their
+# user-config.nix switch is off, so they are safe to run unconditionally.
+for script in 60-docker.sh 70-docker-desktop.sh; do
+  log "── $script"
+  bash "./$script"
+done
 
 log "system layer complete. If GRUB or the kernel changed, reboot to apply."

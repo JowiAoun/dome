@@ -24,7 +24,29 @@ jobs:
         run: |
           ./setup.sh --defaults zenbook-duo
           grep -q 'cloud = false;' user-config.nix
+          grep -q 'apps = true;' user-config.nix
           grep -q 'hostProfile = "zenbook-duo";' user-config.nix
+          # The system-layer switches must come out as real booleans: cfg_get
+          # returns empty on a first run, so a missing backfill would emit
+          # `dockerEngine = ;` and every later Nix eval would fail to parse.
+          grep -q 'dockerEngine = true;' user-config.nix
+          grep -q 'dockerDesktop = false;' user-config.nix
+          # appsSkip must be a real (here empty) Nix list, never `appsSkip = ;`
+          grep -q 'appsSkip = \[ \];' user-config.nix
+          rm user-config.nix
+
+      - name: apps already installed elsewhere are detected and skipped
+        run: |
+          mkdir -p ~/.local/share/flatpak/exports/share/applications
+          touch ~/.local/share/flatpak/exports/share/applications/com.brave.Browser.desktop
+          ./setup.sh --detect-apps | grep -qx brave
+          ./setup.sh --defaults generic
+          grep -q 'appsSkip = \[ "brave" \];' user-config.nix
+          rm -f ~/.local/share/flatpak/exports/share/applications/com.brave.Browser.desktop
+          if ./setup.sh --detect-apps | grep -qx brave; then
+            echo "brave still detected after removing the foreign copy" >&2
+            exit 1
+          fi
           rm user-config.nix
       - name: python bytecompile
         run: python3 -m py_compile duo/lib/*.py
@@ -65,6 +87,6 @@ jobs:
         # so a broken attr in python/node/java fails CI instead of a user's switch.
         run: |
           cp user-config.template.nix user-config.nix
-          sed -i 's/python = false;/python = true;/;s/node = false;/node = true;/;s/java = false;/java = true;/' user-config.nix
+          sed -i 's/python = false;/python = true;/;s/node = false;/node = true;/;s/java = false;/java = true;/;s/apps = false;/apps = true;/' user-config.nix
           nix eval 'path:.#homeConfigurations.generic.activationPackage.drvPath'
           rm -f user-config.nix

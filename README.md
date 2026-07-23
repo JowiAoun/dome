@@ -109,6 +109,88 @@ Zenbook Duo tooling stays out of generic setups).
 #### AI Tools (`modules.ai = true`)
 - **Claude Code**: AI coding assistant
 
+#### Desktop Apps (`modules.apps = true`)
+GUI software **plus the desktop wiring that makes it usable** — desktop entries,
+the default browser, and the GNOME dash:
+
+- **Brave** — pinned to the dash (in Firefox's old slot) and set as the default
+  browser for `http`/`https`/`text/html`; the Firefox pin is removed (the snap
+  itself is left installed)
+- **Discord** — pinned to the dash
+- **draw.io** — installed, not pinned
+
+Add anything else from nixpkgs by name, no module edits needed:
+
+```nix
+# hosts/<name>/default.nix
+modules.apps.extras = [ "obsidian" "localsend" "vlc" "bruno" ];
+```
+
+Worth knowing: on Ubuntu the GNOME session does **not** have the Nix profile on
+`XDG_DATA_DIRS` or `PATH`, so a plain `home.packages` GUI app is invisible to the
+dash and app grid. The module works around this by copying each app's
+`.desktop` entry into `~/.local/share/applications` with `Exec=` and `Icon=`
+rewritten to absolute `/nix/store` paths — which is why the apps show up
+immediately, with icons, and with no re-login. `extras` are installed as plain
+packages and skip that rewrite.
+
+The pins and default browser are **merged, not overwritten** (anything you
+pinned yourself survives), by `~/.local/bin/apps-setup`. It runs during
+`make home`; re-run it by hand if you activate from a TTY or over SSH, where
+there is no D-Bus session to write to.
+
+**Already have one of these from apt, snap or flatpak?** It is left completely
+alone — no second copy, no pin, no change to its defaults:
+
+```bash
+./setup.sh --detect-apps      # what this machine already has
+./setup.sh --sync-apps-skip   # record it in user-config.nix (install.sh does this too)
+```
+
+That writes `appsSkip = [ "brave" ];`, which drops the app from the module
+entirely. Names you add by hand are kept. Detection only looks at system
+locations (`/usr/share/applications`, snap and flatpak exports, `/usr/bin`,
+`/snap/bin`) — deliberately never at the Nix profile, or the module would
+detect its own installs and remove them on the next run.
+
+Not enabled for the `generic` host profile — it also covers WSL and headless
+machines.
+
+### Docker
+
+`docker` is **not** a Nix package here: the client is useless without a
+root-owned daemon, and nixpkgs cannot give you a systemd unit, a socket, or the
+`docker` group. So Docker Engine comes from the system layer instead —
+`system/60-docker.sh` adds Docker's official apt repository and installs
+`docker-ce`, `docker-ce-cli`, `containerd.io` and the buildx/compose plugins,
+enables `docker.service`, and adds you to the `docker` group (root-equivalent,
+by design — log out and back in for it to apply):
+
+```bash
+sudo make system            # includes Docker Engine when dockerEngine = true
+docker run --rm hello-world # after a re-login
+```
+
+The user layer keeps `docker-compose` (a standalone binary, works against any
+reachable daemon) and adds `lazydocker` as a TUI.
+
+**Docker Desktop** is off by default — it is a ~450 MB download that runs its
+own KVM virtual machine under a separate `docker context` (`desktop-linux`),
+alongside rather than instead of the native engine. Turn it on with
+`dockerDesktop = true;` in `user-config.nix`, or for one run:
+
+```bash
+sudo bash system/run.sh --docker-desktop
+```
+
+Both switches live outside `modules` in `user-config.nix`, because the root
+layer reads them with `sed` rather than through Nix:
+
+```nix
+dockerEngine = true;    # Docker Engine (CE)
+dockerDesktop = false;  # Docker Desktop GUI
+```
+
 ## Configuration
 
 Your personal settings are stored in `user-config.nix` (git-ignored):

@@ -48,6 +48,13 @@ in
     java.enable = userConfig.modules.java;
     ai.enable = userConfig.modules.ai;
     cloud.enable = userConfig.modules.cloud;
+    # `or false`: user-config.nix files written before the apps module existed
+    # have no such attribute, and a missing attr is an evaluation error, not a
+    # default. Never on Codespaces — it is a browser tab, not a desktop.
+    apps.enable = (userConfig.modules.apps or false) && !isCodespaces;
+    # Apps this machine already has from apt/snap/flatpak — detected by
+    # ./setup.sh --sync-apps-skip, so Nix never installs a second copy.
+    apps.skip = userConfig.appsSkip or [ ];
   };
 
   # Pass user info to modules
@@ -113,7 +120,15 @@ in
     alsa-lib          # audio
   ] ++ lib.optionals (!isCodespaces) [
     # Additional tools for local environments only (avoid Codespaces conflicts)
+    # The `docker` CLI deliberately does NOT live here: a client with no daemon
+    # only ever prints "Cannot connect to the Docker daemon", and the daemon is
+    # root-owned systemd territory. Docker Engine (dockerd + docker + the
+    # compose/buildx plugins) is installed by system/60-docker.sh instead.
+    # docker-compose stays because it is a standalone binary that works against
+    # whatever daemon is reachable, including a remote or Docker Desktop one.
     docker-compose
+    lazydocker  # TUI over the daemon: containers, logs, images
+
     unzip
     zip
     nmap
@@ -507,7 +522,8 @@ in
 
   home.sessionVariables = {
     EDITOR = userConfig.preferredEditor;
-    BROWSER = "firefox";
+    # mkDefault so modules/apps.nix can point this at Brave without a conflict.
+    BROWSER = lib.mkDefault "firefox";
     # gnome-terminal (VTE) chooses the shell it spawns from $SHELL, NOT from the
     # passwd entry — so `chsh -s zsh` in the system layer sets the login shell but
     # new terminals still come up on bash (VTE reads $SHELL=/bin/bash). Export it

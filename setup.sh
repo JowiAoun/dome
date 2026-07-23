@@ -4,6 +4,8 @@
 #   ./setup.sh                       guided TUI (whiptail; plain prompts as fallback)
 #   ./setup.sh --defaults <host>     non-interactive: write user-config.nix from the
 #                                    host's seed defaults (used by scripts/CI)
+#   ./setup.sh --detect-apps         list apps the machine already has outside Nix
+#   ./setup.sh --sync-apps-skip      refresh appsSkip in an existing user-config.nix
 #
 # What it does: detects the machine (distro, hardware model, WSL/Codespaces),
 # suggests a host profile, lets you toggle the language/tool modules, writes
@@ -14,9 +16,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-MODULES=(python node java ai cloud)
+MODULES=(python node java ai cloud apps)
 # Toggle state; reassigned dynamically via `declare "m_<name>=..."`.
-m_python=false m_node=false m_java=false m_ai=false m_cloud=false
+m_python=false m_node=false m_java=false m_ai=false m_cloud=false m_apps=false
 
 # ── detection ────────────────────────────────────────────────────────────────
 DISTRO=unknown
@@ -56,6 +58,96 @@ module_seed() { # <module> <host> — saved choice > host seed > false
   echo false
 }
 
+cfg_get_list() { # <field> — read `field = [ ... ];` and return the inner text
+  sed -nE "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\[(.*)\];.*/\1/p" user-config.nix 2>/dev/null | head -n1 || true
+}
+
+# ── "is this app already installed?" ─────────────────────────────────────────
+# The apps module must never install a second copy of software the machine
+# already has, nor take over its launcher. This is the shell half of the
+# question; modules/apps.nix has the same table (probeDesktop/probeCommands)
+# for the runtime check — keep the two in sync when adding an app.
+#
+# Only SYSTEM locations are searched. Looking inside ~/.nix-profile or
+# ~/.local/share/applications would find the copies the module itself installed
+# and mark them "already installed" on the next run, which would then uninstall
+# them — a flip-flop that never settles.
+SYSTEM_APP_DIRS=(
+  /usr/share/applications
+  /usr/local/share/applications
+  /var/lib/snapd/desktop/applications
+  /var/lib/flatpak/exports/share/applications
+  "$HOME/.local/share/flatpak/exports/share/applications"
+)
+SYSTEM_BIN_DIRS=(/usr/bin /usr/local/bin /snap/bin /opt/bin)
+
+# name|desktop entries|command names
+APP_PROBES=(
+  "brave|brave-browser.desktop brave.desktop com.brave.Browser.desktop brave_brave.desktop|brave-browser brave"
+  "discord|discord.desktop com.discordapp.Discord.desktop discord_discord.desktop|discord Discord"
+  "drawio|drawio.desktop com.jgraph.drawio.desktop.desktop drawio_drawio.desktop|drawio"
+)
+
+app_installed_outside_nix() { # <name>
+  local want="$1" probe name desktops commands dir id cmd
+  for probe in "${APP_PROBES[@]}"; do
+    IFS='|' read -r name desktops commands <<< "$probe"
+    [ "$name" = "$want" ] || continue
+    for dir in "${SYSTEM_APP_DIRS[@]}"; do
+      for id in $desktops; do
+        [ -e "$dir/$id" ] && return 0
+      done
+    done
+    for dir in "${SYSTEM_BIN_DIRS[@]}"; do
+      for cmd in $commands; do
+        [ -x "$dir/$cmd" ] && return 0
+      done
+    done
+    return 1
+  done
+  return 1
+}
+
+detect_installed_apps() { # print one app name per line
+  local probe name
+  for probe in "${APP_PROBES[@]}"; do
+    name="${probe%%|*}"
+    if app_installed_outside_nix "$name"; then
+      echo "$name"
+    fi
+  done
+}
+
+apps_skip_literal() { # -> `"brave" "discord"` for the Nix list, or empty
+  local name out=""
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    out="$out \"$name\""
+  done < <(detect_installed_apps)
+  printf '%s' "${out# }"
+}
+
+merged_apps_skip() { # -> a complete Nix list literal for appsSkip
+  # Union of what is already in user-config.nix and what is detected now, so a
+  # name you added by hand is never dropped, and an app installed since the
+  # last run is picked up.
+  local existing detected item merged=""
+  existing="$(cfg_get_list appsSkip)"
+  detected="$(apps_skip_literal)"
+  for item in $existing $detected; do
+    case " $merged " in
+      *" $item "*) ;;
+      *) merged="$merged $item" ;;
+    esac
+  done
+  merged="${merged# }"
+  if [ -n "$merged" ]; then
+    printf '[ %s ]' "$merged"
+  else
+    printf '[ ]'
+  fi
+}
+
 list_hosts() { # every hosts/<name>/ directory is a selectable profile
   local d
   for d in hosts/*/; do
@@ -91,11 +183,17 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   # up its redirection first and truncates the file, so a $(cfg_get ...) inside
   # the heredoc body would read the now-empty file and every saved preference
   # would silently reset to the hard-coded default below on each re-run.
-  local git_branch git_editor pref_shell pref_editor
+  local git_branch git_editor pref_shell pref_editor docker_engine docker_desktop
   git_branch="$(cfg_get gitDefaultBranch)"
   git_editor="$(cfg_get gitEditor)"
   pref_shell="$(cfg_get preferredShell)"
   pref_editor="$(cfg_get preferredEditor)"
+  # System-layer switches: keep whatever is already configured, else the
+  # template's defaults (engine on, desktop off).
+  docker_engine="$(cfg_get dockerEngine)"
+  docker_desktop="$(cfg_get dockerDesktop)"
+  local apps_skip
+  apps_skip="$(merged_apps_skip)"
   cat > user-config.nix <<EOF
 {
   # Generated by setup.sh on $(date +%F). Re-run ./setup.sh to change choices.
@@ -109,7 +207,15 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
     java = $m_java;
     ai = $m_ai;
     cloud = $m_cloud;
+    apps = $m_apps;
   };
+
+  # Apps already installed outside Nix - the apps module leaves these alone
+  appsSkip = $apps_skip;
+
+  # System-layer switches (read by system/*.sh, not by Nix)
+  dockerEngine = $docker_engine;
+  dockerDesktop = $docker_desktop;
 
   # Host profile - selects hosts/<name> for BOTH layers (Nix + system/)
   hostProfile = "$host";
@@ -136,9 +242,39 @@ EOF
   sed -i 's/gitEditor = "";/gitEditor = "vim";/' user-config.nix
   sed -i 's/preferredShell = "";/preferredShell = "zsh";/' user-config.nix
   sed -i 's/preferredEditor = "";/preferredEditor = "vim";/' user-config.nix
+  # Same for the system-layer switches. These are bare booleans, so an empty
+  # cfg_get leaves `dockerEngine = ;`, which is not valid Nix — the backfill is
+  # what makes a first run produce a parseable file.
+  sed -i 's/dockerEngine = ;/dockerEngine = true;/' user-config.nix
+  sed -i 's/dockerDesktop = ;/dockerDesktop = false;/' user-config.nix
 }
 
-# ── non-interactive mode ─────────────────────────────────────────────────────
+# ── non-interactive modes ────────────────────────────────────────────────────
+# Report which of the apps module's apps this machine already has elsewhere.
+if [ "${1:-}" = "--detect-apps" ]; then
+  detect_installed_apps
+  exit 0
+fi
+
+# Refresh only the appsSkip field of an existing user-config.nix. Run it after
+# installing (or removing) one of these apps from apt/snap/flatpak; install.sh
+# calls it on every run.
+if [ "${1:-}" = "--sync-apps-skip" ]; then
+  [ -f user-config.nix ] || { echo "no user-config.nix yet — run ./setup.sh first" >&2; exit 1; }
+  skip="$(merged_apps_skip)"
+  if grep -qE '^[[:space:]]*appsSkip = ' user-config.nix; then
+    sed -i "s|^\(\s*\)appsSkip = .*;|\1appsSkip = $skip;|" user-config.nix
+  elif grep -qE '^[[:space:]]*# Host profile' user-config.nix; then
+    # Predates the field: insert it above the hostProfile block, comment and
+    # all, so the existing comment stays attached to the setting it describes.
+    sed -i "s|^\([[:space:]]*\)# Host profile|\1# Apps already installed outside Nix - the apps module leaves these alone\n\1appsSkip = $skip;\n\n\1# Host profile|" user-config.nix
+  else
+    sed -i "s|^\(\s*\)hostProfile = |\1appsSkip = $skip;\n\n\1hostProfile = |" user-config.nix
+  fi
+  echo "[dome] appsSkip = $skip"
+  exit 0
+fi
+
 if [ "${1:-}" = "--defaults" ]; then
   HOST="${2:?usage: ./setup.sh --defaults <host>}"
   [ -d "hosts/$HOST" ] || { echo "unknown host profile: $HOST (have: $(list_hosts | tr '\n' ' '))" >&2; exit 1; }

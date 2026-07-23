@@ -7,8 +7,10 @@
 #
 # Flags:
 #   --host <name>          host profile (generic | zenbook-duo); default generic
-#   --enable <m1,m2,...>   turn language/tool modules on  (python node java ai cloud)
-#   --disable <m1,m2,...>  turn language/tool modules off
+#   --enable <m1,m2,...>   turn modules on  (python node java ai cloud apps)
+#   --disable <m1,m2,...>  turn modules off
+#   --docker-desktop       also install Docker Desktop (~450 MB, needs KVM)
+#   --no-docker            skip Docker Engine in the system layer
 #
 # Order: user-config.nix → system layer (sudo) → Nix → home-manager.
 # WSL/Codespaces keep using bootstrap.sh; this script is for full machines.
@@ -19,26 +21,35 @@ cd "$(dirname "$0")"
 HOST_PROFILE=""
 ENABLE_MODS=""
 DISABLE_MODS=""
+DOCKER_ENGINE=""
+DOCKER_DESKTOP=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --host) HOST_PROFILE="$2"; shift 2 ;;
     --enable) ENABLE_MODS="$2"; shift 2 ;;
     --disable) DISABLE_MODS="$2"; shift 2 ;;
+    --docker-desktop) DOCKER_DESKTOP=true; shift ;;
+    --no-docker) DOCKER_ENGINE=false; shift ;;
     -h|--help)
       echo "usage: ./install.sh [--host generic|zenbook-duo] [--enable m1,m2] [--disable m1,m2]"
-      echo "modules: python node java ai cloud"
+      echo "                    [--docker-desktop] [--no-docker]"
+      echo "modules: python node java ai cloud apps"
       exit 0
       ;;
     *) echo "unknown argument: $1" >&2; exit 1 ;;
   esac
 done
 
+set_key() { # <key> <value> — rewrite a `key = value;` line in user-config.nix
+  sed -i "s|^\(\s*\)$1 = .*;|\1$1 = $2;|" user-config.nix
+}
+
 set_module() { # <name> <true|false>
   case "$1" in
-    python|node|java|ai|cloud) ;;
-    *) echo "[dome] unknown module: $1 (valid: python node java ai cloud)" >&2; exit 1 ;;
+    python|node|java|ai|cloud|apps) ;;
+    *) echo "[dome] unknown module: $1 (valid: python node java ai cloud apps)" >&2; exit 1 ;;
   esac
-  sed -i "s|^\(\s*\)$1 = .*;|\1$1 = $2;|" user-config.nix
+  set_key "$1" "$2"
   echo "[dome] module $1 = $2"
 }
 
@@ -71,6 +82,33 @@ IFS=','
 for m in $ENABLE_MODS;  do [ -n "$m" ] && set_module "$m" true;  done
 for m in $DISABLE_MODS; do [ -n "$m" ] && set_module "$m" false; done
 unset IFS
+
+# System-layer switches (read by system/*.sh with sed, not by Nix). A
+# user-config.nix written before they existed has no line to rewrite, and a
+# missing key reads as "off" — which would silently drop Docker Engine on an
+# upgraded checkout. So seed the key with its template default first, above
+# hostProfile, which every config has.
+ensure_system_flag() { # <key> <default>
+  if grep -qE "^\s*$1 = " user-config.nix; then
+    return 0
+  fi
+  if grep -qE '^[[:space:]]*# Host profile' user-config.nix; then
+    # Above the hostProfile block, comment included, so that comment keeps
+    # describing the setting underneath it.
+    sed -i "s|^\([[:space:]]*\)# Host profile|\1$1 = $2;\n\n\1# Host profile|" user-config.nix
+  else
+    sed -i "s|^\(\s*\)hostProfile = |\1$1 = $2;\n\1hostProfile = |" user-config.nix
+  fi
+  echo "[dome] added missing $1 = $2 to user-config.nix"
+}
+ensure_system_flag dockerEngine true
+ensure_system_flag dockerDesktop false
+if [ -n "$DOCKER_ENGINE" ];  then set_key dockerEngine  "$DOCKER_ENGINE";  echo "[dome] dockerEngine = $DOCKER_ENGINE";  fi
+if [ -n "$DOCKER_DESKTOP" ]; then set_key dockerDesktop "$DOCKER_DESKTOP"; echo "[dome] dockerDesktop = $DOCKER_DESKTOP"; fi
+
+# Record which of the apps module's apps this machine already has from
+# apt/snap/flatpak, so Nix never installs a second copy or hijacks its launcher.
+bash setup.sh --sync-apps-skip
 
 PROFILE="${HOST_PROFILE:-$(sed -nE 's/.*hostProfile *= *"([^"]+)".*/\1/p' user-config.nix | head -n1)}"
 PROFILE="${PROFILE:-generic}"
