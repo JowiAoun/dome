@@ -8,6 +8,7 @@
     ./ai.nix
     ./cloud.nix
     ./apps.nix
+    ./desktop-shell.nix
   ];
 
   options = {
