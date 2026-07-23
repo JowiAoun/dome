@@ -10,7 +10,9 @@ Here's my simple development environment that works in WSL, GitHub Codespaces, a
 > - `system/` — idempotent root-layer scripts (`sudo make system HOST=zenbook-duo`,
 >   add `DRY_RUN=1` as a make argument to preview)
 > - `duo/` — **zenduo** hardware tooling; `duo doctor` is the read-only probe used as
->   the live-USB install gate
+>   the live-USB install gate. Day to day it keeps the bottom panel in step with the
+>   keyboard (off while docked, back on when you lift it off) and makes the Fn/media
+>   row work — see [duo/README.md](duo/README.md)
 > - `hosts/` + `flake.nix` — per-machine home-manager profiles
 >   (`home-manager switch --flake path:.#generic` or `path:.#zenbook-duo`)
 > - `install.sh` — one-command setup on a fresh Ubuntu machine
