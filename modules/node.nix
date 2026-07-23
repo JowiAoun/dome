@@ -31,7 +31,9 @@ in
     };
 
     home.sessionVariables = {
-      NODE_PATH = "$HOME/.npm-global/lib/node_modules:$NODE_PATH";
+      # Guarded append (see the PYTHONPATH note in python.nix): no trailing colon
+      # when NODE_PATH is unset.
+      NODE_PATH = "$HOME/.npm-global/lib/node_modules\${NODE_PATH:+:$NODE_PATH}";
       PATH = "$HOME/.npm-global/bin:$PATH";
       NODENV_ROOT = "$HOME/.nodenv";
     };
@@ -45,7 +47,11 @@ in
 
     programs.bash.shellAliases = lib.mkIf config.programs.bash.enable {
       pi = "pnpm install";
-      ps = "pnpm start";
+      # NOT `ps`: that shadows procps ps in every interactive bash shell, so
+      # typing `ps` to look at processes runs this project's start script
+      # instead. (It also cost an hour of debugging once — INSTALL-LOG Round 7
+      # blamed a "stray" ~/.bashrc alias that was in fact generated right here.)
+      pst = "pnpm start";
       pt = "pnpm test";
       pb = "pnpm build";
       pd = "pnpm dev";
@@ -72,16 +78,25 @@ in
       fi
     '';
 
-    # Install node-build plugin for nodenv (provides `nodenv install` command)
+    # Install node-build plugin for nodenv (provides `nodenv install` command).
+    # DRY_RUN_CMD-aware and non-fatal on network errors — see the matching note
+    # in modules/python.nix.
     home.activation.nodenvPlugins = lib.hm.dag.entryAfter ["writeBoundary"] ''
       NODENV_ROOT="$HOME/.nodenv"
       NODE_BUILD_DIR="$NODENV_ROOT/plugins/node-build"
 
       if [ ! -d "$NODE_BUILD_DIR" ]; then
-        echo "Installing node-build plugin for nodenv..."
-        mkdir -p "$NODENV_ROOT/plugins"
-        ${pkgs.git}/bin/git clone https://github.com/nodenv/node-build.git "$NODE_BUILD_DIR"
-        echo "node-build plugin installed"
+        if [ -n "''${DRY_RUN_CMD:-}" ]; then
+          echo "(dry run) would clone node-build into $NODE_BUILD_DIR"
+        else
+          echo "Installing node-build plugin for nodenv..."
+          mkdir -p "$NODENV_ROOT/plugins"
+          if ${pkgs.git}/bin/git clone https://github.com/nodenv/node-build.git "$NODE_BUILD_DIR"; then
+            echo "node-build plugin installed"
+          else
+            echo "⚠️ node-build clone failed (network?) — re-run 'make home' later" >&2
+          fi
+        fi
       fi
     '';
   };

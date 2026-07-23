@@ -59,9 +59,12 @@
       jaoun = makeConfig "jaoun";
       codespace = makeConfig "codespace";
 
-      # Alias for backward compatibility
-      vscode = makeConfig envUser;
-      codespaces = makeConfig envUser;
+      # Aliases for backward compatibility. These take a literal username: under
+      # the pure evaluation that `path:.#...` refs use, envUser is always "",
+      # which makes home.username empty and the configuration fail to evaluate —
+      # so the aliases only LOOKED supported.
+      vscode = makeConfig "vscode";
+      codespaces = makeConfig "codespace";
     };
   };
 }

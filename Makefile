@@ -11,6 +11,13 @@
 HOST ?=
 DRY_RUN ?=
 
+# Resolve the default host profile exactly like system/lib.sh host_profile():
+# HOST > user-config.nix hostProfile > generic. Without this, `make home` and
+# `make rollback` jumped straight to "generic" and silently activated a
+# generation with no zenduo services / battery limit / genericLinux integration.
+HOST_RESOLVED := $(if $(HOST),$(HOST),$(shell sed -nE 's/.*hostProfile *= *"([^"]+)".*/\1/p' user-config.nix 2>/dev/null | head -n1))
+HOST_RESOLVED := $(if $(HOST_RESOLVED),$(HOST_RESOLVED),generic)
+
 .PHONY: help setup system home doctor update rollback
 
 help:
@@ -31,7 +38,7 @@ system:
 # path:. (not plain .) so the gitignored user-config.nix is included in the
 # flake source — a git+file flake copies tracked files only.
 home:
-	home-manager switch --flake path:.#$(if $(HOST),$(HOST),generic) -b backup
+	home-manager switch --flake path:.#$(HOST_RESOLVED) -b backup
 
 doctor:
 	bash duo/bin/duo doctor
@@ -46,4 +53,4 @@ update:
 # bad update — nix's own fetcher doesn't depend on the profile binaries).
 rollback:
 	git restore flake.lock 2>/dev/null || git checkout -- flake.lock
-	nix run home-manager/master -- switch --flake path:.#$(if $(HOST),$(HOST),generic) -b backup
+	nix run home-manager/master -- switch --flake path:.#$(HOST_RESOLVED) -b backup

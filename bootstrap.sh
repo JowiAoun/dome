@@ -47,6 +47,11 @@ wait_for_system() {
     echo "⚠️  System readiness check timed out, proceeding anyway..."
 }
 
+# Escape a string for safe use as a sed s|...|REPLACEMENT| replacement:
+# `&` expands to the whole match and `|` ends the expression, so an unescaped
+# name like "AT&T Admin" would corrupt user-config.nix into invalid Nix.
+sed_escape() { printf '%s' "$1" | sed -e 's/[&|\\]/\\&/g'; }
+
 # Function to detect environment
 detect_environment() {
     local is_codespaces=false
@@ -138,8 +143,8 @@ collect_user_info() {
         user_email=${user_email:-"83415433+JowiAoun@users.noreply.github.com"}
         
         # Update user-config.nix with collected information
-        sed -i "s|name = \".*\";|name = \"$user_name\";|" user-config.nix
-        sed -i "s|email = \".*\";|email = \"$user_email\";|" user-config.nix
+        sed -i "s|name = \".*\";|name = \"$(sed_escape "$user_name")\";|" user-config.nix
+        sed -i "s|email = \".*\";|email = \"$(sed_escape "$user_email")\";|" user-config.nix
         
         echo "✅ User configuration updated with:"
         echo "   Name: $user_name"
@@ -232,16 +237,29 @@ echo "📋 Nix version: $(nix --version)"
 # Enable flakes
 echo "🚀 Enabling Nix flakes..."
 mkdir -p ~/.config/nix
-echo "experimental-features = nix-command flakes" > ~/.config/nix/nix.conf
+# Append, never overwrite: `>` would wipe any other user-level nix settings
+# (substituters, access-tokens for private flakes, max-jobs). Same as install.sh.
+if ! grep -qs 'experimental-features' ~/.config/nix/nix.conf; then
+    echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
+fi
 
 # Apply Home Manager configuration with retry
 echo "🔧 Applying Home Manager configuration..."
 echo "📁 Backing up existing dotfiles..."
 
+# Select the flake output by HOST PROFILE, not by $USER: the username-keyed
+# outputs only exist for user/jaoun/codespace, so every other WSL account (the
+# common case) failed with "does not provide attribute homeConfigurations.<name>".
+# username/homeDirectory already reach the config through user-config.nix, which
+# detect_environment just rewrote — so the host profile is all that's needed.
+PROFILE="$(sed -nE 's/.*hostProfile *= *"([^"]+)".*/\1/p' user-config.nix 2>/dev/null | head -n1)"
+PROFILE="${PROFILE:-generic}"
+echo "🏷️  Host profile: $PROFILE"
+
 # Retry the home-manager installation
 # path:. (not plain .) so the gitignored user-config.nix is included in the
 # flake source — a git+file flake copies tracked files only.
-if retry nix --extra-experimental-features nix-command --extra-experimental-features flakes run home-manager/master -- switch --flake path:.#"$USER" -b backup; then
+if retry nix --extra-experimental-features nix-command --extra-experimental-features flakes run home-manager/master -- switch --flake path:.#"$PROFILE" -b backup; then
     echo "✅ Home Manager configuration applied successfully!"
 else
     echo "❌ Home Manager configuration failed"

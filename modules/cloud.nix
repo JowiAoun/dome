@@ -159,7 +159,11 @@ in
       # Kubectl completion
       if command -v kubectl >/dev/null 2>&1; then
         source <(kubectl completion zsh)
-        compdef __start_kubectl k
+        # `_kubectl`, not `__start_kubectl` — the latter is the name kubectl's
+        # BASH completion defines (used correctly in the bash block above); the
+        # zsh script only defines _kubectl, so the old line bound `k` to a
+        # nonexistent function and printed "command not found" on every TAB.
+        compdef _kubectl k
       fi
       
       # Helm completion

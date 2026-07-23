@@ -24,7 +24,10 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
       - name: Update flake.lock and open a PR
-        uses: DeterminateSystems/update-flake-lock@main
+        # Pinned to a commit SHA, not @main: this job runs unattended on a cron
+        # with contents:write + pull-requests:write, so a floating branch ref
+        # would execute whatever landed upstream since the last run.
+        uses: DeterminateSystems/update-flake-lock@834c491b2ece4de0bbd00d85214bb5e83b4da5c6  # v28
         with:
           pr-title: "chore(flake): update flake.lock"
           commit-msg: "chore(flake): update flake.lock"

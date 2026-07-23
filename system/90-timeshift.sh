@@ -7,7 +7,9 @@
 # and it was blocking the (idempotent) install by sitting at "0.00% complete".
 # The real rollback nets here are the GA fallback kernel, git history, and
 # home-manager generations. Enable on roomy machines / before a risky change:
-#   SNAPSHOT=1 sudo bash system/run.sh --host <profile>
+#   sudo bash system/run.sh --host <profile> --snapshot
+# (Not `SNAPSHOT=1 sudo ...`: sudo's default env_reset drops the variable before
+# this script sees it, so the snapshot would silently never happen.)
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./lib.sh

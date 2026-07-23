@@ -8,11 +8,11 @@ Here's my simple development environment that works in WSL, GitHub Codespaces, a
 > [docs/research/](docs/research/)). The moving parts:
 >
 > - `system/` — idempotent root-layer scripts (`sudo make system HOST=zenbook-duo`,
->   `DRY_RUN=1` to preview)
+>   add `DRY_RUN=1` as a make argument to preview)
 > - `duo/` — **zenduo** hardware tooling; `duo doctor` is the read-only probe used as
 >   the live-USB install gate
 > - `hosts/` + `flake.nix` — per-machine home-manager profiles
->   (`home-manager switch --flake .#generic` or `.#zenbook-duo`)
+>   (`home-manager switch --flake path:.#generic` or `path:.#zenbook-duo`)
 > - `install.sh` — one-command setup on a fresh Ubuntu machine
 
 ## Quick Start — pick your machine's path
@@ -55,8 +55,11 @@ The install runs, in order: **user-config.nix** environment re-detection, the
 are skipped on generic hosts), the official **Nix** installer, and
 **home-manager** for the chosen host. Re-run any time; every step is
 idempotent. Preview root-level changes with
-`DRY_RUN=1 sudo bash system/run.sh --host <profile>` (the `make system` alias
-works too, once `build-essential` is installed). Non-Ubuntu distros: only
+`sudo bash system/run.sh --host <profile> --dry-run` (or
+`sudo make system DRY_RUN=1`, once `build-essential` is installed). Use the flag
+rather than `DRY_RUN=1 sudo …`: sudo's default `env_reset` drops the variable
+before the script sees it, so that form would really apply the changes.
+Non-Ubuntu distros: only
 `bootstrap.sh` applies (the system layer refuses to run without `FORCE=1`).
 
 ### WSL / existing Linux

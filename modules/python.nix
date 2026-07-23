@@ -40,7 +40,13 @@ in
     home.sessionVariables = {
       # Derive the interpreter dir from the package so it never drifts (was a
       # hardcoded python3.11, but pkgs.python3 is 3.13 — the old path was dead).
-      PYTHONPATH = "$HOME/.local/${pkgs.python3.sitePackages}:$PYTHONPATH";
+      # Append the existing value only when there IS one: a bare ":$PYTHONPATH"
+      # leaves a trailing colon when it is unset (the normal case at login), and
+      # CPython reads an empty PYTHONPATH entry as the CURRENT DIRECTORY — so a
+      # stray requests.py in whatever directory you happen to be in would shadow
+      # the real module for every python process. Same idiom home.nix uses for
+      # LD_LIBRARY_PATH/PKG_CONFIG_PATH.
+      PYTHONPATH = "$HOME/.local/${pkgs.python3.sitePackages}\${PYTHONPATH:+:$PYTHONPATH}";
       PYENV_ROOT = "$HOME/.pyenv";
     };
 
@@ -87,14 +93,26 @@ in
 
     # Install the pyenv-virtualenv plugin (provides `pyenv virtualenv` and the
     # `virtualenv-init` used above), mirroring the node-build clone in node.nix.
+    # Honors DRY_RUN_CMD (a dry-run switch must not clone into $HOME) and never
+    # aborts the switch on a network failure — the activation script runs under
+    # `set -eu -o pipefail`, so an unguarded failed clone would kill every later
+    # activation entry and leave a half-applied generation. Same shape as
+    # ai.nix's installClaudeCode.
     home.activation.pyenvPlugins = lib.hm.dag.entryAfter ["writeBoundary"] ''
       PYENV_ROOT="$HOME/.pyenv"
       PLUGIN_DIR="$PYENV_ROOT/plugins/pyenv-virtualenv"
       if [ ! -d "$PLUGIN_DIR" ]; then
-        echo "Installing pyenv-virtualenv plugin for pyenv..."
-        mkdir -p "$PYENV_ROOT/plugins"
-        ${pkgs.git}/bin/git clone https://github.com/pyenv/pyenv-virtualenv.git "$PLUGIN_DIR"
-        echo "pyenv-virtualenv plugin installed"
+        if [ -n "''${DRY_RUN_CMD:-}" ]; then
+          echo "(dry run) would clone pyenv-virtualenv into $PLUGIN_DIR"
+        else
+          echo "Installing pyenv-virtualenv plugin for pyenv..."
+          mkdir -p "$PYENV_ROOT/plugins"
+          if ${pkgs.git}/bin/git clone https://github.com/pyenv/pyenv-virtualenv.git "$PLUGIN_DIR"; then
+            echo "pyenv-virtualenv plugin installed"
+          else
+            echo "⚠️ pyenv-virtualenv clone failed (network?) — re-run 'make home' later" >&2
+          fi
+        fi
       fi
     '';
   };
