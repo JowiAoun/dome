@@ -55,6 +55,9 @@ in
     # Apps this machine already has from apt/snap/flatpak — detected by
     # ./setup.sh --sync-apps-skip, so Nix never installs a second copy.
     apps.skip = userConfig.appsSkip or [ ];
+    # Brave from Brave's apt repo (system/78-brave.sh) instead of nixpkgs, so
+    # the browser keeps getting security updates between flake bumps.
+    apps.systemBrowser = userConfig.braveBrowser or false;
   };
 
   # Pass user info to modules

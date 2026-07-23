@@ -32,6 +32,9 @@ jobs:
           grep -q 'dockerEngine = true;' user-config.nix
           grep -q 'dockerDesktop = false;' user-config.nix
           grep -q 'claudeDesktop = true;' user-config.nix
+          # A browser must never be pinned to the flake: on by default so a
+          # fresh machine gets Brave from apt, which keeps updating afterwards.
+          grep -q 'braveBrowser = true;' user-config.nix
           # appsSkip must be a real (here empty) Nix list, never `appsSkip = ;`
           grep -q 'appsSkip = \[ \];' user-config.nix
           # An empty hostName means "leave the machine name alone" — a first run

@@ -203,25 +203,47 @@ let
   # `ids` are candidates rather than one known name: the file the .deb ships is
   # not something this module controls. If none of them match, the script falls
   # back to finding a system entry whose Exec runs `command`.
+  # The .desktop names Brave's .deb has shipped. Shared by the pin below and by
+  # set_default_browser, which resolves whichever one this machine actually has.
+  braveSystemIds = [ "brave-browser.desktop" "brave.desktop" "com.brave.Browser.desktop" ];
+
   systemPins = [
     {
       name = "claude-desktop";
       command = "claude-desktop";
       ids = [ "claude-desktop.desktop" "Claude.desktop" "com.anthropic.claude.desktop" "anthropic-claude.desktop" ];
     }
-  ];
+  ] ++ lib.optional cfg.systemBrowser {
+    # Brave from Brave's apt repo (system/78-brave.sh). Pinned through this
+    # list rather than desktopApps because Nix does not own the package —
+    # the whole point is that apt, not flake.lock, decides its version.
+    name = "brave";
+    command = "brave-browser";
+    ids = braveSystemIds;
+  };
 
   # Apps listed in modules.apps.skip are dropped entirely: no package, no
   # desktop entry, no pin, never the default browser. setup.sh fills this in
   # automatically for anything it finds already installed outside Nix
   # (./setup.sh --sync-apps-skip), and you can add names by hand.
-  knownNames = map (a: a.name) (desktopApps ++ [ vscodeApp ])
+  # lib.unique because with systemBrowser on, "brave" is both a desktopApps
+  # entry (dropped below) and a systemPins entry, and listing it twice in the
+  # warning would be noise.
+  knownNames = lib.unique (map (a: a.name) (desktopApps ++ [ vscodeApp ])
     ++ map (a: a.name) webAppDefs
-    ++ map (a: a.name) systemPins;
+    ++ map (a: a.name) systemPins);
   unknownSkips = lib.filter (n: !(lib.elem n knownNames)) cfg.skip;
+
+  # With Brave from apt, the nixpkgs copy is dropped entirely: two browsers
+  # would fight over the default handler and put two icons in the dash. Keyed
+  # off the `browser` flag rather than the name, so it holds for any browser.
+  installableApps =
+    if cfg.systemBrowser then lib.filter (a: !(a.browser or false)) desktopApps
+    else desktopApps;
+
   selected = lib.warnIf (unknownSkips != [ ])
     "modules.apps.skip: unknown app name(s) ${lib.concatStringsSep ", " unknownSkips} (known: ${lib.concatStringsSep ", " knownNames})"
-    (lib.filter (a: !(lib.elem a.name cfg.skip)) desktopApps);
+    (lib.filter (a: !(lib.elem a.name cfg.skip)) installableApps);
 
   # Anything named in modules.apps.extras. These are plain packages: they are
   # installed into the profile but get no patched desktop entry, so a GUI extra
@@ -285,11 +307,27 @@ let
   patched = map (app: app // { entryDirs = map (patchDesktop app) app.ids; }) selected;
 
   browserApp = lib.findFirst (a: a.browser) null patched;
+
+  # With Brave from apt the launcher belongs to the .deb, so its id is resolved
+  # at run time (see set_default_browser) instead of being named here.
   browserId = if browserApp == null then "" else builtins.head browserApp.ids;
-  browserName = if browserApp == null then "" else browserApp.name;
+
+  # Only ever used to ask "did the machine already have this from apt/snap?".
+  # The apt Brave is dome's own install, so it is deliberately NOT foreign.
+  browserName =
+    if cfg.systemBrowser then "brave"
+    else if browserApp == null then "" else browserApp.name;
+
   browserBin =
-    if browserApp == null then null
+    if cfg.systemBrowser then "/usr/bin/brave-browser"
+    else if browserApp == null then null
     else "${browserApp.package}/bin/${browserApp.package.meta.mainProgram or browserApp.name}";
+
+  # The app_id prefix Chromium builds is the basename of the binary it was
+  # STARTED as, not the app's friendly name: nixpkgs installs `brave`, the .deb
+  # installs `brave-browser`, and the window follows whichever launched it.
+  # Deriving it here keeps the web app icons matching under either install.
+  browserWmPrefix = if browserBin == null then "" else baseNameOf browserBin;
 
   # What $BROWSER points at — a wrapper, NOT the browser binary directly.
   #
@@ -338,7 +376,7 @@ let
       host = if parts == null then noScheme else builtins.elemAt parts 0;
       path = if parts == null then "/" else builtins.elemAt parts 1;
       appName = builtins.replaceStrings [ "/" ] [ "_" ] "${host}_${path}";
-    in app.wmClass or "${browserName}-${appName}-Default";
+    in app.wmClass or "${browserWmPrefix}-${appName}-Default";
 
   # One launcher per web app.
   #
@@ -531,6 +569,15 @@ let
     # ── 1. default browser ───────────────────────────────────────────────────
     set_default_browser() {
       local id="${browserId}" mimeapps type
+      ${lib.optionalString cfg.systemBrowser ''
+        # Brave came from apt, so the .desktop name is the .deb's choice.
+        # Resolve it the same way the system pins do.
+        id="$(system_desktop_id brave-browser ${lib.escapeShellArgs braveSystemIds} || true)"
+        if [ -z "$id" ]; then
+          warn "Brave (apt) is not installed yet, so the default browser was left alone"
+          return 0
+        fi
+      ''}
       [ -n "$id" ] || return 0
       if is_foreign ${lib.escapeShellArg browserName}; then return 0; fi
       mimeapps="''${XDG_CONFIG_HOME:-$HOME/.config}/mimeapps.list"

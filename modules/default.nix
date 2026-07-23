@@ -35,6 +35,24 @@
             already installed; entries added by hand are kept.
           '';
         };
+        systemBrowser = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          example = true;
+          description = ''
+            Brave comes from Brave's own apt repository (system/78-brave.sh)
+            rather than from nixpkgs. Wired from `braveBrowser` in
+            user-config.nix.
+
+            A browser is the one package that must not be pinned: flake.lock
+            freezes nixpkgs at its last bump, so a Nix Brave cannot get a
+            security update until someone runs `make update`.
+
+            With this on, the apps module installs no Brave package, pins the
+            apt one through systemPins, and points the web app launchers and
+            $BROWSER at /usr/bin/brave-browser.
+          '';
+        };
         extras = lib.mkOption {
           type = lib.types.listOf lib.types.str;
           default = [ ];

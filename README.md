@@ -306,7 +306,49 @@ layer reads them with `sed` rather than through Nix:
 dockerEngine = true;    # Docker Engine (CE)
 dockerDesktop = false;  # Docker Desktop GUI
 claudeDesktop = true;   # Claude desktop app (beta)
+braveBrowser = true;    # Brave from Brave's apt repo, not nixpkgs
 ```
+
+### Brave, and why it is not a Nix package
+
+`flake.lock` freezes nixpkgs at whatever commit it was last bumped to, so every
+Nix package here is exactly as old as that pin. For most tools that is a
+feature. For a browser it is a liability: this machine sat on Brave 143 — a
+Chromium seven months old — until sites began refusing it, and no amount of
+`make home` could have changed that. Only `make update` moves the pin, and it
+moves *everything* at once.
+
+So Brave comes from Brave's own signed apt repository instead
+(`system/78-brave.sh`), and updates with the rest of the system on
+`apt upgrade`. `braveBrowser = true;` (the default) turns it on, and the apps
+module reacts by installing no Nix Brave, pinning the apt one through
+`systemPins`, and pointing `$BROWSER` and the web app launchers at
+`/usr/bin/brave-browser`.
+
+The launchers adapt on their own: the Wayland `app_id` prefix is the basename
+of the binary Chromium was *started* as, so it derives from `browserBin` rather
+than being hardcoded — `brave-www.notion.so__-Default` under nixpkgs,
+`brave-browser-www.notion.so__-Default` under the .deb.
+
+Order matters when switching an existing machine over. The system layer must
+install Brave *before* home-manager drops the Nix copy:
+
+```bash
+sudo make system   # installs Brave from the apt repo
+make home          # drops the Nix copy, repoints the web apps
+```
+
+`./install.sh` already runs the two in that order.
+
+One caveat on the key pin. Anthropic documents Claude Desktop's fingerprint, so
+`75-claude-desktop.sh` verifies against a published value. Brave publishes no
+machine-readable fingerprint for its apt keyring — `brave.com/linux` points at
+`brave.com/signing-keys`, whose static HTML contains none of the three keys the
+keyring actually ships (checked). `78-brave.sh` therefore pins the fingerprint
+*set* it observed, cross-checked against the signature on the live
+`dists/stable/InRelease`. That is trust-on-first-use: it cannot prove the first
+fetch was honest, but it turns any later key swap into a loud failure rather
+than silent trust for every future upgrade.
 
 ### No icon flashing in the dash on copy/paste
 

@@ -13,13 +13,13 @@
 # Order: preflight (read-only) → Timeshift snapshot → base → kernel → GRUB,
 # then the duo-only scripts (40, 45, 50, 55) when the host profile is
 # zenbook-duo, then the host-independent extras (60 docker, 70 docker-desktop,
-# 75 claude-desktop, 80 nix-gpu, 85 apparmor-userns).
+# 75 claude-desktop, 78 brave, 80 nix-gpu, 85 apparmor-userns).
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./lib.sh
 
-usage_text() { echo "usage: run.sh [--host <profile>] [--dry-run] [--snapshot] [--docker-desktop] [--no-claude-desktop]"; }
+usage_text() { echo "usage: run.sh [--host <profile>] [--dry-run] [--snapshot] [--docker-desktop] [--no-claude-desktop] [--no-brave]"; }
 usage() { die "$(usage_text)"; }
 
 while [ $# -gt 0 ]; do
@@ -33,6 +33,8 @@ while [ $# -gt 0 ]; do
     --docker-desktop) DOCKER_DESKTOP=1; export DOCKER_DESKTOP; shift ;;
     --claude-desktop)    CLAUDE_DESKTOP=1; export CLAUDE_DESKTOP; shift ;;
     --no-claude-desktop) CLAUDE_DESKTOP=0; export CLAUDE_DESKTOP; shift ;;
+    --brave)             BRAVE_BROWSER=1; export BRAVE_BROWSER; shift ;;
+    --no-brave)          BRAVE_BROWSER=0; export BRAVE_BROWSER; shift ;;
     -h|--help)  usage ;;
     *) die "unknown argument: $1 ($(usage_text))" ;;
   esac
@@ -71,7 +73,7 @@ fi
 # Host-independent extras. Each one either honors a user-config.nix switch
 # (docker) or detects that it has nothing to do (GPU, AppArmor), and every one
 # of them logs why it is skipping — so they are safe to run unconditionally.
-for script in 60-docker.sh 70-docker-desktop.sh 75-claude-desktop.sh 80-nix-gpu.sh 85-apparmor-userns.sh; do
+for script in 60-docker.sh 70-docker-desktop.sh 75-claude-desktop.sh 78-brave.sh 80-nix-gpu.sh 85-apparmor-userns.sh; do
   log "── $script"
   bash "./$script"
 done

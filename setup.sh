@@ -138,9 +138,16 @@ app_from_nix() { # <name> — print where dome's own copy lives; 1 if not instal
 }
 
 detect_installed_apps() { # print one app name per line
-  local probe name
+  local probe name brave_is_ours=""
+  # With braveBrowser = true, /usr/bin/brave-browser is dome's OWN install from
+  # system/78-brave.sh, not a foreign copy. Recording it in appsSkip would drop
+  # its dash pin on the next run, so it is left out of the sweep entirely.
+  if [ "$(cfg_get braveBrowser)" = true ]; then brave_is_ours=1; fi
   for probe in "${APP_PROBES[@]}"; do
     name="${probe%%|*}"
+    if [ -n "$brave_is_ours" ] && [ "$name" = brave ]; then
+      continue
+    fi
     if app_installed_outside_nix "$name"; then
       echo "$name"
     fi
@@ -271,7 +278,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   # up its redirection first and truncates the file, so a $(cfg_get ...) inside
   # the heredoc body would read the now-empty file and every saved preference
   # would silently reset to the hard-coded default below on each re-run.
-  local git_branch git_editor pref_shell pref_editor docker_engine docker_desktop claude_desktop
+  local git_branch git_editor pref_shell pref_editor docker_engine docker_desktop claude_desktop brave_browser
   git_branch="$(cfg_get gitDefaultBranch)"
   git_editor="$(cfg_get gitEditor)"
   pref_shell="$(cfg_get preferredShell)"
@@ -281,6 +288,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   docker_engine="$(cfg_get dockerEngine)"
   docker_desktop="$(cfg_get dockerDesktop)"
   claude_desktop="$(cfg_get claudeDesktop)"
+  brave_browser="$(cfg_get braveBrowser)"
   # Carried through untouched. There is deliberately no prompt for this:
   # renaming a machine is a one-off, not something to be re-asked on every
   # re-run. Edit hostName in user-config.nix (or pass HOST_NAME=... for a
@@ -311,6 +319,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   dockerEngine = $docker_engine;
   dockerDesktop = $docker_desktop;
   claudeDesktop = $claude_desktop;
+  braveBrowser = $brave_browser;
 
   # Machine name (static + pretty + /etc/hosts). Empty = leave it alone.
   hostName = "$host_name";
@@ -346,6 +355,7 @@ EOF
   sed -i 's/dockerEngine = ;/dockerEngine = true;/' user-config.nix
   sed -i 's/dockerDesktop = ;/dockerDesktop = false;/' user-config.nix
   sed -i 's/claudeDesktop = ;/claudeDesktop = true;/' user-config.nix
+  sed -i 's/braveBrowser = ;/braveBrowser = true;/' user-config.nix
 }
 
 # ── non-interactive modes ────────────────────────────────────────────────────
