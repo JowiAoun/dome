@@ -25,6 +25,7 @@ ensure_pkg \
   curl \
   git \
   make \
+  openssh-client \
   unzip \
   timeshift
 

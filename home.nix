@@ -134,7 +134,12 @@ in
     nmap
     netcat
     gnupg
-    openssh
+    # NOT openssh: the Nix build has no GSSAPI support, so it warns on Ubuntu's
+    # system-wide config — `Unsupported option "gssapiauthentication"` from
+    # /etc/ssh/ssh_config line 53 — on every single ssh and git-over-ssh call.
+    # It also shadowed /usr/bin/ssh for no benefit; openssh-client ships with
+    # Ubuntu (10-apt-base.sh makes sure of it) and is the client the system's
+    # own config, agent socket and CA paths are written for.
   ];
 
   programs.home-manager.enable = true;
