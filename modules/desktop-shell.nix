@@ -73,6 +73,10 @@ let
   # category folder would swallow matching new apps automatically, which is the
   # opposite of "new apps wait at the end for me to sort".
   appFolders = [
+    { id = "development"; name = "Development"; apps = [
+        "bruno.desktop"
+        "code.desktop"
+      ]; }
     { id = "updaters"; name = "Updaters"; apps = [
         "update-manager.desktop"
         "firmware-updater_firmware-updater.desktop"
@@ -96,6 +100,7 @@ let
         "org.gnome.seahorse.Application.desktop"
       ]; }
     { id = "settings"; name = "Settings"; apps = [
+        "org.gnome.Settings.desktop"
         "nm-connection-editor.desktop"
         "gnome-language-selector.desktop"
         "org.freedesktop.IBus.Setup.desktop"
@@ -108,6 +113,9 @@ let
         "org.gnome.Evince.desktop"
         "org.gnome.eog.desktop"
         "org.gnome.clocks.desktop"
+        # Easy Effects (audio EQ/effects) has no better home than the general
+        # utilities bucket among these folders.
+        "com.github.wwmm.easyeffects.desktop"
         "info.desktop"
         "org.gnome.Terminal.desktop"
         "vim.desktop"
@@ -115,9 +123,10 @@ let
       ]; }
   ];
 
-  # Top-level grid order: the apps you launch, then the folders. Newly-installed
-  # apps are deliberately absent, so GNOME appends them after all of this.
-  topLevel = [
+  # Top-level grid order: folders FIRST (you asked for folders up top), then the
+  # apps you launch. Newly-installed apps are deliberately absent, so GNOME
+  # appends them after all of this — at the end of the grid.
+  topLevel = map (f: f.id) appFolders ++ [
     "brave-browser.desktop"
     "discord.desktop"
     "notion.desktop"
@@ -126,8 +135,6 @@ let
     "youtube-music.desktop"
     "com.anthropic.Claude.desktop"
     "com.mitchellh.ghostty.desktop"
-    "code.desktop"
-    "bruno.desktop"
     "drawio.desktop"
     "com.obsproject.Studio.desktop"
     "LocalSend.desktop"
@@ -136,10 +143,9 @@ let
     "curseforge.desktop"
     "warthunder-launcher.desktop"
     "org.gnome.Nautilus.desktop"
-    "org.gnome.Settings.desktop"
     "org.gnome.Calculator.desktop"
     "org.gnome.TextEditor.desktop"
-  ] ++ map (f: f.id) appFolders;
+  ];
 
   # Build the app-picker-layout GVariant by hand (its type is aa{sv} — an array
   # of pages, each a dict of item -> {'position': <n>}). One page is enough;
