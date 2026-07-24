@@ -170,6 +170,28 @@ in
     # input-feedback-sounds is exactly that beep — leaving event-sounds alone
     # keeps the rest of the desktop's notification sounds working.
     "org/gnome/desktop/sound".input-feedback-sounds = false;
+
+    # Dark mode out of the box, so a fresh machine comes up dark without a trip
+    # through Settings > Appearance.
+    #
+    #   color-scheme  the canonical switch: GNOME Shell and every libadwaita /
+    #                 GTK4 app read this. Portable — works on any GNOME, Yaru or
+    #                 not — so it is what actually guarantees "dark".
+    #   gtk-theme     the Ubuntu Yaru dark variant, for legacy GTK3 apps that
+    #                 follow the named theme rather than color-scheme. Yaru-* is
+    #                 Ubuntu-only; off Ubuntu the name just falls back to a
+    #                 default theme, no error.
+    #   icon-theme    Yaru's dark symbolic set, to match.
+    #
+    # These are Yaru's DEFAULT accent (no colour). If you pick a coloured accent
+    # in Settings, GNOME switches to Yaru-<accent>-dark and the next `make home`
+    # would pull it back here — update these two names to that variant, or drop
+    # them and keep only color-scheme, which is accent-independent.
+    "org/gnome/desktop/interface" = {
+      color-scheme = "prefer-dark";
+      gtk-theme = "Yaru-dark";
+      icon-theme = "Yaru-dark";
+    };
   };
 
   programs.vscode = {
