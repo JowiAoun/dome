@@ -475,6 +475,55 @@ keyring actually ships (checked). `78-brave.sh` therefore pins the fingerprint
 fetch was honest, but it turns any later key swap into a loud failure rather
 than silent trust for every future upgrade.
 
+### Reinstalling this machine
+
+Most of a rebuild is already free: the repo is on GitHub and `./install.sh`
+re-derives the rest. `migrate/` covers the narrow set of things it cannot —
+what lives only on this disk.
+
+```bash
+make preflight-wipe DEST=/media/$USER/STICK   # read-only: what would be lost
+make backup DEST=/media/$USER/STICK           # capture it, browsers closed
+# … wipe, install, first boot …
+bash /media/$USER/STICK/dome-backup/restore.sh
+```
+
+`--preflight-wipe` answers one question: *if this disk were erased in five
+minutes, what would be gone that no clone could bring back?* Hard failures are
+unrecoverable-after-the-fact (unpushed commits, a missing `user-config.nix`, a
+destination on the disk being erased); warnings merely cost time. What it cannot
+know — whether your only TOTP seed lives here — it names instead of pretending
+to check.
+
+`backup.sh` captures five things git cannot: `~/.ssh` and `~/.gnupg`, the
+gitignored `user-config.nix`, the login keyring, the browser profiles, and
+**`/etc/NetworkManager/system-connections`**. That last one is easy to forget
+and the most annoying to lose: it is root-owned, so a `$HOME` backup misses it,
+and without it you cannot get online on the fresh install to fetch anything
+else. It needs sudo; if sudo is unavailable the script says plainly that WiFi
+was not captured rather than failing silently.
+
+Three refusals, all for the same reason — a backup you cannot restore is worse
+than none, because you will not find out until it matters:
+
+- a destination on the same physical disk as `/`
+- Brave or Firefox running (their profiles are live SQLite; copying one open
+  yields a profile that looks fine and is corrupt)
+- any archive that does not read back after being written
+
+**`restore.sh` is copied onto the media by `backup.sh`.** That is deliberate,
+not duplication. The restore happens on a fresh install *before* the repo has
+been cloned — you need the SSH key to clone over SSH — so a restore tool that
+lived only in the repo could never run when it is needed. Splitting
+`user-config.nix` into its own archive is part of the same bootstrap: it means
+the home restore never creates `~/.dotfiles`, which would make `git clone`
+refuse a non-empty directory.
+
+Each restore phase is idempotent and logs why it is skipping, so re-running
+after installing a missing app picks up what could not apply the first time —
+Firefox's profile needs `~/snap/firefox` to exist, so `restore.sh --only
+firefox` after the first launch finishes the job.
+
 ### Disk encryption (LUKS)
 
 Nothing in dome can encrypt a disk. LUKS has to be created while the disk is

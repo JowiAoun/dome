@@ -7,6 +7,7 @@
 #   ./setup.sh --detect-apps         list apps the machine already has outside Nix
 #   ./setup.sh --sync-apps-skip      refresh appsSkip in an existing user-config.nix
 #   ./setup.sh --audit-apps          report duplicate apps / colliding .desktop ids
+#   ./setup.sh --preflight-wipe [d]  what an erase would destroy that git cannot restore
 #
 # What it does: detects the machine (distro, hardware model, WSL/Codespaces),
 # suggests a host profile, lets you toggle the language/tool modules, writes
@@ -253,6 +254,129 @@ audit_apps() {
   return 0
 }
 
+# ── pre-wipe gate check ──────────────────────────────────────────────────────
+# Read-only. Answers one question: if this disk were erased in the next five
+# minutes, what would be gone that no clone of the repo could bring back?
+#
+# Hard failures are things that are unrecoverable after the fact. Warnings are
+# things that merely cost you time. Everything it cannot know — whether your
+# 2FA lives only here, whether Windows still holds something — it names rather
+# than pretends to check.
+PF_FAIL=0
+PF_WARN=0
+pf_ok()   { printf '  \033[1;32mok  \033[0m %s\n' "$*"; }
+pf_warn() { printf '  \033[1;33mwarn\033[0m %s\n' "$*"; PF_WARN=$((PF_WARN + 1)); }
+pf_fail() { printf '  \033[1;31mFAIL\033[0m %s\n' "$*"; PF_FAIL=$((PF_FAIL + 1)); }
+
+preflight_wipe() { # [destination]
+  local dest="${1:-}"
+
+  echo "== dome pre-wipe check =="
+  echo
+
+  echo "git — anything not pushed dies with the disk"
+  if git rev-parse --git-dir >/dev/null 2>&1; then
+    local ahead remote_sha local_main
+    ahead="$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)"
+    if [ "$ahead" -gt 0 ]; then
+      pf_fail "$ahead commit(s) on HEAD are not on origin/main — push before wiping"
+      git log --oneline origin/main..HEAD 2>/dev/null | sed 's/^/         /'
+    else
+      pf_ok "no unpushed commits"
+    fi
+    # origin/main is only as fresh as the last fetch; ask the remote directly.
+    remote_sha="$(git ls-remote origin refs/heads/main 2>/dev/null | cut -f1)"
+    local_main="$(git rev-parse origin/main 2>/dev/null || true)"
+    if [ -n "$remote_sha" ] && [ -n "$local_main" ] && [ "$remote_sha" != "$local_main" ]; then
+      pf_warn "origin/main is stale locally — run 'git fetch' and re-check"
+    fi
+    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+      pf_warn "uncommitted changes in the working tree:"
+      git status --short 2>/dev/null | sed 's/^/         /'
+    else
+      pf_ok "working tree clean"
+    fi
+  else
+    pf_warn "not a git repository — skipping git checks"
+  fi
+  echo
+
+  echo "not in git — must be captured by the backup"
+  if [ -f user-config.nix ]; then
+    pf_ok "user-config.nix present (gitignored, so a clone cannot restore it)"
+  else
+    pf_fail "no user-config.nix — nothing to preserve, ./setup.sh will re-ask everything"
+  fi
+  local key found=0
+  for key in "$HOME"/.ssh/id_*; do
+    case "$key" in *.pub) continue ;; esac
+    [ -e "$key" ] && found=1
+  done
+  if [ "$found" = 1 ]; then pf_ok "SSH private key present in ~/.ssh"
+  else pf_warn "no SSH private key in ~/.ssh — you will need to re-key GitHub"; fi
+  if [ -d "$HOME/.local/share/keyrings" ]; then
+    pf_ok "login keyring present (decrypts Brave's saved passwords)"
+  else
+    pf_warn "no ~/.local/share/keyrings — saved browser passwords may not survive"
+  fi
+  if [ -d /etc/NetworkManager/system-connections ]; then
+    pf_ok "NetworkManager profiles exist — backup.sh captures them with sudo (your WiFi password)"
+  fi
+  echo
+
+  echo "backup blockers"
+  if pgrep -f 'brave|firefox' >/dev/null 2>&1; then
+    pf_fail "Brave and/or Firefox is running — backup.sh will refuse (live SQLite profiles)"
+  else
+    pf_ok "no browser running"
+  fi
+  echo
+
+  echo "destination"
+  local root_disk dest_disk
+  root_disk="$(lsblk -npo PKNAME "$(findmnt -no SOURCE / 2>/dev/null)" 2>/dev/null | head -n1)"
+  if [ -n "$dest" ]; then
+    if [ ! -d "$dest" ]; then
+      pf_fail "$dest does not exist"
+    elif [ ! -w "$dest" ]; then
+      pf_fail "$dest is not writable"
+    else
+      dest_disk="$(lsblk -npo PKNAME "$(findmnt -no SOURCE --target "$dest" 2>/dev/null)" 2>/dev/null | head -n1)"
+      if [ "$dest_disk" = "$root_disk" ]; then
+        pf_fail "$dest is on the same physical disk as / — it dies with the wipe"
+      else
+        pf_ok "$dest is on $dest_disk, separate from $root_disk ($(df -h --output=avail "$dest" | tail -n1 | tr -d ' ') free)"
+      fi
+    fi
+  else
+    pf_warn "no destination given — candidates on other disks:"
+    findmnt -rno TARGET,SOURCE -t vfat,exfat,ntfs,ext4 2>/dev/null | while read -r t s; do
+      case "$t" in /|/boot*|/snap*|/sys*|/proc*) continue ;; esac
+      [ "$(lsblk -npo PKNAME "$s" 2>/dev/null | head -n1)" = "$root_disk" ] && continue
+      printf '         %s (%s free)\n' "$t" "$(df -h --output=avail "$t" 2>/dev/null | tail -n1 | tr -d ' ')"
+    done
+  fi
+  echo
+
+  echo "what an erase would destroy on $root_disk"
+  lsblk -no NAME,SIZE,FSTYPE,LABEL "$root_disk" 2>/dev/null | sed 's/^/         /'
+  echo
+
+  echo "cannot be checked from here — confirm yourself"
+  echo "         · any 2FA / TOTP seed that exists only on this machine"
+  echo "         · anything still on the Windows partition (BitLocker: opaque, and final)"
+  echo "         · the LUKS passphrase you are about to choose is written down OFF this machine"
+  echo
+
+  printf '== %d failure(s), %d warning(s) ==\n' "$PF_FAIL" "$PF_WARN"
+  if [ "$PF_FAIL" -gt 0 ]; then
+    echo "Resolve the failures before wiping."
+    return 1
+  fi
+  echo "Clear to back up:  make backup DEST=<destination>"
+  return 0
+}
+
 merged_apps_skip() { # -> a complete Nix list literal for appsSkip
   # Union of what is already in user-config.nix and what is detected now, so a
   # name you added by hand is never dropped, and an app installed since the
@@ -414,6 +538,12 @@ fi
 if [ "${1:-}" = "--audit-apps" ]; then
   audit_apps
   exit 0
+fi
+
+# Read-only report: what would be lost if this disk were erased right now.
+if [ "${1:-}" = "--preflight-wipe" ]; then
+  preflight_wipe "${2:-}"
+  exit $?
 fi
 
 # Refresh only the appsSkip field of an existing user-config.nix. Run it after

@@ -99,6 +99,23 @@ fi
 
 log "root is encrypted — LUKS device: $LUKS_DEV"
 
+# Did the install actually claim the whole container? The guided installer
+# normally fills the volume group, but a leftover VFree means the disk you paid
+# for is sitting unused inside the encrypted container — invisible to df, and
+# claimable without reinstalling.
+if command -v vgs >/dev/null 2>&1; then
+  vg_free_kb="$(vgs --noheadings --nosuffix --units k -o vg_free 2>/dev/null | head -n1 | tr -d ' [:alpha:]' | cut -d. -f1)"
+  if [ -n "${vg_free_kb:-}" ] && [ "$vg_free_kb" -gt 10485760 ]; then   # >10 GiB
+    lv_path="$(findmnt -no SOURCE / 2>/dev/null)"
+    warn "$(( vg_free_kb / 1048576 )) GiB is unallocated in the volume group — / is smaller than the disk"
+    warn "  claim it without reinstalling:"
+    warn "    sudo lvextend -l +100%FREE $lv_path"
+    warn "    sudo resize2fs $lv_path"
+  else
+    log "volume group fully allocated"
+  fi
+fi
+
 SLOTS="$(luks_keyslot_count "$LUKS_DEV" || echo 0)"
 log "enabled keyslots: $SLOTS"
 

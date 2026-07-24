@@ -18,7 +18,7 @@ DRY_RUN ?=
 HOST_RESOLVED := $(if $(HOST),$(HOST),$(shell sed -nE 's/.*hostProfile *= *"([^"]+)".*/\1/p' user-config.nix 2>/dev/null | head -n1))
 HOST_RESOLVED := $(if $(HOST_RESOLVED),$(HOST_RESOLVED),generic)
 
-.PHONY: help setup system home doctor audit-apps update rollback
+.PHONY: help setup system home doctor audit-apps preflight-wipe backup restore update rollback
 
 help:
 	@echo "dome targets:"
@@ -29,6 +29,11 @@ help:
 	@echo "  make audit-apps                                  - report duplicate apps / colliding .desktop ids"
 	@echo "  make update                                      - git pull + nix flake update"
 	@echo "  make rollback                                    - undo a bad update (restore flake.lock + re-activate)"
+	@echo ""
+	@echo "  reinstalling this machine:"
+	@echo "  make preflight-wipe [DEST=/media/you/STICK]      - what an erase would destroy that git cannot restore"
+	@echo "  make backup DEST=/media/you/STICK                - capture it (run last, browsers closed)"
+	@echo "  restore runs from the media itself: bash <DEST>/dome-backup/restore.sh"
 
 setup:
 	bash setup.sh
@@ -47,6 +52,16 @@ doctor:
 # Read-only: which apps are installed from where, and which .desktop ids clash.
 audit-apps:
 	bash setup.sh --audit-apps
+
+# Read-only. DEST is optional: without it, candidate destinations are listed.
+preflight-wipe:
+	bash setup.sh --preflight-wipe "$(DEST)"
+
+# Deliberately no default for DEST. A backup silently written to the disk that
+# is about to be erased is worse than no backup, so the target must be named.
+backup:
+	@test -n "$(DEST)" || { echo "usage: make backup DEST=/media/$$USER/STICK" >&2; exit 2; }
+	bash migrate/backup.sh "$(DEST)"
 
 update:
 	git pull --ff-only
