@@ -40,6 +40,9 @@ jobs:
           # browser itself.
           grep -q 'braveManagedPolicy = true;' user-config.nix
           grep -q 'openWhispr = true;' user-config.nix
+          # GameMode is opt-in: it trades battery and fan noise for CPU governor
+          # headroom, which is only a good deal on a machine that plays games.
+          grep -q 'gameMode = false;' user-config.nix
           # appsSkip must be a real (here empty) Nix list, never `appsSkip = ;`
           grep -q 'appsSkip = \[ \];' user-config.nix
           # An empty hostName means "leave the machine name alone" — a first run

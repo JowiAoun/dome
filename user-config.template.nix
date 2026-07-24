@@ -33,6 +33,13 @@
   braveManagedPolicy = true;  # Brave's settings as enterprise policy in /etc (survives
                               # updates, cannot drift): Leo, Wallet, Rewards, VPN, News
                               # and Web Discovery off. See system/79-brave-policy.sh.
+  gameMode = false;       # Feral GameMode: /etc/gamemode.ini plus a CurseForge launcher
+                          # that starts the game through gamemoderun. Moves the CPU
+                          # governor to performance while a game is running (gamemode's
+                          # own iGPU logic backs off again when the integrated GPU is the
+                          # bottleneck, which it is on Meteor Lake).
+                          # TRADEOFF: more heat, more fan, less battery while playing.
+                          # See system/86-gamemode.sh and modules/gaming.nix.
   tpmAutoUnlock = false;  # Enroll the LUKS root into the TPM (Clevis, PCR 7) so boot
                           # skips the passphrase. Keeps the passphrase as a fallback.
                           # SECURITY TRADEOFF: anyone who powers the machine on reaches

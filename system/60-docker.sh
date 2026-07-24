@@ -99,25 +99,54 @@ ensure_pkg \
   docker-buildx-plugin \
   docker-compose-plugin
 
-# ── daemon ───────────────────────────────────────────────────────────────────
+# ── daemon: socket-activated, not started at boot ────────────────────────────
+# dockerd plus containerd idle at ~45 MB of RSS and two always-on daemons, on a
+# machine that mostly has no containers running. docker.service already declares
+# `Requires=docker.socket`, and docker.socket owns /run/docker.sock, so leaving
+# only the socket enabled means the first client connection starts the engine —
+# and until then it costs nothing. containerd follows: docker.service pulls it
+# in with `Wants=containerd.service`, so it does not need enabling separately.
+#
+# The trade-off, which is why this is spelled out rather than assumed: a
+# container with `restart: always` no longer comes back at boot on its own,
+# because nothing has touched the socket yet. Undo with
+#   sudo systemctl enable --now docker.service containerd.service
 if [ "$DRY_RUN" = 1 ]; then
-  log "DRY RUN: would enable and start docker.service"
+  log "DRY RUN: would enable docker.socket and disable docker.service/containerd.service"
 elif ! systemctl list-unit-files docker.service >/dev/null 2>&1 \
      || ! systemctl cat docker.service >/dev/null 2>&1; then
   warn "docker.service is not present — engine install did not complete"
 else
-  if systemctl is-enabled --quiet docker.service; then
-    log "docker.service already enabled"
+  if systemctl is-enabled --quiet docker.socket; then
+    log "docker.socket already enabled"
   else
-    log "enabling docker.service"
-    run systemctl enable docker.service
+    log "enabling docker.socket"
+    run systemctl enable docker.socket
   fi
-  if systemctl is-active --quiet docker.service; then
-    log "docker.service already running"
+  if systemctl is-active --quiet docker.socket; then
+    log "docker.socket already listening"
   else
-    log "starting docker.service"
-    run systemctl start docker.service
+    log "starting docker.socket"
+    run systemctl start docker.socket
   fi
+
+  # Stop the eager units from starting at boot. Deliberately `disable` and not
+  # `disable --now`: stopping a live dockerd would kill whatever containers are
+  # running right now, which a provisioning script has no business doing. They
+  # simply do not come back on the next boot unless something needs them.
+  #
+  # The state is matched as the literal string "enabled" rather than with
+  # `is-enabled --quiet`, which also succeeds for static/indirect/generated
+  # units — and `systemctl disable` on a static unit is a no-op that still
+  # prints a warning, which would make every run look like it changed something.
+  for unit in docker.service containerd.service; do
+    if [ "$(systemctl is-enabled "$unit" 2>/dev/null || true)" = enabled ]; then
+      log "disabling $unit — docker.socket starts it on demand"
+      run systemctl disable "$unit"
+    else
+      log "$unit is not enabled at boot — socket activation already in effect"
+    fi
+  done
 fi
 
 # ── group membership ─────────────────────────────────────────────────────────

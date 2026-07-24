@@ -10,6 +10,7 @@
     ./apps.nix
     ./terminal.nix
     ./desktop-shell.nix
+    ./gaming.nix
   ];
 
   options = {

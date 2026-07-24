@@ -404,7 +404,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   # up its redirection first and truncates the file, so a $(cfg_get ...) inside
   # the heredoc body would read the now-empty file and every saved preference
   # would silently reset to the hard-coded default below on each re-run.
-  local git_branch git_editor pref_shell pref_editor docker_engine docker_desktop claude_desktop brave_browser brave_policy open_whispr
+  local git_branch git_editor pref_shell pref_editor docker_engine docker_desktop claude_desktop brave_browser brave_policy open_whispr game_mode
   git_branch="$(cfg_get gitDefaultBranch)"
   git_editor="$(cfg_get gitEditor)"
   pref_shell="$(cfg_get preferredShell)"
@@ -417,6 +417,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   brave_browser="$(cfg_get braveBrowser)"
   brave_policy="$(cfg_get braveManagedPolicy)"
   open_whispr="$(cfg_get openWhispr)"
+  game_mode="$(cfg_get gameMode)"
   # Carried through untouched. There is deliberately no prompt for this:
   # renaming a machine is a one-off, not something to be re-asked on every
   # re-run. Edit hostName in user-config.nix (or pass HOST_NAME=... for a
@@ -454,6 +455,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   openWhispr = $open_whispr;
   braveBrowser = $brave_browser;
   braveManagedPolicy = $brave_policy;
+  gameMode = $game_mode;
 
   # Where system/95-luks.sh writes the LUKS header backup. Must be removable
   # media: a header backup stored on the encrypted disk cannot be used to
@@ -497,6 +499,7 @@ EOF
   sed -i 's/braveBrowser = ;/braveBrowser = true;/' user-config.nix
   sed -i 's/braveManagedPolicy = ;/braveManagedPolicy = true;/' user-config.nix
   sed -i 's/openWhispr = ;/openWhispr = true;/' user-config.nix
+  sed -i 's/gameMode = ;/gameMode = false;/' user-config.nix
 }
 
 # ── non-interactive modes ────────────────────────────────────────────────────

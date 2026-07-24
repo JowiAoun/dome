@@ -298,6 +298,109 @@ leaves the previous copy at `/etc/hosts.dome.bak`.
 Not to be confused with `hostProfile`, which selects `hosts/<name>/` — the
 per-machine *configuration* profile, nothing to do with the machine's name.
 
+### Memory, swap, and what happens when RAM runs out
+
+The machine has 15 GiB of RAM shared with an iGPU that has no VRAM of its own.
+Ubuntu's stock answer to filling that up is `systemd-oomd`, and its stock
+answer is wrong. From this machine's journal:
+
+```
+systemd-oomd: Killed …/user@1000.service/session.slice/org.gnome.Shell@wayland.service
+  due to memory pressure for /user.slice/…/user@1000.service
+  being 58.86% > 50.00% for > 20s with reclaim activity
+```
+
+On Wayland gnome-shell **is** the session, so killing it takes every open
+application with it and drops you at the login screen. It reads exactly like a
+crash. It was reproducible by playing a heavily modded Minecraft (8 GB Java
+heap, ~10 GB resident) with a browser open and then **alt-tabbing out** — which
+is the tell: `systemd-oomd` picks the descendant cgroup with the *highest
+pressure*, not the biggest one, and leaving a game makes the compositor
+allocate (overview, thumbnails, compositing resumes) at the exact moment
+nothing is free. The 10 GB game sits quiet and the compositor elects itself.
+
+`system/25-memory.sh` fixes this in four parts. It is unconditional — there is
+no switch, because it is a correctness fix rather than a preference.
+
+**Two swap tiers.** `/etc/systemd/zram-generator.conf` adds a zstd-compressed
+swap device in RAM at priority 100, sized `min(ram / 2, 8192)` MB. Anonymous
+pages compress about 3:1, so it holds several GB for a fraction of that in real
+memory, at RAM latency rather than a round trip through LUKS to NVMe. Behind it,
+`/swap.img` grows from 4 GB to **16 GB** as genuine overflow for pages cold
+enough that compressing them in RAM would be a waste of RAM.
+
+```
+NAME       TYPE       SIZE PRIO
+/dev/zram0 partition  7.5G  100   <- fills first, compressed, in RAM
+/swap.img  file        16G   -1   <- overflow, on the encrypted disk
+```
+
+**Reclaim tuning** in `/etc/sysctl.d/90-dome-memory.conf`, because the defaults
+assume swapping means a disk: `vm.swappiness=180`, `vm.page-cluster=0` (no
+pointless readahead out of RAM), `vm.watermark_boost_factor=0` (its reclaim
+bursts are latency spikes) and `vm.watermark_scale_factor=125` (~190 MB of
+runway ahead of an allocation instead of ~15 MB). `vm.max_map_count` is left
+alone: Ubuntu already defaults it to 1048576.
+
+**A ceiling on apps, and a floor under the desktop.**
+`/etc/systemd/user/app.slice.d/` sets `MemoryHigh=12G` on `app.slice`, which is
+where gnome-shell puts everything you launch. It is a *throttle*, not a limit:
+past 12 GB the kernel reclaims hard from inside `app.slice` — into zram —
+instead of taking pages from the session. Nothing is killed; a game that wants
+more just gets slower. It also fixes oomd's aim for free, because the pressure
+now shows up on an app rather than on the compositor.
+
+**And oomd can no longer choose the desktop.** Ubuntu's 50% pressure limit is
+raised to 75% (`/etc/systemd/system/user@.service.d/`), and gnome-shell is
+marked `ManagedOOMPreference=omit` (`/etc/systemd/user/org.gnome.Shell@*.service.d/`),
+which removes it from candidate selection entirely.
+
+Check the result:
+
+```bash
+swapon --show      # zram0 at prio 100, /swap.img at 16G
+zramctl            # ALGORITHM zstd, plus the live compression ratio
+oomctl             # user@1000.service should read "Memory Pressure Limit: 75.00%"
+systemctl --user show app.slice -p MemoryHigh          # 12G
+journalctl -u systemd-oomd | grep Killed               # should stay empty
+```
+
+The one number worth tuning is `MemoryHigh`. If games feel throttled, either
+raise it in `system/25-memory.sh` or close the browser first — a 10 GB game
+plus ~4 GB of browser and chat genuinely does not fit under 12 GB, and the
+throttle is what stops that from taking the session down with it.
+
+### Games (GameMode)
+
+Off by default. `gameMode = true;` in `user-config.nix` turns on both halves:
+
+- `system/86-gamemode.sh` writes `/etc/gamemode.ini`. Ubuntu's `gamemode`
+  package ships no config at all, so every setting is otherwise a compiled-in
+  default. The important ones here are `igpu_desiredgov` / `igpu_power_threshold`:
+  this machine's CPU and Arc graphics share **one power budget**, so pinning the
+  cores to `performance` takes watts away from the GPU that is actually the
+  bottleneck. GameMode backs the governor off again once the iGPU is doing the
+  work, which is the correct behaviour on an integrated part.
+- `modules/gaming.nix` replaces the CurseForge launcher with one that starts it
+  through `gamemoderun`. GameMode does nothing until a process asks for it, and
+  nothing on a stock Ubuntu ever does — so an installed-but-unwired `gamemode`
+  (which is what you get by default) never actually runs.
+
+`gamemoderun` works by setting `LD_PRELOAD=libgamemodeauto.so.0`, which children
+inherit, so wrapping the launcher reaches the game's JVM. `[filter] whitelist=java`
+in the config is what stops the Electron launcher itself from counting — without
+it, leaving the modpack browser open would hold the governor at `performance`
+all day. Add another game by adding its binary name to that list.
+
+```bash
+sudo bash system/run.sh --gamemode   # or --no-gamemode, for a single run
+gamemodelist                         # while a game is running
+cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+```
+
+The trade is heat, fan noise and battery while a game runs. That is why it is
+opt-in.
+
 ### Docker
 
 `docker` is **not** a Nix package here: the client is useless without a
@@ -305,7 +408,7 @@ root-owned daemon, and nixpkgs cannot give you a systemd unit, a socket, or the
 `docker` group. So Docker Engine comes from the system layer instead —
 `system/60-docker.sh` adds Docker's official apt repository and installs
 `docker-ce`, `docker-ce-cli`, `containerd.io` and the buildx/compose plugins,
-enables `docker.service`, and adds you to the `docker` group (root-equivalent,
+enables `docker.socket`, and adds you to the `docker` group (root-equivalent,
 by design — log out and back in for it to apply):
 
 ```bash
@@ -315,6 +418,21 @@ docker run --rm hello-world # after a re-login
 
 The user layer keeps `docker-compose` (a standalone binary, works against any
 reachable daemon) and adds `lazydocker` as a TUI.
+
+**The daemon is socket-activated, not started at boot.** `dockerd` plus
+`containerd` sit on ~45 MB and two always-on services for a machine that usually
+has no containers running, so only `docker.socket` is enabled; the first client
+connection to `/run/docker.sock` starts the engine. Nothing about using Docker
+changes except that your first command after a boot takes about a second longer.
+
+The one real consequence: a container with `restart: always` or
+`unless-stopped` **no longer comes back by itself after a reboot**, because
+nothing has touched the socket yet. If you want a container running from boot,
+put the eager units back:
+
+```bash
+sudo systemctl enable --now docker.service containerd.service
+```
 
 **Docker Desktop** is off by default — it is a ~450 MB download that runs its
 own KVM virtual machine under a separate `docker context` (`desktop-linux`),
@@ -737,6 +855,7 @@ dome/
 │   ├── java.nix           # Java development
 │   ├── ai.nix             # AI tools (Claude Code, skills CLI, keybindings)
 │   ├── terminal.nix       # Ghostty + default-terminal wiring (not under apps)
+│   ├── gaming.nix         # GameMode-wrapped game launchers (see system/86-)
 │   ├── cloud.nix          # Terraform/Pulumi/cloud CLIs/k8s
 │   └── zenbook-duo/       # Duo-only home-manager wiring
 ├── system/                # Idempotent root-layer scripts (Ubuntu)

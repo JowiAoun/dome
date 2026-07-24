@@ -25,7 +25,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./lib.sh
 
-usage_text() { echo "usage: run.sh [--host <profile>] [--dry-run] [--snapshot] [--docker-desktop] [--no-claude-desktop] [--no-brave] [--no-brave-policy] [--no-openwhispr]"; }
+usage_text() { echo "usage: run.sh [--host <profile>] [--dry-run] [--snapshot] [--docker-desktop] [--no-claude-desktop] [--no-brave] [--no-brave-policy] [--no-openwhispr] [--gamemode|--no-gamemode]"; }
 usage() { die "$(usage_text)"; }
 
 while [ $# -gt 0 ]; do
@@ -45,6 +45,8 @@ while [ $# -gt 0 ]; do
     --no-brave-policy)   BRAVE_POLICY=0; export BRAVE_POLICY; shift ;;
     --openwhispr)        OPENWHISPR=1; export OPENWHISPR; shift ;;
     --no-openwhispr)     OPENWHISPR=0; export OPENWHISPR; shift ;;
+    --gamemode)          GAME_MODE=1; export GAME_MODE; shift ;;
+    --no-gamemode)       GAME_MODE=0; export GAME_MODE; shift ;;
     -h|--help)  usage ;;
     *) die "unknown argument: $1 ($(usage_text))" ;;
   esac
@@ -66,7 +68,7 @@ bash ./00-preflight.sh
 log "── 90-timeshift.sh (pre-change snapshot)"
 bash ./90-timeshift.sh
 
-for script in 05-hostname.sh 10-apt-base.sh 20-kernel.sh 30-grub-params.sh; do
+for script in 05-hostname.sh 10-apt-base.sh 20-kernel.sh 25-memory.sh 30-grub-params.sh; do
   log "── $script"
   bash "./$script"
 done
@@ -83,7 +85,7 @@ fi
 # Host-independent extras. Each one either honors a user-config.nix switch
 # (docker) or detects that it has nothing to do (GPU, AppArmor), and every one
 # of them logs why it is skipping — so they are safe to run unconditionally.
-for script in 60-docker.sh 70-docker-desktop.sh 75-claude-desktop.sh 76-openwhispr.sh 78-brave.sh 79-brave-policy.sh 80-nix-gpu.sh 85-apparmor-userns.sh 96-tpm-unlock.sh 95-luks.sh; do
+for script in 60-docker.sh 70-docker-desktop.sh 75-claude-desktop.sh 76-openwhispr.sh 78-brave.sh 79-brave-policy.sh 80-nix-gpu.sh 85-apparmor-userns.sh 86-gamemode.sh 96-tpm-unlock.sh 95-luks.sh; do
   log "── $script"
   bash "./$script"
 done
