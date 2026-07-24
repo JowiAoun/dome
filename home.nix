@@ -171,28 +171,38 @@ in
     # keeps the rest of the desktop's notification sounds working.
     "org/gnome/desktop/sound".input-feedback-sounds = false;
 
-    # Dark mode out of the box, so a fresh machine comes up dark without a trip
-    # through Settings > Appearance.
-    #
-    #   color-scheme  the canonical switch: GNOME Shell and every libadwaita /
-    #                 GTK4 app read this. Portable — works on any GNOME, Yaru or
-    #                 not — so it is what actually guarantees "dark".
-    #   gtk-theme     the Ubuntu Yaru dark variant, for legacy GTK3 apps that
-    #                 follow the named theme rather than color-scheme. Yaru-* is
-    #                 Ubuntu-only; off Ubuntu the name just falls back to a
-    #                 default theme, no error.
-    #   icon-theme    Yaru's dark symbolic set, to match.
-    #
-    # These are Yaru's DEFAULT accent (no colour). If you pick a coloured accent
-    # in Settings, GNOME switches to Yaru-<accent>-dark and the next `make home`
-    # would pull it back here — update these two names to that variant, or drop
-    # them and keep only color-scheme, which is accent-independent.
-    "org/gnome/desktop/interface" = {
-      color-scheme = "prefer-dark";
-      gtk-theme = "Yaru-dark";
-      icon-theme = "Yaru-dark";
-    };
+    # Dark mode is deliberately NOT set here: an entry in dconf.settings is
+    # PINNED — home-manager rewrites it on every `make home`, so a later switch
+    # to light would be undone at the next activation. It is seeded once instead;
+    # see home.activation.seedDarkMode below.
   };
+
+  # Seed GNOME dark mode ONCE, at first setup — not a pinned dconf.settings entry.
+  #
+  # It writes the dark keys only when the desktop has never expressed an
+  # appearance preference (color-scheme still at GNOME's 'default', i.e. unset).
+  # The instant you have chosen dark OR light yourself, color-scheme is no longer
+  # 'default', so this never runs again and never overrides your choice — which
+  # is the whole point of a seed versus a pin. A machine already set up (this one)
+  # is left exactly as-is.
+  #
+  # color-scheme is the portable switch (Shell + libadwaita/GTK4); the Yaru-dark
+  # gtk/icon themes dress legacy GTK3 apps on Ubuntu and fall back harmlessly
+  # elsewhere. dconf writes straight to the database GNOME reads — the same
+  # ${pkgs.dconf}/bin/dconf home-manager's own dconf.settings uses. Skipped when
+  # there is no session bus (headless/first-boot install); it then seeds on the
+  # first `make home` run inside the GNOME session.
+  home.activation.seedDarkMode = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    if [ -n "''${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+      _dconf=${pkgs.dconf}/bin/dconf
+      _cur="$("$_dconf" read /org/gnome/desktop/interface/color-scheme 2>/dev/null || true)"
+      if [ -z "$_cur" ] || [ "$_cur" = "'default'" ]; then
+        run "$_dconf" write /org/gnome/desktop/interface/color-scheme "'prefer-dark'"
+        run "$_dconf" write /org/gnome/desktop/interface/gtk-theme    "'Yaru-dark'"
+        run "$_dconf" write /org/gnome/desktop/interface/icon-theme   "'Yaru-dark'"
+      fi
+    fi
+  '';
 
   programs.vscode = {
     # Off when VS Code is already installed from apt/snap/flatpak (detected by
