@@ -63,7 +63,8 @@ read -r -d '' POLICY_BODY <<'EOF' || true
   "BraveVPNDisabled": true,
   "BraveNewsDisabled": true,
   "BraveTalkDisabled": true,
-  "BraveWebDiscoveryEnabled": false
+  "BraveWebDiscoveryEnabled": false,
+  "HighEfficiencyModeEnabled": true
 }
 EOF
 
@@ -87,6 +88,16 @@ EOF
 #                                 search/browsing data to build Brave's index.
 #                                 Off by default already; pinned so it cannot be
 #                                 switched on by a prompt.
+#   HighEfficiencyModeEnabled: true
+#                                 Memory Saver (brave://settings/performance):
+#                                 discards inactive background tabs to reclaim
+#                                 RAM and reloads them on return. This is one of
+#                                 Brave's own policy keys (it ships in the
+#                                 BraveSoftware.Policies.Brave ADMX template), so
+#                                 brave://policy recognises it. The savings level
+#                                 is left at Brave's default (it would be tuned
+#                                 with MemorySaverModeSavings, which only applies
+#                                 once this is on).
 #
 # Adding another is one line in POLICY_BODY above, after checking the spelling
 # with the strings command in the header.
@@ -137,7 +148,7 @@ if [ -f "$POLICY_FILE" ] && [ "$(cat "$POLICY_FILE")" = "$POLICY_BODY" ]; then
 fi
 
 if [ "$DRY_RUN" = 1 ]; then
-  log "DRY RUN: would write $POLICY_FILE (Leo, Wallet, Rewards, VPN, News, Talk, Web Discovery off)"
+  log "DRY RUN: would write $POLICY_FILE (Leo, Wallet, Rewards, VPN, News, Talk, Web Discovery off; Memory Saver on)"
   mark_change
   exit 0
 fi
