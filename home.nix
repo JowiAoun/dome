@@ -58,6 +58,15 @@ in
     # Brave from Brave's apt repo (system/78-brave.sh) instead of nixpkgs, so
     # the browser keeps getting security updates between flake bumps.
     apps.systemBrowser = userConfig.braveBrowser or false;
+
+    # Ghostty. Deliberately NOT tied to `modules.apps`: that switch is for the
+    # optional desktop-app bundle, and the terminal is the thing everything else
+    # in this repo runs inside — including Claude Code, whose Shift+Enter needs a
+    # terminal that can encode a modified Enter at all (modules/terminal.nix has
+    # the measurements). So it follows only the "is there a desktop here?"
+    # question: no on Codespaces, which is a browser tab, and no on WSL, where
+    # the terminal belongs to Windows.
+    terminal.enable = !isCodespaces && !isWSL;
   };
 
   # Pass user info to modules

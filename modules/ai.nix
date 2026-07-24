@@ -153,6 +153,33 @@ in
 
     # Configuration files for AI tools
     home.file = {
+      # Claude Code's key map. Only the bindings that differ from the defaults
+      # belong here — the file is merged over them, not a replacement, so
+      # everything unlisted keeps working (Ctrl+J still inserts a newline).
+      #
+      # shift+enter -> chat:newline is why modules/terminal.nix exists. In GNOME
+      # Terminal it could never fire: VTE 0.76 encodes Shift+Enter and Enter
+      # identically, as a bare CR, so no application can distinguish them. In
+      # Ghostty the Kitty keyboard protocol sends CSI 13;2u and Claude Code
+      # decodes it — its own /terminal-setup names the same short list of
+      # terminals that "support Shift+Enter natively" (iTerm2, WezTerm, Ghostty,
+      # Kitty, Warp, Windows Terminal).
+      #
+      # Managed as a symlink into the store, so the file is read-only: Claude
+      # Code reads keybindings.json and never writes it. Its settings.json is
+      # deliberately NOT managed here — that one the app rewrites itself
+      # (model, effort, /config), and a read-only symlink would break it.
+      ".claude/keybindings.json".text = builtins.toJSON {
+        "$schema" = "https://www.schemastore.org/claude-code-keybindings.json";
+        "$docs" = "https://code.claude.com/docs/en/keybindings";
+        bindings = [
+          {
+            context = "Chat";
+            bindings = { "shift+enter" = "chat:newline"; };
+          }
+        ];
+      };
+
       # AI helper: install/refresh Claude Code (latest) and Gemini (npm).
       ".local/bin/ai-setup" = {
         executable = true;
@@ -176,6 +203,18 @@ in
             echo "📦 Installing Gemini CLI..."
             npm install -g @google/gemini-cli@latest
           fi
+
+          # skills (vercel-labs) — always to the latest, unlike the activation
+          # hook, which only installs it when missing. This is the command to
+          # run when a newer release is wanted.
+          if command -v npm >/dev/null 2>&1; then
+            echo "📦 Installing/refreshing the skills CLI..."
+            npm install -g skills@latest \
+              && echo "🔧 skills ready — $(skills --version 2>/dev/null || echo installed)" \
+              || echo "⚠️  skills install failed; retry: npm install -g skills@latest"
+          else
+            echo "⚠️  npm not found — set modules.node = true; to get the skills CLI"
+          fi
         '';
       };
 
@@ -190,6 +229,27 @@ in
         - Installed from the official installer (https://claude.ai/install.sh) so
           you always get the newest release; the binary then self-updates
         - Reinstall or repair anytime with: `ai-setup`
+
+        ## Skills CLI (vercel-labs/skills)
+        - The open agent-skills ecosystem: reusable instruction sets that plug
+          into Claude Code, Cursor, OpenCode and ~70 other agents
+        - Installed globally, so it is `skills ...` rather than `npx skills ...`
+          — no re-download on every invocation, and it works offline
+        - `skills find` browse/search, `skills add <source>` install,
+          `skills ls`, `skills update`, `skills rm`, `skills init` (new SKILL.md)
+        - Scope: project (`./.claude/skills/`) by default, `-g` for
+          `~/.claude/skills/` — so a skill added with `-g` is available to Claude
+          Code in every repo on this machine
+        - Update: run `ai-setup`, or `npm install -g skills@latest`
+        - Telemetry is on by default; `DISABLE_TELEMETRY=1` or the cross-tool
+          `DO_NOT_TRACK=1` turns it off
+
+        ## Claude Code keybindings
+        - `~/.claude/keybindings.json` is managed by modules/ai.nix
+        - Shift+Enter inserts a newline (Ctrl+J still does too)
+        - It needs a terminal that can encode a modified Enter — that is what
+          Ghostty is for; GNOME Terminal cannot, and there Ctrl+J is the only
+          newline key that works
 
         ## Gemini CLI
         - Interactive AI development assistant: `gemini` (alias: `g`)
@@ -231,5 +291,44 @@ in
         fi
       fi
     '';
+
+    # `skills` — the vercel-labs agent-skills CLI.
+    #
+    # Upstream's README documents `npx skills add …` and offers no global
+    # install, but the published package declares `bin: { skills, add-skill }`,
+    # so `npm install -g skills` yields exactly the same CLI as a real command:
+    # no package resolution and download on every invocation, it works offline,
+    # and `skills` is a name that tab-completes.
+    #
+    # Installed only when missing, like Claude Code above — `ai-setup` is what
+    # pulls a newer one. It moves fast (1.5.20 shipped the day before this was
+    # written), so pinning a version here would be wrong within a week.
+    #
+    # Rides on modules.node because it IS an npm package: its engines field asks
+    # for Node >= 22.20.0 and node.nix installs nodejs_22. With the Node module
+    # off there is no npm to install it with, and referencing one here would
+    # drag a second Node into the closure of machines that asked for neither.
+    home.activation.installSkillsCli = lib.mkIf config.modules.node.enable (
+      lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+        # AFTER linkGeneration, not writeBoundary: ~/.npmrc — which is what
+        # points npm's global prefix at ~/.npm-global — is a linked file, and
+        # before that step npm would fall back to the profile in the Nix store
+        # and fail on a read-only filesystem. --prefix repeats it explicitly so
+        # this keeps working even if that file moves.
+        export PATH="${lib.makeBinPath [ pkgs.nodejs_22 pkgs.coreutils ]}:$PATH"
+        if [ ! -x "$HOME/.npm-global/bin/skills" ]; then
+          if [ -n "''${DRY_RUN_CMD:-}" ]; then
+            echo "(dry run) would install the skills CLI (npm install -g skills)"
+          else
+            echo "📦 Installing the skills CLI (vercel-labs)…"
+            if npm install -g --prefix "$HOME/.npm-global" skills@latest >/dev/null 2>&1; then
+              echo "✅ skills installed to ~/.npm-global/bin (on PATH via the shell config) — try 'skills find'"
+            else
+              echo "⚠️ skills install did not complete (network?). Re-run later: npm install -g skills@latest" >&2
+            fi
+          fi
+        fi
+      ''
+    );
   };
 }

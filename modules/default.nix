@@ -8,6 +8,7 @@
     ./ai.nix
     ./cloud.nix
     ./apps.nix
+    ./terminal.nix
     ./desktop-shell.nix
   ];
 
@@ -18,6 +19,37 @@
       java.enable = lib.mkEnableOption "Java development environment";
       ai.enable = lib.mkEnableOption "AI development tools (Claude, Ollama, Copilot, etc.)";
       cloud.enable = lib.mkEnableOption "Cloud development tools (Terraform, Pulumi, AWS CLI, etc.)";
+
+      # Deliberately NOT under `apps`. The terminal is what every other tool in
+      # this repo runs inside, so it must not ride on the optional desktop-apps
+      # bundle — modules/terminal.nix's header explains the reasoning in full.
+      terminal = {
+        enable = lib.mkEnableOption "Ghostty terminal emulator and its desktop integration";
+        setDefault = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          example = false;
+          description = ''
+            Make Ghostty this session's default terminal, by pointing
+            `org.gnome.desktop.default-applications.terminal` at it. That is the
+            key gnome-settings-daemon resolves Ctrl+Alt+T through, and the one
+            Nautilus's "Open in Terminal" reads, so one setting covers both.
+
+            Off leaves the desktop opening GNOME Terminal; Ghostty is still
+            installed, pinned to the dash and in the app grid.
+          '';
+        };
+        desktopId = lib.mkOption {
+          type = lib.types.str;
+          default = "com.mitchellh.ghostty.desktop";
+          description = ''
+            The .desktop file Ghostty ships, read off the built package rather
+            than guessed. Single source of truth for the two modules that need
+            it: terminal.nix installs the entry under this name, apps.nix pins
+            that name to the GNOME dash.
+          '';
+        };
+      };
 
       apps = {
         enable = lib.mkEnableOption "Desktop applications (Brave, Discord, draw.io) and their desktop integration";

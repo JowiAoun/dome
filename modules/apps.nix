@@ -420,7 +420,15 @@ let
   # provides that app itself.
   pinPairs =
     map (a: "${a.name}:${builtins.head a.ids}") (lib.filter (a: a.pin) patched)
-    ++ map (a: "${a.name}:${a.id}") (lib.filter (a: a.pin) webApps);
+    ++ map (a: "${a.name}:${a.id}") (lib.filter (a: a.pin) webApps)
+    # Ghostty belongs to modules/terminal.nix — it installs the package and the
+    # .desktop entry, because a terminal must not depend on the optional desktop
+    # apps bundle. Only the dash pin lives here, since this is where the GNOME
+    # favourites are merged; with `apps` off the terminal is still installed and
+    # in the app grid, just not pinned. lib.optional is lazy, so desktopId is
+    # never read when the terminal module is disabled.
+    ++ lib.optional config.modules.terminal.enable
+         "ghostty:${config.modules.terminal.desktopId}";
 
   # "<command>:<candidate ids…>" for the apt-installed apps above. Resolved at
   # run time, because whether they exist depends on the root layer, not Nix.
