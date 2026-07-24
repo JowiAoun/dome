@@ -6,7 +6,11 @@
 # until somebody runs `make update`. This machine sat on Brave 143 — a Chromium
 # seven months old — for exactly that reason, until sites started refusing it.
 # A browser is the one package that must never be pinned, so it lives in the
-# root layer and updates with the rest of the system on `apt upgrade`.
+# root layer, and every `sudo make system` upgrades it to the newest build Brave
+# has published (see the upgrade step at the bottom) rather than merely leaving
+# it eligible for an `apt upgrade` nobody runs.
+#
+# Its settings are configured separately, by 79-brave-policy.sh.
 #
 # The apps module notices (modules.apps.systemBrowser, wired from braveBrowser)
 # and then installs no Nix Brave, pins this one, and points the web app
@@ -70,16 +74,16 @@ case "$ARCH" in
     ;;
 esac
 
-# Already installed? Nothing to do — apt upgrade keeps it current from here.
-# Still make sure the repository is registered, so a copy installed by hand
-# from a downloaded .deb starts receiving updates.
+# Already installed? Then this run is an UPGRADE, not a no-op. Registering the
+# repository is necessary but not sufficient: nothing on this machine runs
+# `apt upgrade` on a schedule, so "it will update with apt" quietly meant
+# "it will update the next time somebody remembers to". That is how a browser
+# gets seven versions behind. The repository setup below is idempotent and
+# costs nothing, so it runs either way — that is also what adopts a copy
+# installed by hand from a downloaded .deb — and the run ends in the upgrade
+# step at the bottom.
 already=0
 pkg_installed brave-browser && already=1
-
-if [ "$already" = 1 ] && [ -f "$KEY_PATH" ] && [ -f "$LIST_PATH" ]; then
-  log "Brave already installed and its apt repository is registered"
-  exit 0
-fi
 
 avail_kb="$(df --output=avail / | tail -n1 | tr -d ' ')"
 if [ "$already" != 1 ] && [ "${avail_kb:-0}" -lt 2097152 ]; then
@@ -89,7 +93,11 @@ if [ "$already" != 1 ] && [ "${avail_kb:-0}" -lt 2097152 ]; then
 fi
 
 if [ "$DRY_RUN" = 1 ]; then
-  log "DRY RUN: would install the signing key, register $REPO_URI and apt-get install brave-browser"
+  if [ "$already" = 1 ]; then
+    log "DRY RUN: would refresh $REPO_URI and upgrade brave-browser to the newest published build"
+  else
+    log "DRY RUN: would install the signing key, register $REPO_URI and apt-get install brave-browser"
+  fi
   mark_change
   exit 0
 fi
@@ -175,15 +183,55 @@ else
 fi
 
 # ── package ──────────────────────────────────────────────────────────────────
+brave_version() { dpkg-query -W -f='${Version}' brave-browser 2>/dev/null || true; }
+
+# Refresh THIS repository's index and nothing else, so "always the latest" holds
+# however the script was entered — including `sudo bash system/78-brave.sh` on
+# its own, which never reaches 10-apt-base.sh's apt-get update.
+#
+# A plain `apt-get update` would re-fetch every repository on the machine (tens
+# of seconds on a cold cache) to answer a question about one of them. Pointing
+# sourceparts at a directory holding nothing but Brave's .sources restricts it
+# to the one index that matters, which takes about a second. List-Cleanup=0 is
+# not optional: without it apt sees the other repositories missing from this
+# restricted view, decides their cached lists are orphaned, and deletes them —
+# so the next unrelated `apt install` would have to re-download everything.
+refresh_brave_index() {
+  local dir rc=0
+  dir="$(mktemp -d)"
+  cp "$LIST_PATH" "$dir/" || { rm -rf "$dir"; return 1; }
+  apt-get update \
+    -o Dir::Etc::sourcelist=/dev/null \
+    -o Dir::Etc::sourceparts="$dir" \
+    -o APT::Get::List-Cleanup=0 >/dev/null 2>&1 || rc=$?
+  rm -rf "$dir"
+  return "$rc"
+}
+
 if [ "$already" = 1 ]; then
-  log "Brave already installed — repository registered, it will update with apt"
+  before="$(brave_version)"
+  log "Brave $before installed — checking Brave's repository for a newer build"
+  refresh_brave_index || warn "could not refresh Brave's package index (network?) — using the cached one"
+
+  if env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade brave-browser; then
+    after="$(brave_version)"
+    if [ "$after" != "$before" ]; then
+      log "Brave upgraded: $before -> $after (restart the browser to pick it up)"
+      mark_change
+    else
+      log "Brave is already the newest published build ($after)"
+    fi
+  else
+    warn "apt could not upgrade brave-browser (see the output above)"
+    warn "  $before is still installed and working; retry with: sudo apt update && sudo apt install --only-upgrade brave-browser"
+  fi
   exit 0
 fi
 
 log "installing Brave"
 if env DEBIAN_FRONTEND=noninteractive apt-get install -y brave-browser; then
   mark_change
-  log "Brave installed — it now updates with 'sudo apt upgrade', like the rest of the system"
+  log "Brave $(brave_version) installed — every 'sudo make system' from now on upgrades it to the newest build"
 else
   warn "apt could not install brave-browser (see the output above)"
   warn "  the repository is registered; retry with: sudo apt update && sudo apt install brave-browser"
