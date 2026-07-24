@@ -33,6 +33,11 @@
   braveManagedPolicy = true;  # Brave's settings as enterprise policy in /etc (survives
                               # updates, cannot drift): Leo, Wallet, Rewards, VPN, News
                               # and Web Discovery off. See system/79-brave-policy.sh.
+  geckoPolicy = true;         # Firefox and Thunderbird settings as enterprise policy in
+                              # /etc: middle-click autoscroll on, matching what
+                              # modules.apps.chromiumFlags does for the Chromium apps, so
+                              # middle click pans instead of pasting everywhere. See
+                              # system/77-gecko-policy.sh.
   gameMode = false;       # Feral GameMode: /etc/gamemode.ini plus a CurseForge launcher
                           # that starts the game through gamemoderun. Moves the CPU
                           # governor to performance while a game is running (gamemode's

@@ -416,6 +416,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   claude_desktop="$(cfg_get claudeDesktop)"
   brave_browser="$(cfg_get braveBrowser)"
   brave_policy="$(cfg_get braveManagedPolicy)"
+  gecko_policy="$(cfg_get geckoPolicy)"
   open_whispr="$(cfg_get openWhispr)"
   game_mode="$(cfg_get gameMode)"
   # Carried through untouched. There is deliberately no prompt for this:
@@ -455,6 +456,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   openWhispr = $open_whispr;
   braveBrowser = $brave_browser;
   braveManagedPolicy = $brave_policy;
+  geckoPolicy = $gecko_policy;
   gameMode = $game_mode;
 
   # Where system/95-luks.sh writes the LUKS header backup. Must be removable
@@ -498,6 +500,7 @@ EOF
   sed -i 's/claudeDesktop = ;/claudeDesktop = true;/' user-config.nix
   sed -i 's/braveBrowser = ;/braveBrowser = true;/' user-config.nix
   sed -i 's/braveManagedPolicy = ;/braveManagedPolicy = true;/' user-config.nix
+  sed -i 's/geckoPolicy = ;/geckoPolicy = true;/' user-config.nix
   sed -i 's/openWhispr = ;/openWhispr = true;/' user-config.nix
   sed -i 's/gameMode = ;/gameMode = false;/' user-config.nix
 }

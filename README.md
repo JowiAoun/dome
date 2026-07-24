@@ -540,10 +540,12 @@ claudeDesktop = true;       # Claude desktop app (beta)
 openWhispr = true;          # OpenWhispr dictation, from its GitHub release (~1 GB)
 braveBrowser = true;        # Brave from Brave's apt repo, not nixpkgs
 braveManagedPolicy = true;  # Leo, Wallet, Rewards, VPN, News, Web Discovery off
+geckoPolicy = true;         # Firefox + Thunderbird: middle-click autoscroll, as policy
 ```
 
 Each has a matching one-run override on `system/run.sh` — `--no-brave`,
-`--no-brave-policy`, `--no-openwhispr`, `--no-claude-desktop`.
+`--no-brave-policy`, `--no-gecko-policy`, `--no-openwhispr`,
+`--no-claude-desktop`.
 
 ### Brave, and why it is not a Nix package
 
@@ -598,6 +600,166 @@ strings /opt/brave.com/brave/brave | grep -xE 'Brave[A-Za-z]+(Disabled|Enabled)'
 
 `braveManagedPolicy = false;` removes the file again and hands the settings back
 to the browser UI. Verify what is in force at `brave://policy`.
+
+### Middle-click autoscroll, everywhere
+
+Hold the scroll wheel down and move the mouse to pan, the way Windows does. Both
+engines on this machine ship the feature and both default it **off on Linux**,
+where middle click pastes the primary selection instead. Two engines, so two
+mechanisms — but one behaviour, so middle click means the same thing in every
+app:
+
+| engine | apps | mechanism |
+| --- | --- | --- |
+| Chromium | Brave, Discord, VS Code, Joplin, draw.io, Bruno, Claude Desktop, OpenWhispr, CurseForge | `modules.apps.chromiumFlags` (a command-line switch) |
+| Gecko | Firefox, Thunderbird | `system/77-gecko-policy.sh` (`general.autoScroll`, as policy) |
+
+#### Chromium: `modules.apps.chromiumFlags`
+
+```nix
+chromiumFlags = [
+  "--enable-features=MiddelButtonClickAutoscroll,MiddleClickAutoscroll"
+  "--blink-settings=middleClickPasteAllowed=false"
+];
+```
+
+**Two switches, because the first one alone is not enough.** Turning autoscroll
+on does not turn the Linux middle-click paste off — Chromium does both at once,
+so a middle click pans the page *and* dumps the clipboard into whatever is under
+the cursor. GNOME cannot fix it either: Chromium subscribes to
+`notify::gtk-enable-primary-paste` and pastes anyway with that key already
+`false`. `middleClickPasteAllowed` is a Blink setting (`settings.json5`,
+initial `true`) and `--blink-settings=` reads that exact table. It is per-app, so
+the terminal keeps its middle-click paste, which is what you want there.
+
+Watch out: Chromium ignores an unknown `--blink-settings` key **silently**, with
+no message even at ERROR level (checked with a deliberately bogus key). A typo
+here fails quietly — check names against `settings.json5`, not against the
+absence of an error.
+
+**Electron is Chromium**, so one list covers the browser and every Electron app.
+Adding a future Electron app is one line — `chromium = true;` on its entry in
+`desktopApps` (Nix-installed) or an entry in `systemChromiumApps` (apt).
+
+Both spellings are there on purpose, and neither came from a support page:
+
+- `MiddelButtonClickAutoscroll` is **Brave's**, typo and all. Enabling
+  `brave://flags#middle-button-autoscroll` in a throwaway profile and reading
+  what Brave then handed its own child processes is what settled it:
+  ```bash
+  brave-browser --user-data-dir=/tmp/probe &
+  tr '\0' '\n' < /proc/<a-renderer-pid>/cmdline | grep enable-features
+  #   --enable-features=MiddelButtonClickAutoscroll
+  ```
+- `MiddleClickAutoscroll` is **upstream Chromium/Electron's**, found in Electron
+  binaries that contain no trace of Brave's spelling
+  (`strings /usr/lib/claude-desktop/claude-desktop`).
+
+An unrecognised feature name is ignored rather than rejected, so the pair is safe
+everywhere and survives Brave fixing its typo. Note it is `--enable-features`,
+**not** the `--enable-blink-features` most guides give: `MiddleClickAutoscroll`
+is absent from Blink's `runtime_enabled_features.json5`, so that form is a
+silent no-op.
+
+A switch reaches a Chromium process **only** through the command line that
+started it — no config file, no policy key, no environment variable. So every
+launch path has to carry it, or the setting holds in some windows and not others:
+
+| launch path | where the switches come from |
+| --- | --- |
+| a Nix app's own launcher | `patchDesktop`, for `chromium = true` apps |
+| an apt app's own launcher | `chromium_flag_overrides` in `apps-setup` |
+| web app launchers (Notion, YouTube Music) | `webAppEntry` |
+| `$BROWSER` | `browserOpener` |
+| a terminal `brave-browser` | not covered — nothing owns that argv |
+
+The apt case is the interesting one: the `.deb` owns
+`/usr/share/applications/brave-browser.desktop`, so `apps-setup` writes an
+override of the same id into `~/.local/share/applications`, which XDG resolves
+first. It is **regenerated from the system entry on every `make home`**, not
+frozen as a copy — that is why an upgrade that adds a launcher action shows up
+instead of being masked by a stale override, the failure mode of hand-copying a
+`.desktop` file once. *Every* `Exec=` is rewritten, not just the first: Brave's
+*New Window* and *New Incognito Window*, and VS Code's *New Empty Window*, are
+separate desktop actions with their own.
+
+Each generated override carries a marker comment on line 1 (legal before the
+first group — checked with `desktop-file-validate`) holding two things:
+
+```
+# dome: generated [modules.apps.chromiumFlags:b133ee672d61] — edits are overwritten by `make home`.
+#                  ^ whose file this is              ^ hash of (system entry + flags)
+```
+
+The **id** lets the sweep tell its own files from a launcher you wrote by hand,
+so an app you later uninstall, drop from the list, or set `chromiumFlags = [ ];`
+for does not leave a dead entry in the app grid.
+
+The **stamp** is what makes it safe for another module to own the same `Exec`
+line afterwards. `modules/gaming.nix` legitimately prepends `gamemoderun` to
+CurseForge's, running after this by design. Comparing file *content* would see
+"different" on every switch, rewrite the file and drop `gamemoderun` until
+gaming.nix's activation put it back — and `apps-setup` run on its own (it is on
+`PATH`) would drop it with nothing to restore it. Comparing the stamp asks the
+question that actually matters instead: *have the source entry or the flag list
+changed since this was generated?* If not, the file is left alone, whatever has
+since been layered onto it.
+
+Apps must be **fully quit** to pick up a switch change; `brave://version` shows
+the command line actually in force.
+
+#### Gecko: `system/77-gecko-policy.sh`
+
+Firefox and Thunderbird take a preference, not a switch, and it goes in a policy
+file for the same reason Brave's settings do — `prefs.js` is live state the app
+rewrites on exit. `general.autoScroll` is one of the few preferences Gecko names
+individually in its policy allowlist, so this works at all.
+
+The `/etc` path is real but conditional, and was verified rather than assumed —
+the lookup lives in JavaScript inside `omni.ja`, so `strings libxul.so` shows
+nothing:
+
+```bash
+unzip -p <install>/omni.ja modules/EnterprisePoliciesParent.sys.mjs |
+  sed -n '/_getConfigurationFile/,/^  }/p'
+#   if (platform == "linux" && AppConstants.MOZ_SYSTEM_POLICIES) { SysConfD/policies/... }
+unzip -p <install>/omni.ja modules/AppConstants.sys.mjs | grep -o 'MOZ_SYSTEM_POLICIES: *[a-z]*'
+#   MOZ_SYSTEM_POLICIES: true      (Firefox snap AND nixpkgs Thunderbird)
+```
+
+That path is checked **first and returns immediately**, which is why it reaches
+inside the Firefox snap (whose own tree is read-only, and whose AppArmor profile
+already grants `/etc/firefox{,/,/**} rk`).
+
+"Returns immediately" is also the trap: the system file **replaces** a shipped
+`distribution/policies.json`, it does not merge with it. nixpkgs' Thunderbird
+ships one containing `DisableAppUpdate`, so the policy written here carries that
+key too — without it, installing this would quietly re-enable Thunderbird's
+self-updater for a copy living in a read-only Nix store. The script also compares
+its own keys against whatever the installed app ships and **warns** if it would
+shadow one it does not carry, so that cannot go unnoticed if nixpkgs adds
+another.
+
+`geckoPolicy = false;` removes both files. Verify at `about:policies`.
+
+#### Ghostty: not possible, and why
+
+The terminal is the one app that cannot join in. Ghostty 1.3.1 has no autoscroll
+and no way to express one — checked three ways rather than inferred from the
+docs:
+
+```bash
+strings $(readlink -f $(which ghostty)) | grep -i autoscroll   # nothing
+ghostty +list-actions | grep -iE 'scroll|pan|drag'             # only keyboard scroll actions
+ghostty +validate-config --config-file=<(echo 'keybind = mouse_middle=scroll_page_down')
+#   keybind: unknown error error.InvalidFormat                 # triggers are keyboard-only
+```
+
+So there is no config to set and nothing to bind a mouse button to. Scrolling
+there stays `shift+page_up`/`shift+page_down` (plus `shift+home`/`shift+end`) and
+the scrollbar. Ghostty also handles its own middle-click paste — it never reads
+`gtk-enable-primary-paste` — so the Chromium switch above leaves the terminal's
+paste alone, which is the behaviour you want in a shell anyway.
 
 ### OpenWhispr
 
