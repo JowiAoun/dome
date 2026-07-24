@@ -29,6 +29,11 @@
 # Scope: `userns` for executables under /nix/store, nothing else — narrower
 # than flipping the sysctl off, which would hand unprivileged userns back to
 # every binary on the system, including anything downloaded to /tmp.
+#
+# It also settles one adjacent problem that has nothing to do with Nix: two
+# packages shipping an AppArmor profile for the same apt-installed Brave
+# binary. Same subsystem, same `userns` permission at stake — see
+# resolve_brave_profile_conflict below.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./lib.sh
@@ -41,6 +46,68 @@ if ! command -v apparmor_parser >/dev/null 2>&1; then
   log "apparmor_parser not present — nothing to configure"
   exit 0
 fi
+
+# ── Brave: two profiles claiming one binary ─────────────────────────────────
+# Ubuntu's `apparmor` package ships /etc/apparmor.d/brave, and Brave's own .deb
+# installs /etc/apparmor.d/brave-browser-stable. Both attach the SAME
+# executable, /opt/brave.com/brave/brave. AppArmor will not pick between two
+# profiles for one path — it logs
+#
+#   apparmor="AUDIT" operation="exec" info="conflicting profile attachments"
+#
+# and leaves the process unconfined, which is the one outcome worse than either
+# profile: granting `userns` is the entire purpose of both. Unconfined plus
+# kernel.apparmor_restrict_unprivileged_userns=1 means Brave gets transitioned
+# into the restrictive `unprivileged_userns` profile and denied CAP_SYS_ADMIN,
+# so its namespace sandbox fails and it quietly falls back to the setuid one.
+#
+# Brave's postinst carries a guard meant to prevent precisely this, but it is
+# dead code: it tests [ "brave-browser-stable" = "google-chrome-stable" ],
+# which is never true, and only ever looks for /etc/apparmor.d/chrome.
+#
+# Ubuntu's copy is the one to drop. Brave's postinst rewrites and reloads its
+# own on every upgrade — and 78-brave.sh upgrades Brave on every run — so
+# deleting Brave's would be undone inside the same `sudo make system`. The two
+# are functionally identical (unconfined plus `userns`), so nothing is given
+# up. Disabled the documented way, a symlink under /etc/apparmor.d/disable/,
+# which keeps holding when an apparmor package upgrade puts the file back.
+resolve_brave_profile_conflict() {
+  local ubuntu=/etc/apparmor.d/brave
+  local vendor=/etc/apparmor.d/brave-browser-stable
+  local disable_dir=/etc/apparmor.d/disable
+  local attach=/opt/brave.com/brave/brave
+
+  [ -f "$ubuntu" ] && [ -f "$vendor" ] || return 0
+  # Act only while both really do claim that one executable. If either upstream
+  # ever re-points its profile, this stops applying rather than disabling
+  # something on a stale assumption.
+  out_matches "$(cat "$ubuntu")" -F " $attach " || return 0
+  out_matches "$(cat "$vendor")" -F " $attach " || return 0
+
+  if [ -L "$disable_dir/brave" ]; then
+    log "Ubuntu's conflicting Brave AppArmor profile is already disabled"
+    return 0
+  fi
+  if [ "$DRY_RUN" = 1 ]; then
+    log "DRY RUN: would disable $ubuntu (it conflicts with $vendor)"
+    mark_change
+    return 0
+  fi
+
+  log "two AppArmor profiles claim $attach — disabling Ubuntu's $ubuntu"
+  install -d -o root -g root -m 0755 "$disable_dir"
+  ln -sf "$ubuntu" "$disable_dir/brave"
+  # Unload now so the conflict clears without a reboot. Both steps are
+  # non-fatal: the symlink alone already settles it from the next boot.
+  apparmor_parser -R "$ubuntu" 2>/dev/null ||
+    warn "could not unload $ubuntu — it clears at the next reboot"
+  apparmor_parser -r "$vendor" 2>/dev/null ||
+    warn "could not reload $vendor — it loads at the next reboot"
+  mark_change
+  log "fully quit and reopen Brave to pick this up"
+}
+
+resolve_brave_profile_conflict
 
 # Only relevant while the restriction is on. If a future Ubuntu drops it, or
 # the admin turned it off, the profile buys nothing and is not installed.
