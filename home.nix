@@ -517,6 +517,11 @@ in
       init.defaultBranch = userConfig.gitDefaultBranch;
       core.editor = userConfig.gitEditor;
       pull.rebase = true;
+      # Use SSH for every GitHub remote, even a repo cloned over HTTPS: this
+      # rewrites https://github.com/ URLs to git@github.com: at operation time,
+      # so push/pull authenticate with the SSH key instead of a Personal Access
+      # Token. Makes SSH the default without having to reclone anything.
+      url."git@github.com:".insteadOf = "https://github.com/";
     };
   };
 
