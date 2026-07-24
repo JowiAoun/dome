@@ -47,3 +47,28 @@ and prints how to find it. If the user says the dash icon is wrong or generic
 # X11:      xprop WM_CLASS                                        # then click the window
 mkdesktop <binary> --name "<Name>" --wmclass <value>
 ```
+
+## Organising the "Show Apps" grid (folders + order)
+
+When the user asks to **put an app in a folder**, "move \<X\> into \<folder\>",
+reorder the app grid, or asks why a freshly-installed app is loose at the end of
+the grid, edit **`modules/desktop-shell.nix`** — the *App grid organisation*
+block in its `let` (gated on `modules.desktopShell.enable`, i.e. a GNOME host).
+Do **not** reach for `gsettings`/`dconf` by hand.
+
+- **`appFolders`** — one entry per grid folder (`id`, `name`, `apps`). To file an
+  app, add its `.desktop` id to that folder's `apps` list. Folders use explicit
+  app lists, never `categories`, so a newly-installed app is never auto-grouped.
+- **`topLevel`** — the ordered list of items shown outside folders (the apps the
+  user launches, then the folder ids). Add or reorder here to place a top-level
+  app.
+- **New apps land at the END of the grid on purpose**: anything not in a folder
+  and not in `topLevel` is left off the layout, so GNOME appends it and the user
+  can see it and decide where it belongs. That trailing spot is the intended
+  "inbox", not a bug — file the app by editing the lists above.
+
+This is **declarative and re-asserted on every `make home`**: organise in the
+repo, never by dragging in GNOME (a drag-rearrange is wiped on the next switch).
+The `app-picker-layout` dconf value is a GVariant generated from `topLevel` —
+edit the Nix lists, not the dconf. Takes effect on `make home` / `setup.sh`; a
+full grid rebuild happens at the next login if it looks half-updated.
