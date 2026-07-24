@@ -113,7 +113,9 @@ ensure_system_flag() { # <key> <default>
 ensure_system_flag dockerEngine true
 ensure_system_flag dockerDesktop false
 ensure_system_flag claudeDesktop true
+ensure_system_flag openWhispr true
 ensure_system_flag braveBrowser true
+ensure_system_flag braveManagedPolicy true
 if [ -n "$DOCKER_ENGINE" ];  then set_key dockerEngine  "$DOCKER_ENGINE";  echo "[dome] dockerEngine = $DOCKER_ENGINE";  fi
 if [ -n "$DOCKER_DESKTOP" ]; then set_key dockerDesktop "$DOCKER_DESKTOP"; echo "[dome] dockerDesktop = $DOCKER_DESKTOP"; fi
 if [ -n "$CLAUDE_DESKTOP" ]; then set_key claudeDesktop "$CLAUDE_DESKTOP"; echo "[dome] claudeDesktop = $CLAUDE_DESKTOP"; fi

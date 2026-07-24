@@ -115,8 +115,9 @@ Zenbook Duo tooling stays out of generic setups).
   open agent-skills CLI. Upstream documents `npx skills …`; this installs it
   globally instead, so it is a real `skills` command that starts instantly and
   works offline. `skills find`, `skills add <source>`, `skills ls`,
-  `skills update`. Needs `modules.node` (it is an npm package wanting Node ≥
-  22.20)
+  `skills update`. It is an npm package needing Node ≥ 22.20, so this module
+  installs `nodejs_22` itself when `modules.node` is off — the same derivation,
+  so enabling both gives one Node, not two
 - **Claude Code keybindings** (`~/.claude/keybindings.json`): **Shift+Enter**
   inserts a newline. That needs a terminal that can encode a modified Enter —
   see the terminal module below

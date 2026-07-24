@@ -136,7 +136,18 @@ in
     # they only exist because `pass` recommends them. Without one of the two,
     # Claude Code has no clipboard helper at all and pasting a screenshot into
     # it silently does nothing, so install the one that draws no window.
-    home.packages = [ pkgs.xclip ];
+    #
+    # nodejs only when modules.node is not already providing it. The skills CLI
+    # below is an npm package that needs Node >= 22.20 to install AND to run,
+    # and the module defaults do not line up: every host seed
+    # (hosts/*/setup-defaults.env) ships MODULE_AI=true and MODULE_NODE=false,
+    # so gating skills on the Node module would mean it silently does not exist
+    # on a default machine. Same derivation node.nix installs, so when both
+    # modules are on this is the identical store path — one Node in the profile,
+    # no file collision (which is exactly what an explicitly different version
+    # caused before; see the note in node.nix).
+    home.packages = [ pkgs.xclip ]
+      ++ lib.optional (!config.modules.node.enable) pkgs.nodejs_22;
 
     # Keep wl-clipboard's throwaway toplevel out of the dash — Claude Code only.
     programs.zsh.initContent = lib.mkIf config.programs.zsh.enable claudeWrapper;
@@ -304,31 +315,31 @@ in
     # pulls a newer one. It moves fast (1.5.20 shipped the day before this was
     # written), so pinning a version here would be wrong within a week.
     #
-    # Rides on modules.node because it IS an npm package: its engines field asks
-    # for Node >= 22.20.0 and node.nix installs nodejs_22. With the Node module
-    # off there is no npm to install it with, and referencing one here would
-    # drag a second Node into the closure of machines that asked for neither.
-    home.activation.installSkillsCli = lib.mkIf config.modules.node.enable (
-      lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-        # AFTER linkGeneration, not writeBoundary: ~/.npmrc — which is what
-        # points npm's global prefix at ~/.npm-global — is a linked file, and
-        # before that step npm would fall back to the profile in the Nix store
-        # and fail on a read-only filesystem. --prefix repeats it explicitly so
-        # this keeps working even if that file moves.
-        export PATH="${lib.makeBinPath [ pkgs.nodejs_22 pkgs.coreutils ]}:$PATH"
-        if [ ! -x "$HOME/.npm-global/bin/skills" ]; then
-          if [ -n "''${DRY_RUN_CMD:-}" ]; then
-            echo "(dry run) would install the skills CLI (npm install -g skills)"
+    # Node comes from modules.node when that is on and from home.packages above
+    # when it is not, so this runs on every machine with the AI module — which
+    # is the point: it is one of the tools this module exists to provide, not an
+    # optional extra that quietly disappears when Node was not ticked.
+    home.activation.installSkillsCli = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+      # AFTER linkGeneration, not writeBoundary: ~/.npmrc — which is what points
+      # npm's global prefix at ~/.npm-global — is a linked file, and before that
+      # step npm would fall back to the profile in the Nix store and fail on a
+      # read-only filesystem. --prefix repeats it explicitly, which is also what
+      # makes this work with modules.node off: node.nix writes that .npmrc, so
+      # without it there would be no prefix at all. ~/.npm-global/bin is put on
+      # PATH by home.nix's shell init, independently of the Node module.
+      export PATH="${lib.makeBinPath [ pkgs.nodejs_22 pkgs.coreutils ]}:$PATH"
+      if [ ! -x "$HOME/.npm-global/bin/skills" ]; then
+        if [ -n "''${DRY_RUN_CMD:-}" ]; then
+          echo "(dry run) would install the skills CLI (npm install -g skills)"
+        else
+          echo "📦 Installing the skills CLI (vercel-labs)…"
+          if npm install -g --prefix "$HOME/.npm-global" skills@latest >/dev/null 2>&1; then
+            echo "✅ skills installed to ~/.npm-global/bin (on PATH via the shell config) — try 'skills find'"
           else
-            echo "📦 Installing the skills CLI (vercel-labs)…"
-            if npm install -g --prefix "$HOME/.npm-global" skills@latest >/dev/null 2>&1; then
-              echo "✅ skills installed to ~/.npm-global/bin (on PATH via the shell config) — try 'skills find'"
-            else
-              echo "⚠️ skills install did not complete (network?). Re-run later: npm install -g skills@latest" >&2
-            fi
+            echo "⚠️ skills install did not complete (network?). Re-run later: npm install -g skills@latest" >&2
           fi
         fi
-      ''
-    );
+      fi
+    '';
   };
 }
