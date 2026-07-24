@@ -191,6 +191,23 @@ in
         ];
       };
 
+      # Claude Code's status line: two rows, the first mirroring the shell
+      # prompt (user, directory, git branch, styled from ~/.config/starship.toml
+      # at runtime) and the second the session state — model, context remaining,
+      # and the 5-hour and 7-day rate limit windows with their reset countdowns.
+      #
+      # Same reasoning as keybindings.json above: Claude Code only ever runs
+      # this file, so a read-only store symlink is right. `statusLine` in
+      # settings.json points at it (see claudeDefaults below).
+      #
+      # Kept as a real .sh rather than inlined as `text`: it is 230 lines of
+      # bash whose every ''${...} would need escaping against Nix interpolation,
+      # and as a file it stays runnable and `bash -n`-checkable on its own.
+      ".claude/statusline-command.sh" = {
+        source = ./ai-statusline.sh;
+        executable = true;
+      };
+
       # AI helper: install/refresh Claude Code (latest) and Gemini (npm).
       ".local/bin/ai-setup" = {
         executable = true;
@@ -412,10 +429,20 @@ in
         # useAutoModeDuringPlan "Use auto mode during plan". Off: planning should
         #                       ask before running things rather than classify
         #                       them as safe on its own.
+        #
+        # statusLine            the two-row status line, whose script is the
+        #                       home.file symlink above. Invoked through `bash`
+        #                       rather than relying on the exec bit, so it still
+        #                       works if the file is ever copied somewhere
+        #                       without its mode.
         apply_json "$HOME/.claude/settings.json" '{
           "theme": "dark",
           "spinnerTipsEnabled": false,
-          "useAutoModeDuringPlan": false
+          "useAutoModeDuringPlan": false,
+          "statusLine": {
+            "type": "command",
+            "command": "bash ~/.claude/statusline-command.sh"
+          }
         }'
 
         # copyOnSelect is NOT a settings.json key — it is absent from the schema
