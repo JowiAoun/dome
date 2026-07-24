@@ -58,6 +58,10 @@ in
     # Brave from Brave's apt repo (system/78-brave.sh) instead of nixpkgs, so
     # the browser keeps getting security updates between flake bumps.
     apps.systemBrowser = userConfig.braveBrowser or false;
+    # The user half of the gameMode switch — a CurseForge launcher that goes
+    # through gamemoderun. Same switch system/86-gamemode.sh reads for
+    # /etc/gamemode.ini, so one setting turns the whole feature on or off.
+    gaming.enable = (userConfig.gameMode or false) && !isCodespaces;
 
     # Ghostty. Deliberately NOT tied to `modules.apps`: that switch is for the
     # optional desktop-app bundle, and the terminal is the thing everything else
@@ -166,11 +170,6 @@ in
   # A harmless no-op where there is no GNOME session (WSL, Codespaces): with no
   # session bus at activation, home-manager simply skips the dconf write.
   dconf.settings = {
-    # Silence the click GNOME plays on every volume up/down keypress.
-    # input-feedback-sounds is exactly that beep — leaving event-sounds alone
-    # keeps the rest of the desktop's notification sounds working.
-    "org/gnome/desktop/sound".input-feedback-sounds = false;
-
     # Dark mode is deliberately NOT set here: an entry in dconf.settings is
     # PINNED — home-manager rewrites it on every `make home`, so a later switch
     # to light would be undone at the next activation. It is seeded once instead;
@@ -201,6 +200,53 @@ in
         run "$_dconf" write /org/gnome/desktop/interface/gtk-theme    "'Yaru-dark'"
         run "$_dconf" write /org/gnome/desktop/interface/icon-theme   "'Yaru-dark'"
       fi
+    fi
+  '';
+
+  # Silence the click GNOME plays on every volume up/down keypress — without
+  # muting the rest of the desktop's sounds.
+  #
+  # NOT a GSettings key, which is why the obvious fix here (a dconf
+  # org/gnome/desktop/sound input-feedback-sounds = false) silently did nothing
+  # and was removed. In GNOME 46 that beep is played by gsd-media-keys, which
+  # calls libcanberra's ca_context_play directly with event id
+  # "audio-volume-change". Neither ever consults GSettings: the only
+  # org.gnome.desktop.sound key in /usr/libexec/gsd-media-keys is
+  # allow-volume-above-100-percent, and libcanberra contains no GSettings code
+  # at all — so event-sounds=false would not have worked either, it would only
+  # have cost the notification sounds elsewhere.
+  #
+  # What libcanberra does honour is the XDG sound-theme lookup. Per theme
+  # directory it probes <event>.disabled BEFORE <event>.oga/.ogg/.wav, and an
+  # empty .disabled marker ends the search with CA_ERROR_DISABLED ("Sound
+  # disabled") — no sound, and no fallback to the next directory. Since
+  # $XDG_DATA_HOME/sounds is searched ahead of /usr/share/sounds, a marker here
+  # shadows exactly one event and leaves every other sound alone. An index.theme
+  # alongside it is not needed; the marker is found without one.
+  #
+  # Both theme names are covered on purpose: freedesktop is what
+  # org.gnome.desktop.sound theme-name is set to, Yaru is Ubuntu's own, so
+  # switching appearance themes cannot resurrect the beep.
+  xdg.dataFile = {
+    "sounds/freedesktop/stereo/audio-volume-change.disabled".text = "";
+    "sounds/Yaru/stereo/audio-volume-change.disabled".text = "";
+  };
+
+  # The marker above is not enough on its own, twice over.
+  #
+  # libcanberra memoises each event id's resolved path in
+  # ~/.cache/event-sound-cache.tdb.*, and a warm cache does NOT notice a newly
+  # added .disabled marker — it keeps happily playing the old .oga. And
+  # gsd-media-keys holds one long-lived libcanberra context for the whole
+  # session, so even with the cache gone it would stay stale until the next
+  # logout. Dropping the file cache and bouncing that one service makes the
+  # change take effect on `make home`, with no logout. Both are cheap and
+  # idempotent: the cache is rebuilt lazily, and try-restart is a no-op when the
+  # unit is not running (non-GNOME hosts, WSL, headless first-boot installs).
+  home.activation.silenceVolumeBeep = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    run rm -f "''${XDG_CACHE_HOME:-$HOME/.cache}"/event-sound-cache.tdb.*
+    if [ -n "''${DBUS_SESSION_BUS_ADDRESS:-}" ] && command -v systemctl >/dev/null 2>&1; then
+      run systemctl --user try-restart org.gnome.SettingsDaemon.MediaKeys.service || true
     fi
   '';
 
