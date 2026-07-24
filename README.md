@@ -462,6 +462,59 @@ keyring actually ships (checked). `78-brave.sh` therefore pins the fingerprint
 fetch was honest, but it turns any later key swap into a loud failure rather
 than silent trust for every future upgrade.
 
+### Disk encryption (LUKS)
+
+Nothing in dome can encrypt a disk. LUKS has to be created while the disk is
+being partitioned — Ubuntu installer → **Advanced features… → Use LVM and
+encryption** — and a running root filesystem cannot be retrofitted safely. What
+dome does is close the two gaps the installer leaves behind.
+
+**The passphrase is unrecoverable.** This is the part that catches people
+arriving from Windows. BitLocker generates a recovery key *for* you and escrows
+it to your Microsoft account, so you can look it up later. LUKS has no
+equivalent: you choose the passphrase, it is never displayed again, and it
+cannot be extracted from the disk — the master key is stored wrapped by an
+Argon2id derivation of it, which is one-way. Forget it and the data is gone.
+There is no support line and no backdoor.
+
+So `./setup.sh` refuses to be quiet about it. When it detects that `/` sits on
+dm-crypt (it walks the chain upward, so it still sees LUKS through LVM) it shows
+a full-screen warning and then asks where to keep a header backup, storing the
+answer as `luksHeaderBackupDir` in `user-config.nix`. On an unencrypted machine
+— WSL, Codespaces, a generic box — it asks nothing.
+
+`system/95-luks.sh` then runs last in the system layer, so its warning is still
+on screen when the run ends. It is read-only unless `luksHeaderBackupDir` is
+set, and never fails the run:
+
+- **Single-keyslot volumes.** The installer enrols exactly one passphrase and
+  stops. The script counts enabled keyslots (LUKS1 and LUKS2 dump formats
+  differ) and, if there is only one, prints the `cryptsetup luksAddKey` command
+  for the specific device. Put a long random string in that second slot and keep
+  it in a password manager — that is your recovery key.
+- **Header backups.** The LUKS header holds the wrapped master key in the first
+  few MB of the partition. Corrupt it and the *correct* passphrase stops
+  working. The script writes `luks-header-<uuid>.img`, `chmod 600`, and verifies
+  it reads back as a valid header.
+
+Two refusals worth knowing. It will not write the backup to the same physical
+disk the header protects — you could never mount the filesystem holding it
+without the header you are trying to recover — and it will not silently
+overwrite an existing backup, because that file is a *snapshot* of the keyslots:
+after a passphrase change the old file still opens the disk with the old
+passphrase. Delete and re-take it when you change one.
+
+The destination is read from `user-config.nix` rather than an environment
+variable for the reason `lib.sh` documents: `sudo`'s `env_reset` would drop a
+`LUKS_BACKUP_DIR=…` prefix, and a backup that silently never happens is worse
+than none.
+
+**On the Duo specifically:** the passphrase prompt runs in the initramfs, which
+has no Bluetooth stack and no on-screen keyboard. The keyboard must be
+physically attached at boot — detached, it is a Bluetooth device and you cannot
+type the passphrase at all. Worth proving to yourself on the first boot rather
+than discovering it later.
+
 ### No icon flashing in the dash on copy/paste
 
 Claude Code checks the clipboard on every paste to see whether you pasted an

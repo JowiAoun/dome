@@ -14,7 +14,10 @@
 # then the duo-only scripts (40, 45, 46, 50, 55) when the host profile is
 # zenbook-duo, then the host-independent extras (60 docker, 70 docker-desktop,
 # 75 claude-desktop, 76 openwhispr, 78 brave, 79 brave-policy, 80 nix-gpu,
-# 85 apparmor-userns).
+# 85 apparmor-userns, 95 luks).
+#
+# 95-luks.sh is deliberately last: it is read-only by default and its whole job
+# is to warn, so it belongs where the warning is still on screen at the end.
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -78,7 +81,7 @@ fi
 # Host-independent extras. Each one either honors a user-config.nix switch
 # (docker) or detects that it has nothing to do (GPU, AppArmor), and every one
 # of them logs why it is skipping — so they are safe to run unconditionally.
-for script in 60-docker.sh 70-docker-desktop.sh 75-claude-desktop.sh 76-openwhispr.sh 78-brave.sh 79-brave-policy.sh 80-nix-gpu.sh 85-apparmor-userns.sh; do
+for script in 60-docker.sh 70-docker-desktop.sh 75-claude-desktop.sh 76-openwhispr.sh 78-brave.sh 79-brave-policy.sh 80-nix-gpu.sh 85-apparmor-userns.sh 95-luks.sh; do
   log "── $script"
   bash "./$script"
 done
