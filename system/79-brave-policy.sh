@@ -62,6 +62,7 @@ read -r -d '' POLICY_BODY <<'EOF' || true
   "BraveRewardsDisabled": true,
   "BraveVPNDisabled": true,
   "BraveNewsDisabled": true,
+  "BraveTalkDisabled": true,
   "BraveWebDiscoveryEnabled": false
 }
 EOF
@@ -78,6 +79,9 @@ EOF
 #                                 its onboarding prompts.
 #   BraveVPNDisabled: true        The paid VPN upsell in the toolbar and settings.
 #   BraveNewsDisabled: true       The news feed under the new-tab page.
+#   BraveTalkDisabled: true       Brave Talk (talk.brave.com): the sidebar entry,
+#                                 the new-tab widget and the "start a call"
+#                                 integration. Wired to brave.talk.disabled_by_policy.
 #   BraveWebDiscoveryEnabled: false
 #                                 Web Discovery, the opt-in scheme that sends
 #                                 search/browsing data to build Brave's index.
@@ -133,7 +137,7 @@ if [ -f "$POLICY_FILE" ] && [ "$(cat "$POLICY_FILE")" = "$POLICY_BODY" ]; then
 fi
 
 if [ "$DRY_RUN" = 1 ]; then
-  log "DRY RUN: would write $POLICY_FILE (Leo, Wallet, Rewards, VPN, News, Web Discovery off)"
+  log "DRY RUN: would write $POLICY_FILE (Leo, Wallet, Rewards, VPN, News, Talk, Web Discovery off)"
   mark_change
   exit 0
 fi
@@ -146,5 +150,5 @@ printf '%s\n' "$POLICY_BODY" > "$POLICY_FILE"
 chown root:root "$POLICY_FILE"
 chmod 0644 "$POLICY_FILE"
 mark_change
-log "  Leo, Wallet, Rewards, VPN, News and Web Discovery are off"
+log "  Leo, Wallet, Rewards, VPN, News, Talk and Web Discovery are off"
 log "  restart Brave to apply; verify at brave://policy"
