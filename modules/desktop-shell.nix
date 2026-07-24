@@ -220,6 +220,22 @@ in
       # top-bar clock and the Dash to Panel clock, which reads this same key.
       "org/gnome/desktop/interface".clock-format = "12h";
 
+      # Middle click must never paste. This is the GTK-wide half of that (the
+      # Chromium/Electron half is modules.apps.chromiumFlags, the Gecko half is
+      # the autoconfig in modules/apps.nix) and it covers every GTK3/GTK4 text
+      # widget on the machine: Nautilus, Text Editor, Settings, the GTK chrome
+      # of Firefox and Thunderbird, GTK file dialogs everywhere.
+      #
+      # Set explicitly rather than trusted, because the default is NOT the same
+      # everywhere and `gsettings get` in a Nix shell lies about it: nixpkgs'
+      # gsettings-desktop-schemas defaults this to false, Ubuntu's
+      # /usr/share/glib-2.0/schemas defaults it to TRUE, and which one an app
+      # sees depends on the XDG_DATA_DIRS it was launched with. An app started
+      # from the GNOME shell resolves Ubuntu's copy and pastes. A dconf value
+      # outranks every schema default, so this is the only way to make the
+      # answer the same for all of them.
+      "org/gnome/desktop/interface".gtk-enable-primary-paste = false;
+
       # Ubuntu Dock and Dash to Panel both own the dash; running both gives two
       # docks, so the stock one is explicitly disabled rather than just dropped
       # from the enabled list (Ubuntu's session re-enables it otherwise).

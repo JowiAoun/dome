@@ -828,6 +828,71 @@ the scrollbar. Ghostty also handles its own middle-click paste — it never read
 `gtk-enable-primary-paste` — so the Chromium switch above leaves the terminal's
 paste alone, which is the behaviour you want in a shell anyway.
 
+### Middle click never pastes
+
+There is no single switch for this. Middle-click paste is the X11/Wayland
+PRIMARY selection, and **every toolkit implements it separately** — so "turn it
+off everywhere" is four settings, one per rendering stack, and an app is only
+covered by the one that draws its text box:
+
+| Stack | Where it is set | Covers |
+|---|---|---|
+| GTK 3/4 | `gtk-enable-primary-paste` dconf key, `modules/desktop-shell.nix` | Nautilus, Text Editor, Settings, GTK file dialogs, and the GTK chrome of Firefox/Thunderbird |
+| Blink | `--blink-settings=middleClickPasteAllowed=false` in `modules.apps.chromiumFlags` | Brave and every Electron app |
+| Gecko | `middlemouse.paste`, `modules/apps.nix` | Thunderbird's compose window, Firefox page content |
+| Ghostty | *not possible* — see below | — |
+
+The GTK key is **set explicitly rather than trusted**, because its default is not
+the same everywhere and `gsettings get` in a Nix shell will lie to you about it:
+nixpkgs' `gsettings-desktop-schemas` defaults it to `false`, Ubuntu's
+`/usr/share/glib-2.0/schemas` defaults it to **`true`**, and which one an app
+sees depends on the `XDG_DATA_DIRS` it was launched with. An app started from the
+GNOME shell resolves Ubuntu's copy and pastes. A dconf value outranks every
+schema default, which is what makes the answer the same for all of them.
+
+**Gecko cannot be done with the policy in `system/77-gecko-policy.sh`,** which is
+the trap worth knowing about, because that file already sets a mouse pref
+(`general.autoScroll`) and adding one more next to it looks obvious. Gecko's
+`Preferences` policy only accepts prefs matching an allowlist compiled into the
+app — `allowedPrefixes` in `modules/policies/Policies.sys.mjs`, readable out of
+the shipped `omni.ja`:
+
+```
+accessibility. app.update. browser. calendar. chat. datareporting.policy. dom.
+extensions. general.autoScroll general.smoothScroll geo. gfx. intl. layers.
+layout. mail. mailnews. media. network. pdfjs. places. print. signon.
+spellchecker. ui. widget.
+```
+
+`middlemouse.` is not on it. Note `general.autoScroll` is there **by name**,
+which is exactly why the autoscroll policy works and why this one cannot join
+it — a `middlemouse` pref in `policies.json` is dropped with *"Preference not
+allowed for stability reasons"* and silently does nothing.
+
+So Gecko uses **autoconfig**, the supported route for an arbitrary pref, by two
+different paths depending on who packaged the app:
+
+- **Thunderbird** comes from nixpkgs, whose Gecko wrapper already ships
+  `defaults/pref/autoconfig.js` pointing at `mozilla.cfg`. `extraPrefs` in
+  `modules/apps.nix` appends `lockPref("middlemouse.paste", false)` to it.
+  `lockPref` so it cannot drift back on, and because autoconfig applies to
+  **every profile, including ones created later**.
+- **Firefox** is the Ubuntu snap, and a snap's install tree is a read-only image
+  — autoconfig is the packager's to set, not ours. The only mechanism that works
+  regardless of packaging is a per-profile `user.js`, which a home-manager
+  activation step writes into each Firefox profile it finds. Each line carries a
+  `// dome:no-middle-click-paste` marker so the block can be removed with one
+  `grep -v` and hand-written prefs are left alone. Being per-profile is the
+  reason the Thunderbird we *do* build uses autoconfig instead.
+
+Changes land at the app's **next start** — Gecko reads both files at startup.
+
+**The terminal is the one place this is not possible.** Ghostty handles middle
+click itself and never reads `gtk-enable-primary-paste`, it exposes no setting
+for it, and its keybind triggers are keyboard-only
+(`keybind = mouse_middle=...` → `error.InvalidFormat`), so there is nothing to
+set and nothing to bind. Middle-click paste stays in Ghostty.
+
 ### OpenWhispr
 
 `system/76-openwhispr.sh` installs

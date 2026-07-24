@@ -26,6 +26,40 @@
 let
   cfg = config.modules.apps;
 
+  # Middle click must NEVER paste — the Gecko half of that. The Chromium and
+  # Electron half is chromiumFlags below; the GTK-wide half is a dconf key in
+  # modules/desktop-shell.nix. Gecko needs its own because its content area is
+  # neither GTK nor Blink: Thunderbird's compose window and Firefox's page area
+  # are drawn by Gecko, which implements middle-click paste itself off
+  # `middlemouse.paste` and ignores gtk-enable-primary-paste completely.
+  #
+  # This CANNOT go in the enterprise policy in system/77-gecko-policy.sh beside
+  # the autoscroll pref, which is worth writing down because it looks like it
+  # should. Gecko's Preferences policy only accepts prefs matching an allowlist
+  # compiled into the app (modules/policies/Policies.sys.mjs, `allowedPrefixes`,
+  # read out of the shipped omni.ja):
+  #
+  #   accessibility. app.update. browser. calendar. chat. datareporting.policy.
+  #   dom. extensions. general.autoScroll general.smoothScroll geo. gfx. intl.
+  #   layers. layout. mail. mailnews. media. network. pdfjs. places. print.
+  #   signon. spellchecker. ui. widget.
+  #
+  # `middlemouse.` is absent — and note `general.autoScroll` is on that list BY
+  # NAME, which is precisely why the autoscroll policy works and why this one
+  # cannot be added next to it. A middlemouse pref in policies.json is dropped
+  # with "Preference not allowed for stability reasons" and does nothing at all.
+  #
+  # autoconfig is the supported route for an arbitrary pref, and nixpkgs' Gecko
+  # wrapper already wires it up — the built package ships
+  # defaults/pref/autoconfig.js pointing at mozilla.cfg, and `extraPrefs` is
+  # appended to that file. lockPref rather than defaultPref so it cannot be
+  # switched back on by accident, and because autoconfig applies to EVERY
+  # profile, including ones created later, which a per-profile user.js does not.
+  geckoNoMiddleClickPaste = ''
+    lockPref("middlemouse.paste", false);
+    lockPref("middlemouse.contentLoadURL", false);
+  '';
+
   # Extra command-line switches for every Chromium-based app
   # (modules.apps.chromiumFlags — middle-click autoscroll by default). Electron
   # IS Chromium, so the browser and the Electron apps share one list.
@@ -179,7 +213,9 @@ let
       # probe list: if the machine already has it, this copy is not installed
       # and the existing one keeps owning mailto:.
       name = "thunderbird";
-      package = pkgs.thunderbird;
+      # extraPrefs, not the policies.json in system/77-gecko-policy.sh: the
+      # policy engine rejects middlemouse.* outright. See geckoNoMiddleClickPaste.
+      package = pkgs.thunderbird.override { extraPrefs = geckoNoMiddleClickPaste; };
       ids = [ "thunderbird.desktop" ];  # Exec=thunderbird, Icon=thunderbird — both need patching
       pin = true;
       browser = false;
@@ -1139,6 +1175,52 @@ in
           ${appsSetup} || echo "⚠️ apps-setup did not finish — re-run it from a desktop session" >&2
         fi
       '';
+
+      # Middle-click paste off in Gecko apps this repo does NOT build.
+      #
+      # geckoNoMiddleClickPaste handles the Thunderbird we install, through the
+      # autoconfig file inside the package. That route is closed for anything
+      # from snap, apt or flatpak: autoconfig lives in the install tree and
+      # those are read-only images owned by the packager. Firefox here is the
+      # Ubuntu snap, so it needs the other mechanism.
+      #
+      # user.js is that mechanism, and it is the only one that works whatever
+      # the packaging: Gecko reads it on every start and applies it over
+      # prefs.js. The cost is that it is per PROFILE — a profile created after
+      # this runs is not covered until the next `make home`, which is exactly
+      # why the Thunderbird we do build uses autoconfig instead.
+      #
+      # Each line carries the marker as a trailing comment, so removing the
+      # block later is a one-line grep -v and hand-written prefs are untouched.
+      home.activation.geckoNoMiddleClickPaste =
+        lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+          _dome_marker="// dome:no-middle-click-paste"
+
+          for _dome_profile in \
+            "$HOME"/.mozilla/firefox/*/ \
+            "$HOME"/snap/firefox/common/.mozilla/firefox/*/ ; do
+            # The glob is literal when nothing matches, and these directories
+            # also hold non-profiles ("Crash Reports", "Pending Pings"). A real
+            # profile always has one of these two files.
+            [ -d "$_dome_profile" ] || continue
+            [ -f "$_dome_profile/prefs.js" ] || [ -f "$_dome_profile/times.json" ] || continue
+
+            _dome_userjs="$_dome_profile/user.js"
+            _dome_tmp="$(mktemp)"
+            if [ -f "$_dome_userjs" ]; then
+              # Drop our previous block; keep everything the user wrote.
+              grep -v "$_dome_marker" "$_dome_userjs" > "$_dome_tmp" || true
+            fi
+            printf 'user_pref("middlemouse.paste", false);          %s\n' "$_dome_marker" >> "$_dome_tmp"
+            printf 'user_pref("middlemouse.contentLoadURL", false); %s\n' "$_dome_marker" >> "$_dome_tmp"
+
+            if ! cmp -s "$_dome_tmp" "$_dome_userjs"; then
+              run cp "$_dome_tmp" "$_dome_userjs"
+              echo "[apps] middle-click paste off in $_dome_profile"
+            fi
+            rm -f "$_dome_tmp"
+          done
+        '';
     })
 
     # VS Code's entries, independent of modules.apps: it is installed by
