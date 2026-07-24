@@ -435,14 +435,53 @@ let
   systemPinSpecs = map (a: "${a.command}:${lib.concatStringsSep " " a.ids}")
     (lib.filter (a: !(lib.elem a.name cfg.skip)) systemPins);
 
-  # Ubuntu 24.04 pins the Firefox snap as firefox_firefox.desktop; the other
-  # names cover a deb/flatpak install of the same browser.
+  # Default dash pins this module removes when it finds them. Firefox because
+  # the apps bundle ships its own browser (Ubuntu 24.04 pins the Firefox snap as
+  # firefox_firefox.desktop; the other names cover a deb/flatpak install of the
+  # same browser). The App Store and Help entries because a provisioned machine
+  # does not want them taking dash slots — each is listed under every id the
+  # distro has shipped it as (24.04's App Center is a snap; earlier releases and
+  # a deb install use org.gnome.Software; Help is yelp).
   unpinIds = [
     "firefox_firefox.desktop"
     "firefox.desktop"
     "firefox-esr.desktop"
     "org.mozilla.firefox.desktop"
+    "snap-store_snap-store.desktop"
+    "snap-store_ubuntu-software.desktop"
+    "org.gnome.Software.desktop"
+    "ubuntu-software.desktop"
+    "yelp.desktop"
+    "org.gnome.Yelp.desktop"
   ];
+
+  # Canonical left-to-right dash order. Each entry is the set of .desktop ids
+  # that could stand for one app — snap/deb/flatpak variants included — so the
+  # sort matches whichever id the machine actually pinned. This only orders pins
+  # that are already present (this module's own, plus whatever the machine
+  # pinned itself); it never adds a pin. Files and the Text Editor are stock
+  # GNOME favourites this module does not manage, listed here purely so they
+  # sort to the front when present. Anything not named keeps its existing
+  # relative order and sorts after everything that is named.
+  rawById = name: lib.findFirst (a: a.name == name) null desktopApps;
+  candidatesFor = name:
+    let a = rawById name; in if a == null then [ ] else lib.unique (a.ids ++ a.probeDesktop);
+  claudeIds = lib.concatMap (a: a.ids) (lib.filter (a: a.name == "claude-desktop") systemPins);
+  dashOrder = [
+    [ "org.gnome.Nautilus.desktop" "nautilus.desktop" "org.gnome.Nautilus" ]  # Files
+    [ "org.gnome.TextEditor.desktop" "gnome-text-editor.desktop" ]            # Text Editor
+    (candidatesFor "thunderbird")
+    [ config.modules.terminal.desktopId ]                                     # Ghostty
+    (candidatesFor "discord")
+    (candidatesFor "joplin")
+    [ "notion.desktop" ]
+    claudeIds                                                                 # Claude Desktop
+    [ "youtube-music.desktop" ]
+    (lib.unique (braveSystemIds ++ candidatesFor "brave"))
+  ];
+  # One space-separated candidate list per slot, empty slots dropped. Passed to
+  # the script as one shell arg per slot (see merge_dash_pins).
+  dashOrderSpecs = map (lib.concatStringsSep " ") (lib.filter (g: g != [ ]) dashOrder);
 
   # Desktop state GNOME keeps in dconf/mimeapps.list — not expressible as Nix
   # files, so it is reconciled by a small idempotent script instead. Run by the
@@ -453,10 +492,11 @@ let
     #
     #   1. make ${browserId} the default browser (mimeapps.list, via gio)
     #   2. make ${mailerId} the default mail client (same mechanism)
-    #   3. merge the GNOME dash pins: add this module's apps, drop Firefox
+    #   3. merge the GNOME dash pins: add this module's apps, drop Firefox /
+    #      App Store / Help, and reorder to the canonical dash order
     #
-    # MERGE, not overwrite: favourites are something you rearrange by hand all
-    # the time, so anything you pinned yourself survives. Deliberately no
+    # MERGE, not overwrite: anything you pinned yourself survives (it just sorts
+    # after the named apps). Deliberately no
     # `set -e` — desktop glue is best-effort and must never fail a switch on a
     # machine without GNOME.
     set -o pipefail
@@ -623,9 +663,11 @@ let
     # ── 3. dash pins ─────────────────────────────────────────────────────────
     merge_dash_pins() {
       local raw cleaned joined="" entry pair name id
-      local spec sys_cmd sys_ids sys_id
-      local -a current=() merged=() pins=()
+      local spec sys_cmd sys_ids sys_id ospec cand
+      local -a current=() merged=() pins=() ordered=()
       local -a unpins=(${lib.escapeShellArgs unpinIds})
+      # One arg per slot; each is a space-separated candidate-id list.
+      local -a order_specs=(${lib.concatMapStringsSep " " lib.escapeShellArg dashOrderSpecs})
 
       # "name:id" pairs so a pin can be dropped by app name when the machine
       # already provides that app itself.
@@ -661,23 +703,36 @@ let
       cleaned="$(printf '%s' "$raw" | sed -e 's/^@as //' -e 's/^\[//' -e 's/\]$//' -e "s/'//g" -e 's/ //g')"
       IFS=',' read -r -a current <<< "$cleaned"
 
+      # Keep every current pin except the ones we drop (Firefox, App Store,
+      # Help), then add this module's pins. Ordering is not decided here — the
+      # reorder pass below imposes the canonical dash order, so a dropped
+      # browser no longer needs its slot reused for the new one.
       for entry in ''${current[@]+"''${current[@]}"}; do
         [ -n "$entry" ] || continue
-        if in_list "$entry" ''${unpins[@]+"''${unpins[@]}"}; then
-          # Reuse the slot: the new browser takes the old browser's position
-          # instead of being appended to the end of the dash.
-          if in_list "${browserId}" ''${pins[@]+"''${pins[@]}"} \
-             && ! in_list "${browserId}" ''${merged[@]+"''${merged[@]}"}; then
-            merged+=("${browserId}")
-          fi
-          continue
-        fi
+        in_list "$entry" ''${unpins[@]+"''${unpins[@]}"} && continue
         merged+=("$entry")
       done
 
       for id in ''${pins[@]+"''${pins[@]}"}; do
         in_list "$id" ''${merged[@]+"''${merged[@]}"} || merged+=("$id")
       done
+
+      # Impose the canonical order: first emit the named apps that are present,
+      # in order; then append everything else in its existing relative order.
+      for ospec in ''${order_specs[@]+"''${order_specs[@]}"}; do
+        for entry in ''${merged[@]+"''${merged[@]}"}; do
+          # shellcheck disable=SC2086  # ospec is a space-separated candidate list
+          for cand in $ospec; do
+            [ "$entry" = "$cand" ] || continue
+            in_list "$entry" ''${ordered[@]+"''${ordered[@]}"} || ordered+=("$entry")
+            break
+          done
+        done
+      done
+      for entry in ''${merged[@]+"''${merged[@]}"}; do
+        in_list "$entry" ''${ordered[@]+"''${ordered[@]}"} || ordered+=("$entry")
+      done
+      merged=(''${ordered[@]+"''${ordered[@]}"})
 
       for entry in ''${merged[@]+"''${merged[@]}"}; do
         joined="$joined, '$entry'"
