@@ -158,10 +158,35 @@ let
 
     log "default terminal set to Ghostty (Ctrl+Alt+T, and Open in Terminal)"
   '';
+
+  # The default terminal for a `Terminal=true` app launched from the GNOME grid
+  # (Bottom, lazygit, any TUI) is decided by GLib, NOT by the
+  # default-applications key set above — that key only feeds Ctrl+Alt+T and
+  # Nautilus. Verified on this machine's libgio 2.80:
+  #
+  #   strings libgio-2.0.so.0 | grep default-applications.terminal  -> (nothing)
+  #   strings libgio-2.0.so.0 | grep xdg-terminal-exec              -> xdg-terminal-exec
+  #
+  # GLib execs `xdg-terminal-exec <command…>` when that program is on PATH, and
+  # otherwise walks a hardcoded list that starts with gnome-terminal — which is
+  # why Bottom was opening there. Shipping this shim as a package puts it on
+  # ~/.nix-profile/bin, which leads the GNOME session's PATH (the same reason
+  # these Nix TUIs appear in the grid at all), so GLib picks it up and every
+  # terminal app — present and future — opens in Ghostty with no per-app wiring.
+  #
+  # Interface is the freedesktop xdg-terminal-exec proposal: the command to run
+  # is passed as arguments (none = just open a terminal). Ghostty runs a command
+  # with `-e`, the same flag the default-terminal exec-arg uses.
+  xdgTerminalExec = pkgs.writeShellScriptBin "xdg-terminal-exec" ''
+    if [ "$#" -eq 0 ]; then
+      exec ${ghostty}/bin/ghostty
+    fi
+    exec ${ghostty}/bin/ghostty -e "$@"
+  '';
 in
 {
   config = lib.mkIf cfg.enable {
-    home.packages = [ ghostty ];
+    home.packages = [ ghostty xdgTerminalExec ];
 
     # Ghostty sets TERM=xterm-ghostty and ships the terminfo entry to match.
     # Ubuntu's ncurses has never heard of it (`infocmp xterm-ghostty` fails on a
