@@ -142,12 +142,25 @@ let
       pin = true;
       browser = false;
       chromium = true;                    # Electron (share/joplin-desktop/resources/app.asar)
-      # Joplin parses its own argv and throws "Unknown flag" on anything it does
-      # not allowlist — a modal error dialog instead of a window. It allows
-      # --enable-features=, so autoscroll works; it does not allow
-      # --blink-settings=, so Joplin keeps middle-click paste. See the note on
-      # chromiumFlagsFor above.
-      chromiumFlagsExclude = [ "--blink-settings" ];
+      # Joplin takes NO chromiumFlags, for two unrelated reasons.
+      #
+      # --blink-settings  it rejects outright. Joplin parses its own argv and
+      #                   throws "Unknown flag" on anything not in its allowlist,
+      #                   which put up a modal error dialog instead of a window.
+      #                   See the note on chromiumFlagsFor above.
+      #
+      # --enable-features autoscroll itself, dropped by choice. It worked here,
+      #                   but in an editable area Blink also drags the text caret
+      #                   to wherever the middle button went down, and nothing
+      #                   can separate the two: the caret placement and the
+      #                   autoscroll start are both default behaviour of the same
+      #                   mousedown (see the KNOWN LIMITATION note on
+      #                   modules.apps.chromiumFlags). In a notes editor a caret
+      #                   that jumps mid-edit costs more than panning saves, so
+      #                   Joplin keeps a still caret and scrolls by wheel.
+      #
+      # This empties Joplin's list, so patchDesktop adds no switches at all.
+      chromiumFlagsExclude = [ "--blink-settings" "--enable-features" ];
       probeDesktop = [ "joplin.desktop" "joplin-desktop.desktop" "net.cozic.joplin_desktop.desktop" "joplin_joplin.desktop" ];
       probeCommands = [ "joplin-desktop" "joplin" ];
     }

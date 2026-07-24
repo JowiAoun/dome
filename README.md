@@ -656,10 +656,50 @@ Both spellings are there on purpose, and neither came from a support page:
   (`strings /usr/lib/claude-desktop/claude-desktop`).
 
 An unrecognised feature name is ignored rather than rejected, so the pair is safe
-everywhere and survives Brave fixing its typo. Note it is `--enable-features`,
-**not** the `--enable-blink-features` most guides give: `MiddleClickAutoscroll`
-is absent from Blink's `runtime_enabled_features.json5`, so that form is a
-silent no-op.
+everywhere and survives Brave fixing its typo.
+
+`--enable-features` is used because that is what Brave's own flag entry injects,
+and it demonstrably works for Electron too. The `--enable-blink-features` form
+most guides give would very likely work as well — `MiddleClickAutoscroll` is a
+Blink runtime-enabled feature:
+
+```json5
+// This is enabled by default on Windows only. The only part that's
+// "experimental" is the support on other platforms.
+{ name: "MiddleClickAutoscroll", status: "test" },   // runtime_enabled_features.json5
+```
+
+That comment is also the clearest statement of what this whole section is
+working around: upstream considers autoscroll a Windows feature, and everything
+else is opt-in.
+
+#### The caret moves too, and that part is not fixable
+
+In an **editable** area a middle click also drags the text caret to the click
+point. There is no switch for it, and it is worth knowing why, because it looks
+like something `middleClickPasteAllowed` should have covered.
+
+Blink places the caret in `SelectionController::HandleMousePressEvent`, which
+`MouseEventManager` calls for **every** button with no gate — it collapses the
+selection at the hit-test position. `middleClickPasteAllowed` only suppresses the
+paste that follows on mouse-up; the caret has already moved, deliberately:
+
+```cpp
+// Ignore handled, since we want to paste to where the caret was placed anyway.
+handled = HandlePasteGlobalSelection(event.Event()) || handled;
+```
+
+And a page cannot work around it either. Autoscroll starts in
+`Node::DefaultEventHandler`, i.e. as the mousedown's **default action** — the
+same thing the caret placement is downstream of — so `preventDefault()` on middle
+mousedown throws away the scrolling along with the caret. They are one behaviour.
+
+So in a text editor it is autoscroll-with-a-moving-caret, or neither. To choose
+neither for one app, drop the switch for it:
+
+```nix
+chromiumFlagsExclude = [ "--enable-features" ];   # no autoscroll, caret stays put
+```
 
 #### When an app rejects a switch
 

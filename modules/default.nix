@@ -108,9 +108,28 @@
             An unrecognised feature name is ignored rather than an error, so the
             pair is safe everywhere and keeps working if Brave fixes its typo.
 
-            Note this is `--enable-features`, NOT the `--enable-blink-features`
-            that most guides give: MiddleClickAutoscroll is absent from Blink's
-            runtime_enabled_features.json5, so the blink form is a silent no-op.
+            `--enable-features` is what Brave's own flag entry injects, and it
+            works for Electron too. The `--enable-blink-features` form most
+            guides give would very likely work as well: MiddleClickAutoscroll is
+            a Blink runtime-enabled feature, `status: "test"`, carrying the
+            comment "enabled by default on Windows only. The only part that's
+            experimental is the support on other platforms" — which is the
+            clearest statement of what this option works around.
+
+            KNOWN LIMITATION, not fixable here. In an editable area a middle
+            click also MOVES THE TEXT CARET to the click point, and no switch
+            turns that off. Blink places the caret in
+            SelectionController::HandleMousePressEvent, which
+            MouseEventManager calls for every button with no gate, and
+            middleClickPasteAllowed only suppresses the paste that follows —
+            its own comment reads "we want to paste to where the caret was
+            placed anyway". Nor can a page work around it: the caret placement
+            and the autoscroll start (Node::DefaultEventHandler) are BOTH
+            default behaviour of the same mousedown, so preventDefault() loses
+            the scrolling along with the caret. Autoscroll in a text editor
+            therefore comes with a moving caret, or not at all — drop
+            `--enable-features` for that app via chromiumFlagsExclude to choose
+            the latter.
 
             The SECOND switch is what makes the first one usable. Turning
             autoscroll on does not turn the Linux middle-click paste off —
