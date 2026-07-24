@@ -211,7 +211,7 @@ let
     {
       name = "claude-desktop";
       command = "claude-desktop";
-      ids = [ "claude-desktop.desktop" "Claude.desktop" "com.anthropic.claude.desktop" "anthropic-claude.desktop" ];
+      ids = [ "claude-desktop.desktop" "Claude.desktop" "com.anthropic.Claude.desktop" "com.anthropic.claude.desktop" "anthropic-claude.desktop" ];
     }
   ] ++ lib.optional cfg.systemBrowser {
     # Brave from Brave's apt repo (system/78-brave.sh). Pinned through this
