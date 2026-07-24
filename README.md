@@ -23,7 +23,7 @@ Here's my simple development environment that works in WSL, GitHub Codespaces, a
 |---------|------|
 | GitHub Codespaces | Enable dotfiles (below) — `bootstrap.sh` runs automatically |
 | WSL / existing Linux that already has (or wants only) Nix | `./bootstrap.sh` (interactive) |
-| **Fresh Ubuntu 24.04 machine — any hardware** | `./install.sh --host generic` |
+| **Fresh Ubuntu LTS machine (24.04 or 26.04) — any hardware** | `./install.sh --host generic` |
 | ASUS Zenbook Duo (2024) UX8406MA | Follow [docs/PLAN.md](docs/PLAN.md) + [docs/CHECKLIST.md](docs/CHECKLIST.md), then `./install.sh --host zenbook-duo` |
 
 ### GitHub Codespaces
@@ -61,7 +61,10 @@ idempotent. Preview root-level changes with
 `sudo make system DRY_RUN=1`, once `build-essential` is installed). Use the flag
 rather than `DRY_RUN=1 sudo …`: sudo's default `env_reset` drops the variable
 before the script sees it, so that form would really apply the changes.
-Non-Ubuntu distros: only
+The system layer accepts the two LTS releases it has been checked against,
+**24.04 (noble)** and **26.04 (resolute)**. Interim releases and other distros
+need `FORCE=1`: they are supported for nine months, which is shorter than the
+gap between provisions of this machine. Non-Ubuntu distros: only
 `bootstrap.sh` applies (the system layer refuses to run without `FORCE=1`).
 
 ### WSL / existing Linux
@@ -135,11 +138,13 @@ the optional apps bundle, because it is what everything else here runs inside.
   heard of `xterm-ghostty` and without it every system tool (vim, htop, less)
   dies with "unknown terminal type" inside it
 
-The reason it is Ghostty and not GNOME Terminal is Shift+Enter. VTE 0.76 — what
-Ubuntu 24.04 ships — implements neither the Kitty keyboard protocol nor
-`modifyOtherKeys`, so Shift+Enter and Enter reach applications as the same bare
-CR and *nothing* can tell them apart. Ghostty speaks the Kitty protocol, so the
-keypress arrives as `CSI 13;2u` and Claude Code's binding fires.
+The reason it is Ghostty and not GNOME Terminal is Shift+Enter. VTE implements
+neither the Kitty keyboard protocol nor `modifyOtherKeys`, so Shift+Enter and
+Enter reach applications as the same bare CR and *nothing* can tell them apart.
+That is still true on the newer LTS — checked by `strings` on both shipped
+libraries, 0.76.0 on 24.04 and 0.84.0 on 26.04, neither of which mentions
+either mechanism. Ghostty speaks the Kitty protocol, so the keypress arrives as
+`CSI 13;2u` and Claude Code's binding fires.
 
 #### Desktop Apps (`modules.apps = true`)
 GUI software **plus the desktop wiring that makes it usable** — desktop entries,

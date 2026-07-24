@@ -14,11 +14,24 @@ if [ "${ID:-}" != ubuntu ]; then
   warn "running on ${ID:-unknown} with FORCE=1"
 fi
 
+# The two LTS releases this layer is known to work on: 24.04 (noble), where it
+# was written, and 26.04 (resolute), its successor. Both were checked rather
+# than assumed compatible — the two things that are actually release-specific
+# both hold on resolute:
+#
+#   - 20-kernel.sh needs an HWE metapackage for the release. It no longer
+#     hardcodes one, and linux-generic-hwe-26.04 is published (7.0.0-28.28).
+#   - 60-docker.sh builds Docker's apt suite from the codename, and
+#     download.docker.com/linux/ubuntu/dists/resolute/InRelease exists.
+#
+# Interim (non-LTS) releases stay behind FORCE=1 on purpose: they are supported
+# for nine months, which is shorter than the gap between provisions of this
+# machine, so a system layer aimed at one would rot in place.
 case "${VERSION_ID:-}" in
-  24.04) log "Ubuntu ${VERSION_ID} (${VERSION_CODENAME:-noble})" ;;
+  24.04 | 26.04) log "Ubuntu ${VERSION_ID} (${VERSION_CODENAME:-unknown})" ;;
   *)
-    [ "${FORCE:-0}" = 1 ] || die "expected Ubuntu 24.04, found ${VERSION_ID:-unknown}. FORCE=1 to override."
-    warn "running on Ubuntu ${VERSION_ID:-unknown} with FORCE=1 — 20-kernel.sh may not apply"
+    [ "${FORCE:-0}" = 1 ] || die "expected Ubuntu 24.04 or 26.04 (LTS), found ${VERSION_ID:-unknown}. FORCE=1 to override."
+    warn "running on Ubuntu ${VERSION_ID:-unknown} with FORCE=1 — 20-kernel.sh falls back to the GA kernel if there is no HWE stack for it"
     ;;
 esac
 
