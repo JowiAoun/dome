@@ -50,7 +50,10 @@ root_crypt_backing() {
   [ -n "$src" ] || return 1
   lsblk -no TYPE --inverse "$src" 2>/dev/null | grep -qx crypt || return 1
   # The raw partition holding the LUKS header, e.g. /dev/nvme0n1p3.
-  lsblk -npo FSTYPE,NAME --inverse "$src" 2>/dev/null \
+  # -r (raw): without it lsblk prepends tree-drawing glyphs (└─) to NAME on a
+  # multi-level stack (ext4 → LVM → dm-crypt → partition), and they get glued
+  # onto the path — cryptsetup would then be handed `└─/dev/nvme0n1p3`.
+  lsblk -rnpo FSTYPE,NAME --inverse "$src" 2>/dev/null \
     | awk '$1 == "crypto_LUKS" { print $2; exit }'
 }
 

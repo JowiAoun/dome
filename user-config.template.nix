@@ -33,6 +33,11 @@
   braveManagedPolicy = true;  # Brave's settings as enterprise policy in /etc (survives
                               # updates, cannot drift): Leo, Wallet, Rewards, VPN, News
                               # and Web Discovery off. See system/79-brave-policy.sh.
+  tpmAutoUnlock = false;  # Enroll the LUKS root into the TPM (Clevis, PCR 7) so boot
+                          # skips the passphrase. Keeps the passphrase as a fallback.
+                          # SECURITY TRADEOFF: anyone who powers the machine on reaches
+                          # the login screen without the disk passphrase. Off by default;
+                          # opt in deliberately. See system/96-tpm-unlock.sh.
 
   # Machine name - applied to /etc/hostname, the GNOME "Device Name" and
   # /etc/hosts. Empty leaves whatever the machine is already called.

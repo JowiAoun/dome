@@ -577,6 +577,37 @@ physically attached at boot — detached, it is a Bluetooth device and you canno
 type the passphrase at all. Worth proving to yourself on the first boot rather
 than discovering it later.
 
+### Skipping the passphrase with the TPM (opt-in)
+
+`system/96-tpm-unlock.sh` can enrol the encrypted root into the TPM so the disk
+unlocks from the chip and no passphrase is typed at boot. It is **off by
+default** and gated on `tpmAutoUnlock = true` in `user-config.nix`, because it is
+a genuine trade-off: the disk stays encrypted against a pulled drive or a
+powered-off theft, but anyone who can power the machine on reaches the login
+screen without the disk passphrase. The passphrase keyslot is never removed, so
+it remains the automatic fallback.
+
+It uses **Clevis**, not `systemd-cryptenroll`. The systemd-native
+`tpm2-device=auto` option is honoured only by `sd-cryptsetup`, which is not in
+Ubuntu's `initramfs-tools` initramfs (Launchpad #1980018) — on stock Noble the
+option is silently ignored and the disk still prompts. Getting it would mean
+replacing `initramfs-tools` with dracut, a large change to the boot pipeline the
+rest of this repo assumes; Clevis plugs into the initramfs Ubuntu already ships,
+so `/etc/crypttab` is left untouched. The script installs the Clevis packages, a
+small `tss-user` initramfs hook (24.04's `clevis-initramfs` omits the `tss` user
+the TPM tooling drops to — without it the unseal fails and boot falls back to the
+prompt), binds the volume to **PCR 7**, rebuilds the initramfs, and verifies the
+result before you ever reboot.
+
+PCR 7 measures Secure Boot state, so the binding survives ordinary signed kernel
+and initramfs updates but re-locks after a Secure Boot or firmware-key change (a
+BIOS `dbx` update, a MOK enrolment, or turning Secure Boot off). When that
+happens you simply get the passphrase prompt again — expected and safe — and
+re-enrol to capture the new state. The script prints the exact `clevis luks
+unbind`/`bind` commands for both re-enrolling and turning it off. The enrol step
+needs your existing passphrase, so on a non-interactive run it prints the one
+command to run rather than failing.
+
 ### No icon flashing in the dash on copy/paste
 
 Claude Code checks the clipboard on every paste to see whether you pasted an

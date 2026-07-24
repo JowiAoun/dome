@@ -246,6 +246,11 @@ in
         # Get the pointer out of the way while typing; it comes back on the
         # next mouse move.
         mouse-hide-while-typing = true
+
+        # No "Copied to clipboard" toast on every copy. app-notifications
+        # defaults to clipboard-copy,config-reload; no-clipboard-copy drops just
+        # that popup while keeping the config-reload one.
+        app-notifications = no-clipboard-copy
       '';
 
       ".local/bin/terminal-setup".source = terminalSetup;
