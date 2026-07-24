@@ -40,8 +40,15 @@ fi
 
 # Saved logins, cookies and history are live SQLite databases. Copying them
 # while the browser is running yields a profile that looks fine and is corrupt.
-if pgrep -f 'brave|firefox' >/dev/null 2>&1; then
-  die "Brave and/or Firefox is running — close them first (their profiles are live SQLite)"
+#
+# Match process NAMES (-x), not full command lines (-f): `pgrep -f brave` also
+# hits any shell, editor or grep whose arguments merely mention the word, so it
+# would refuse a perfectly good backup for no reason. `.brave-wrapped` is the
+# nixpkgs wrapper, `brave-browser` the .deb one.
+BROWSER_PROCS='brave|brave-browser|\.brave-wrapped|firefox'
+if pgrep -x "$BROWSER_PROCS" >/dev/null 2>&1; then
+  running="$(pgrep -x "$BROWSER_PROCS" | xargs -r ps -o comm= -p 2>/dev/null | sort -u | tr '\n' ' ')"
+  die "${running}is running — close it first (its profile is a live SQLite database)"
 fi
 
 OUT="$DEST/dome-backup"

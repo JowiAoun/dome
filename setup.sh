@@ -325,8 +325,9 @@ preflight_wipe() { # [destination]
   echo
 
   echo "backup blockers"
-  if pgrep -f 'brave|firefox' >/dev/null 2>&1; then
-    pf_fail "Brave and/or Firefox is running — backup.sh will refuse (live SQLite profiles)"
+  # Names, not command lines — see the note in migrate/backup.sh.
+  if pgrep -x 'brave|brave-browser|\.brave-wrapped|firefox' >/dev/null 2>&1; then
+    pf_fail "a browser is running — backup.sh will refuse (live SQLite profiles)"
   else
     pf_ok "no browser running"
   fi
