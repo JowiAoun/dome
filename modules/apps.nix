@@ -416,9 +416,10 @@ let
     ''}
 
     ${lib.optionalString (app.chromium or false) ''
-      # Chromium never claims GNOME's xdg-activation token, so a startup sequence
-      # for it only ever ends by timing out — see the StartupNotify note in
-      # chromium_flag_override for what that costs and how it presents.
+      # Chromium never claims GNOME's xdg-activation token, so its startup
+      # sequence only retires on timeout — which parks the ShellApp in STARTING
+      # and makes the dash icon ignore clicks. See the StartupNotify note in
+      # chromium_flag_override for what it does and does not fix.
       # Deliberately NOT gated on chromiumFlags: the stall has nothing to do with
       # the switches, and emptying the flag list must not bring it back.
       sed -i 's|^StartupNotify=true$|StartupNotify=false|' entry.desktop
@@ -553,8 +554,15 @@ let
   # no bounds at all, which is exactly the "why does it open tiny" symptom.
   # StartupNotify is false below for the same reason it is forced off for every
   # other Chromium launcher here — see the note in chromium_flag_override. A web
-  # app IS a Brave --app window, so it stalls the dash identically; Notion and
-  # YouTube Music were the two that showed it after Brave itself was fixed.
+  # app IS a Brave --app window, so it parks the dash icon identically.
+  #
+  # No --ozone-platform here, deliberately. X11 would end the spinning cursor,
+  # but a web app must stay on Wayland to keep its own identity: Wayland sets
+  # app_id PER WINDOW, so Brave can label an --app window
+  # brave-<host>__-Default even while it shares one process with the browser.
+  # X11's WM_CLASS is per PROCESS, fixed by whichever Brave started first, so
+  # every web app would collapse into the browser's dash icon (and --class is
+  # ignored on handoff — measured). See the research doc.
   webAppEntry = app: pkgs.writeTextDir "share/applications/${app.name}.desktop" ''
     [Desktop Entry]
     Type=Application
@@ -867,19 +875,21 @@ let
 
       # StartupNotify=false, deliberately. Nothing to do with the switches above.
       #
-      # GNOME opens a "startup sequence" for any launcher that asks for one, and
-      # ends it when the app claims the xdg-activation token it was handed.
-      # Chromium never claims that token, so on Wayland the sequence can only end
-      # by timing out. Until it does, the shell paints the busy cursor over its
-      # OWN chrome and holds the dash icon in "launching" state — which is why
-      # the icon will not respond to a click to minimise a window that is already
-      # on screen. Measured on this machine: ~10s of that, against a Brave window
-      # that maps in ~300ms. The sequence buys nothing here but the stall.
+      # This fixes ONE precise thing: the dash icon ignoring a click for the
+      # first ~15s after launch. Asking for startup notification puts the
+      # ShellApp into SHELL_APP_STATE_STARTING, and Dash to Panel only offers
+      # its minimise/activate behaviour once state == RUNNING (appIcons.js), so
+      # until the sequence retires, clicking the icon does nothing at all —
+      # against a Brave window that has been on screen since ~300ms.
       #
-      # The tell is that the busy cursor appears only over the panel, never over
-      # the window. Corroborated by the two Chromium apps that never showed the
-      # symptom, Discord and Joplin: they are precisely the two whose entries
-      # ship no StartupNotify at all.
+      # It does NOT stop the spinning cursor, and it was a mistake to think it
+      # would. Verified with gnome-shell's own Eval: with this false the app
+      # reaches state=RUNNING with its window bound 2ms after window-created,
+      # and the busy cursor still runs its full course. That cursor has a
+      # separate cause this repo cannot fix from a .desktop file — Brave orphans
+      # xdg-activation tokens and mutter shows META_CURSOR_BUSY until they time
+      # out. docs/research/2026-07-24-brave-gnome-startup-spinner.md has the
+      # measurements, and the reason X11 is not the answer.
       sed -i 's|^StartupNotify=true$|StartupNotify=false|' "$tmp"
 
       install -Dm644 "$tmp" "$dst"
