@@ -197,9 +197,9 @@ in
         panel-element-positions = perMonitor elements;
         appicon-padding = 4;
         # Space around each app icon. Dash to Panel's default of 8 is too wide a
-        # gap and 0 packs them too tight; 4 sits in between (appicon-padding also
-        # keeps the clickable area a little larger than the icon itself).
-        appicon-margin = 4;
+        # gap and 0 packs them too tight; 2 is a hair of breathing room
+        # (appicon-padding also keeps the clickable area larger than the icon).
+        appicon-margin = 2;
         # false = do not keep gnome-shell's top bar. This is what actually
         # merges the clock/tray/system menu into the bottom panel.
         stockgs-keep-top-panel = false;
