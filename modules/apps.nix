@@ -490,9 +490,9 @@ let
   dashOrder = [
     [ "org.gnome.Nautilus.desktop" "nautilus.desktop" "org.gnome.Nautilus" ]  # Files
     [ "org.gnome.TextEditor.desktop" "gnome-text-editor.desktop" ]            # Text Editor
-    (candidatesFor "thunderbird")
     [ config.modules.terminal.desktopId ]                                     # Ghostty
     (candidatesFor "discord")
+    (candidatesFor "thunderbird")
     (candidatesFor "joplin")
     [ "notion.desktop" ]
     claudeIds                                                                 # Claude Desktop
