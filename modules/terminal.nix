@@ -231,17 +231,31 @@ in
         # Claude Code, which reads the clipboard on every paste.
         copy-on-select = false
 
-        # Familiar Ctrl+C / Ctrl+V copy-paste — without losing Ctrl+C as the
-        # interrupt. The `performable:` prefix makes Ctrl+C consume the key ONLY
-        # when there is a selection to copy (Ghostty's own documented example for
-        # the prefix); with nothing selected Ghostty acts as if the bind were
-        # absent, so Ctrl+C still sends SIGINT to the running program. Net effect:
-        # select-then-Ctrl+C copies, plain Ctrl+C interrupts — so copying output
-        # while a command runs no longer kills it. The stock Ctrl+Shift+C/V binds
-        # keep working; these are additive. (copy-on-select is off above, so this
-        # explicit Ctrl+C is the only thing that writes the clipboard.)
+        # Familiar Ctrl+C / Ctrl+V copy-paste — without breaking Ctrl+C as the
+        # interrupt or Ctrl+V as Claude Code's image paste. The `performable:`
+        # prefix consumes the key ONLY when the action can actually run;
+        # otherwise Ghostty behaves as if the bind were absent and passes the key
+        # through to the running program.
+        #
+        #   Ctrl+C  copies only when there is a selection (Ghostty's own
+        #           documented example); with nothing selected it still sends
+        #           SIGINT, so copying output while a command runs no longer
+        #           kills it.
+        #   Ctrl+V  pastes only when the clipboard holds TEXT. When it holds an
+        #           IMAGE, GTK's synchronous clipboard check (this build has it;
+        #           macOS/AppKit does not — ghostty#11444) makes the paste "not
+        #           performable", so Ctrl+V passes through to the program — which
+        #           is exactly how Claude Code receives it and reads the
+        #           screenshot (via the wl-paste->xclip shim in modules/ai.nix).
+        #           A plain `ctrl+v=paste_from_clipboard` ate the key and image
+        #           paste silently did nothing; GNOME Terminal only "worked"
+        #           because it never binds Ctrl+V at all.
+        #
+        # The stock Ctrl+Shift+C/V binds keep working; these are additive.
+        # (copy-on-select is off above, so this explicit Ctrl+C is the only
+        # thing that writes the clipboard.)
         keybind = performable:ctrl+c=copy_to_clipboard
-        keybind = ctrl+v=paste_from_clipboard
+        keybind = performable:ctrl+v=paste_from_clipboard
 
         # Get the pointer out of the way while typing; it comes back on the
         # next mouse move.
