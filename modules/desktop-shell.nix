@@ -35,6 +35,15 @@ let
   uuid = "dash-to-panel@jderose9.github.com";
   dashToPanel = pkgs.gnomeExtensions.dash-to-panel;
 
+  # Puts dash-pinned apps back into the "Show Apps" grid. GNOME 40+ deliberately
+  # hides every favourite from the grid so it is not shown in two places; that is
+  # stock behaviour with no setting to toggle it. This extension undoes it, so
+  # ALL installed apps appear in the grid, the dash ones included — which is the
+  # whole reason the app-picker-layout above bothers to position them. Works on
+  # GNOME 46 (its metadata lists shell-version 45-49).
+  pinnedInGridUuid = "pinned-apps-in-appgrid@brunosilva.io";
+  pinnedInGrid = pkgs.gnomeExtensions.keep-pinned-apps-in-appgrid;
+
   # Panel contents. "stackedTL" = packed to the left on a bottom panel,
   # "stackedBR" = packed to the right, "centerMonitor" = centred on the screen
   # (rather than centred in the leftover space, which drifts as apps open).
@@ -176,11 +185,13 @@ in
   '';
 
   config = lib.mkIf cfg.enable {
-    # Also the GC root for the symlink below — see the header.
-    home.packages = [ dashToPanel ];
+    # Also the GC root for the symlinks below — see the header.
+    home.packages = [ dashToPanel pinnedInGrid ];
 
     xdg.dataFile."gnome-shell/extensions/${uuid}".source =
       "${dashToPanel}/share/gnome-shell/extensions/${uuid}";
+    xdg.dataFile."gnome-shell/extensions/${pinnedInGridUuid}".source =
+      "${pinnedInGrid}/share/gnome-shell/extensions/${pinnedInGridUuid}";
 
     dconf.settings = {
       # Ubuntu Dock and Dash to Panel both own the dash; running both gives two
@@ -191,7 +202,7 @@ in
       # the Extensions app is switched back off at the next `make home`. Add it
       # here instead — that is the trade for the set being reproducible.
       "org/gnome/shell" = {
-        enabled-extensions = [ "ding@rastersoft.com" "tiling-assistant@ubuntu.com" uuid ];
+        enabled-extensions = [ "ding@rastersoft.com" "tiling-assistant@ubuntu.com" uuid pinnedInGridUuid ];
         disabled-extensions = [ "ubuntu-dock@ubuntu.com" ];
         # App grid order — see appFolders/topLevel above. New apps append at end.
         app-picker-layout = appPickerLayout;
