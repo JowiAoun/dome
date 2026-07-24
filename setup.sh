@@ -64,37 +64,6 @@ cfg_get_list() { # <field> — read `field = [ ... ];` and return the inner text
   sed -nE "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\[(.*)\];.*/\1/p" user-config.nix 2>/dev/null | head -n1 || true
 }
 
-# ── disk encryption ──────────────────────────────────────────────────────────
-# True iff / sits on a dm-crypt layer. Walks the dependency chain upward so it
-# still finds LUKS through LVM — the installer's "Use LVM and encryption"
-# builds ext4 → LV → dm-crypt → partition, so the layer is two levels down.
-# Deliberately needs no root: setup.sh runs as a normal user.
-root_is_encrypted() {
-  local src
-  src="$(findmnt -no SOURCE / 2>/dev/null)" || return 1
-  [ -n "$src" ] || return 1
-  lsblk -no TYPE --inverse "$src" 2>/dev/null | grep -qx crypt
-}
-
-# Kept to 16 lines: whiptail errors out rather than shrinking when the box is
-# taller than the terminal, and 80x24 is still the floor worth assuming.
-LUKS_WARNING="DISK ENCRYPTION — READ THIS ONCE, CAREFULLY
-
-Your LUKS passphrase is the ONLY way into this disk.
-
-Unlike BitLocker, nothing is escrowed: no recovery key sits in any
-account, and no command will ever show you the passphrase again.
-Forget it and every byte here is gone for good.
-
-  1. Put it in a password manager AND on paper. Never keep the only
-     copy on this machine — you cannot boot it to read it.
-
-  2. Add a second, independent unlock so one lapse is not fatal; the
-     system layer prints the exact 'cryptsetup luksAddKey' command.
-
-  3. Keep a header backup on removable media (asked next). A damaged
-     LUKS header stops the correct passphrase from working."
-
 # ── "is this app already installed?" ─────────────────────────────────────────
 # The apps module must never install a second copy of software the machine
 # already has, nor take over its launcher. This is the shell half of the
@@ -452,8 +421,9 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   # re-run. Edit hostName in user-config.nix (or pass HOST_NAME=... for a
   # scripted run) and the system layer applies it.
   local host_name="${HOST_NAME-$(cfg_get hostName)}"
-  # Same override-or-keep pattern: the interactive flow exports LUKS_HEADER_DIR
-  # after asking, and a scripted run keeps whatever is already on disk.
+  # Carried through untouched from whatever is already on disk. Setup no longer
+  # prompts for it; edit luksHeaderBackupDir in user-config.nix (or pass
+  # LUKS_HEADER_DIR=... for a scripted run) and system/95-luks.sh applies it.
   local luks_header_dir="${LUKS_HEADER_DIR-$(cfg_get luksHeaderBackupDir)}"
   local apps_skip
   apps_skip="$(merged_apps_skip)"
@@ -628,20 +598,6 @@ if have_whiptail; then
   NAME="$(whiptail --title "dome setup" --inputbox "Your name (git commits):" 10 60 "$NAME_DEFAULT" 3>&1 1>&2 2>&3)" || exit 1
   EMAIL="$(whiptail --title "dome setup" --inputbox "Your email (git commits):" 10 60 "$EMAIL_DEFAULT" 3>&1 1>&2 2>&3)" || exit 1
 
-  # Set either way, so write_config's ${LUKS_HEADER_DIR-...} keeps an existing
-  # value on an unencrypted machine instead of blanking it.
-  LUKS_HEADER_DIR="$(cfg_get luksHeaderBackupDir)"
-  if root_is_encrypted; then
-    whiptail --title "dome setup — disk encryption" --scrolltext --msgbox "$LUKS_WARNING" 22 74
-    LUKS_HEADER_DIR="$(whiptail --title "dome setup — disk encryption" --inputbox \
-      "LUKS header backup directory.
-
-Removable media only — a header backup stored on the encrypted disk
-can never be used to recover it. Blank to skip." \
-      14 72 "$LUKS_HEADER_DIR" 3>&1 1>&2 2>&3)" || exit 1
-  fi
-  export LUKS_HEADER_DIR
-
   SUMMARY="host:    $HOST
 name:    $NAME
 email:   $EMAIL
@@ -691,16 +647,6 @@ else
   EMAIL_DEFAULT="$(cfg_get email)"; EMAIL_DEFAULT="${EMAIL_DEFAULT:-$(git config --global user.email 2>/dev/null || echo '83415433+JowiAoun@users.noreply.github.com')}"
   printf 'Name [%s]: ' "$NAME_DEFAULT"; read -r NAME; NAME="${NAME:-$NAME_DEFAULT}"
   printf 'Email [%s]: ' "$EMAIL_DEFAULT"; read -r EMAIL; EMAIL="${EMAIL:-$EMAIL_DEFAULT}"
-  LUKS_HEADER_DIR="$(cfg_get luksHeaderBackupDir)"
-  if root_is_encrypted; then
-    echo
-    echo "$LUKS_WARNING"
-    echo
-    printf 'LUKS header backup dir (removable media, blank to skip) [%s]: ' "$LUKS_HEADER_DIR"
-    read -r luks_in
-    [ -n "$luks_in" ] && LUKS_HEADER_DIR="$luks_in"
-  fi
-  export LUKS_HEADER_DIR
   write_config "$HOST" "$NAME" "$EMAIL"
   echo "[dome] wrote user-config.nix (host=$HOST)"
   printf 'Run the full install now (./install.sh --host %s)? (y/N): ' "$HOST"
