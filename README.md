@@ -109,7 +109,36 @@ Zenbook Duo tooling stays out of generic setups).
 - VS Code Java extensions
 
 #### AI Tools (`modules.ai = true`)
-- **Claude Code**: AI coding assistant
+- **Claude Code**: AI coding assistant, from the official installer so it is
+  always current and self-updating
+- **skills** ([vercel-labs/skills](https://github.com/vercel-labs/skills)): the
+  open agent-skills CLI. Upstream documents `npx skills …`; this installs it
+  globally instead, so it is a real `skills` command that starts instantly and
+  works offline. `skills find`, `skills add <source>`, `skills ls`,
+  `skills update`. Needs `modules.node` (it is an npm package wanting Node ≥
+  22.20)
+- **Claude Code keybindings** (`~/.claude/keybindings.json`): **Shift+Enter**
+  inserts a newline. That needs a terminal that can encode a modified Enter —
+  see the terminal module below
+
+#### Terminal (always on, not part of `modules.apps`)
+**Ghostty**, installed on every machine with a desktop — deliberately *outside*
+the optional apps bundle, because it is what everything else here runs inside.
+
+- Set as the **default terminal**, which is also what Ctrl+Alt+T opens
+  (`gsd-media-keys` resolves the shortcut through
+  `org.gnome.desktop.default-applications.terminal`), and what Nautilus's
+  "Open in Terminal" uses. Turn that off with `modules.terminal.setDefault = false`
+- Pinned to the dash; GNOME Terminal is left installed as a fallback
+- Its terminfo is installed to `~/.terminfo`, because Ubuntu's ncurses has never
+  heard of `xterm-ghostty` and without it every system tool (vim, htop, less)
+  dies with "unknown terminal type" inside it
+
+The reason it is Ghostty and not GNOME Terminal is Shift+Enter. VTE 0.76 — what
+Ubuntu 24.04 ships — implements neither the Kitty keyboard protocol nor
+`modifyOtherKeys`, so Shift+Enter and Enter reach applications as the same bare
+CR and *nothing* can tell them apart. Ghostty speaks the Kitty protocol, so the
+keypress arrives as `CSI 13;2u` and Claude Code's binding fires.
 
 #### Desktop Apps (`modules.apps = true`)
 GUI software **plus the desktop wiring that makes it usable** — desktop entries,
@@ -303,11 +332,16 @@ These switches live outside `modules` in `user-config.nix`, because the root
 layer reads them with `sed` rather than through Nix:
 
 ```nix
-dockerEngine = true;    # Docker Engine (CE)
-dockerDesktop = false;  # Docker Desktop GUI
-claudeDesktop = true;   # Claude desktop app (beta)
-braveBrowser = true;    # Brave from Brave's apt repo, not nixpkgs
+dockerEngine = true;        # Docker Engine (CE)
+dockerDesktop = false;      # Docker Desktop GUI
+claudeDesktop = true;       # Claude desktop app (beta)
+openWhispr = true;          # OpenWhispr dictation, from its GitHub release (~1 GB)
+braveBrowser = true;        # Brave from Brave's apt repo, not nixpkgs
+braveManagedPolicy = true;  # Leo, Wallet, Rewards, VPN, News, Web Discovery off
 ```
+
+Each has a matching one-run override on `system/run.sh` — `--no-brave`,
+`--no-brave-policy`, `--no-openwhispr`, `--no-claude-desktop`.
 
 ### Brave, and why it is not a Nix package
 
@@ -319,11 +353,78 @@ Chromium seven months old — until sites began refusing it, and no amount of
 moves *everything* at once.
 
 So Brave comes from Brave's own signed apt repository instead
-(`system/78-brave.sh`), and updates with the rest of the system on
-`apt upgrade`. `braveBrowser = true;` (the default) turns it on, and the apps
-module reacts by installing no Nix Brave, pinning the apt one through
-`systemPins`, and pointing `$BROWSER` and the web app launchers at
+(`system/78-brave.sh`), and **every `sudo make system` upgrades it to the newest
+build Brave has published**. `braveBrowser = true;` (the default) turns it on,
+and the apps module reacts by installing no Nix Brave, pinning the apt one
+through `systemPins`, and pointing `$BROWSER` and the web app launchers at
 `/usr/bin/brave-browser`.
+
+Registering the repository is *not* enough on its own, which is the mistake the
+first version of this made: nothing on an Ubuntu desktop runs `apt upgrade` on a
+schedule, so "it will update with apt" quietly means "whenever someone
+remembers". That is how a browser gets seven releases behind. The script now
+refreshes Brave's index — and only Brave's, a one-second request rather than a
+full `apt-get update` — and runs `apt-get install --only-upgrade` on every run,
+reporting the version change.
+
+### Brave's settings, as policy
+
+`system/79-brave-policy.sh` writes `/etc/brave/policies/managed/dome.json`,
+turning off **Leo** (the AI assistant), the **Wallet**, **Rewards/BAT**, the
+**VPN** upsell, **Brave News** and **Web Discovery**.
+
+Policy, not preferences, and the distinction is the whole point:
+
+- The profile's `Preferences` file is the browser's own live state — it rewrites
+  it on exit, so an edit there is either clobbered or fights the running browser.
+  Policy is read fresh from `/etc` at every launch, applies to every profile, and
+  shows in the UI as *managed by your organisation* with the control greyed out.
+- **It survives updates.** Nothing in the file names a Brave version, a Chromium
+  version or an install path, and Chromium *ignores* policy keys it does not
+  recognise — so a key a future Brave retires becomes a silent no-op instead of
+  an error. `/etc` is untouched by the `.deb`.
+- It applies to **both** installs, since `/etc/brave/policies` is compiled into
+  the binary — the apt Brave and the nixpkgs one alike.
+
+Adding another setting is one line in the script. Check the spelling against the
+shipped binary rather than a support page, because the polarity is not
+consistent upstream (some keys are `*Disabled`, some `*Enabled`):
+
+```bash
+strings /opt/brave.com/brave/brave | grep -xE 'Brave[A-Za-z]+(Disabled|Enabled)'
+```
+
+`braveManagedPolicy = false;` removes the file again and hands the settings back
+to the browser UI. Verify what is in force at `brave://policy`.
+
+### OpenWhispr
+
+`system/76-openwhispr.sh` installs
+[OpenWhispr](https://github.com/OpenWhispr/openwhispr) — voice-to-text dictation
+with local Whisper/Parakeet models — from the vendor's GitHub release, exactly
+as their Linux docs prescribe (`apt install ./OpenWhispr-*.deb`, so the
+`ydotool` and `libpipewire` dependencies resolve; `dpkg -i` would not).
+
+It is in the root layer rather than `modules/apps.nix` because nixpkgs does not
+have it (checked) and the vendor ships a `.deb` — which installs its own
+`/usr/share/applications` entry, so it needs none of the desktop patching the
+Nix apps require. It is **not pinned to the dash**: it is hotkey-driven.
+
+Two details worth knowing:
+
+- **It is a ~1 GB install** (a 433 MB `.deb`, `Installed-Size` ≈ 985 MB). The
+  script checks free space twice — once before spending the download, once
+  against the real `Installed-Size` before unpacking — and declines with a
+  message rather than filling `/`.
+- **Every run costs a few hundred bytes, not 433 MB.** electron-builder
+  publishes `latest-linux.yml` beside the binaries; the script reads the version
+  and sha512 out of it, compares with `dpkg --compare-versions`, and downloads
+  only when something newer exists. That checksum is also verified before
+  installing.
+
+Their docs also list a paste helper as a post-install step — `xdotool` for X11,
+`wtype` for Wayland — so both are installed. Without one, dictation silently
+pastes nothing.
 
 The launchers adapt on their own: the Wayland `app_id` prefix is the basename
 of the binary Chromium was *started* as, so it derives from `browserBin` rather
@@ -477,7 +578,8 @@ dome/
 │   ├── python.nix         # Python + pyenv
 │   ├── node.nix           # Node.js + nodenv
 │   ├── java.nix           # Java development
-│   ├── ai.nix             # AI tools
+│   ├── ai.nix             # AI tools (Claude Code, skills CLI, keybindings)
+│   ├── terminal.nix       # Ghostty + default-terminal wiring (not under apps)
 │   ├── cloud.nix          # Terraform/Pulumi/cloud CLIs/k8s
 │   └── zenbook-duo/       # Duo-only home-manager wiring
 ├── system/                # Idempotent root-layer scripts (Ubuntu)
