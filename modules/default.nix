@@ -68,6 +68,71 @@
             already installed; entries added by hand are kept.
           '';
         };
+        chromiumFlags = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = [
+            "--enable-features=MiddelButtonClickAutoscroll,MiddleClickAutoscroll"
+            "--blink-settings=middleClickPasteAllowed=false"
+          ];
+          example = [ ];
+          description = ''
+            Command-line switches added to every launch of every Chromium-based
+            app — the browser (its own launcher, the web app launchers and
+            $BROWSER) and every Electron app, whether it came from nixpkgs or
+            from apt.
+
+            Electron IS Chromium, so one list covers both. Apps opt in with
+            `chromium = true;` in modules/apps.nix (Nix-installed) or by being
+            listed in systemChromiumApps (apt-installed) — adding a future
+            Electron app is one line in whichever list applies.
+
+            The default turns on middle-click autoscroll: hold the scroll wheel
+            down and move the mouse to pan, the way Windows does. Chromium
+            ships the feature but leaves it OFF on Linux, where middle click
+            pastes the primary selection instead, and it has no
+            enterprise-policy key — so a switch is the only way to set it
+            without editing live profile state.
+
+            BOTH spellings are listed on purpose, and both were read off real
+            binaries rather than taken from a support page:
+
+              MiddelButtonClickAutoscroll  Brave's own, typo and all ("Middel").
+                                           Enabling brave://flags#middle-button-
+                                           autoscroll in a scratch profile makes
+                                           Brave hand exactly this to its child
+                                           processes.
+              MiddleClickAutoscroll        upstream Chromium/Electron's, present
+                                           in Electron binaries that have no
+                                           trace of Brave's spelling.
+
+            An unrecognised feature name is ignored rather than an error, so the
+            pair is safe everywhere and keeps working if Brave fixes its typo.
+
+            Note this is `--enable-features`, NOT the `--enable-blink-features`
+            that most guides give: MiddleClickAutoscroll is absent from Blink's
+            runtime_enabled_features.json5, so the blink form is a silent no-op.
+
+            The SECOND switch is what makes the first one usable. Turning
+            autoscroll on does not turn the Linux middle-click paste off —
+            Chromium does both at once, so a middle click pans the page AND
+            dumps the clipboard into whatever is under the cursor. Confirmed on
+            this machine, and NOT fixable through GNOME: Chromium subscribes to
+            `notify::gtk-enable-primary-paste` but pastes anyway with that
+            setting already false.
+
+            `middleClickPasteAllowed` is a Blink setting (initial value true, in
+            third_party/blink/renderer/core/frame/settings.json5), and
+            `--blink-settings=` is the switch that reads that exact table. It is
+            per-app, so this does not touch middle-click paste anywhere else on
+            the system — the terminal keeps it, which is what you want there.
+
+            Caveat worth knowing: Chromium IGNORES an unknown --blink-settings
+            key silently, with no warning even at ERROR level (checked by
+            launching with a deliberately bogus key and capturing stderr). So a
+            typo here fails quietly — verify the name against settings.json5,
+            not against the absence of an error message.
+          '';
+        };
         systemBrowser = lib.mkOption {
           type = lib.types.bool;
           default = false;

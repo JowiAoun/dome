@@ -26,6 +26,25 @@
 let
   cfg = config.modules.apps;
 
+  # Extra command-line switches for every Chromium-based app
+  # (modules.apps.chromiumFlags — middle-click autoscroll by default). Electron
+  # IS Chromium, so the browser and the Electron apps share one list.
+  #
+  # A switch reaches a Chromium process ONLY through the command line that
+  # started it: there is no config file, no policy key and no environment
+  # variable for this. So every way an app can be launched has to carry it, or
+  # the setting silently holds in some windows and not others — worse than not
+  # setting it at all. The five ways, and who handles each:
+  #
+  #   nixpkgs app's own launcher   -> patchDesktop, for `chromium = true` apps
+  #   apt app's own launcher       -> chromium_flag_overrides in apps-setup
+  #   the web app launchers        -> webAppEntry
+  #   $BROWSER                     -> browserOpener
+  #   a terminal `brave-browser`   -> NOT covered; nothing owns that argv
+  chromiumFlagsStr = lib.concatStringsSep " " cfg.chromiumFlags;
+  # " --flag ..." or "", so call sites can concatenate unconditionally.
+  chromiumFlagsSuffix = lib.optionalString (cfg.chromiumFlags != [ ]) " ${chromiumFlagsStr}";
+
   # GUI apps that get the full treatment: package + patched desktop entries
   # (+ dash pin where pin = true). `ids` are the .desktop file names inside
   # ${package}/share/applications — read off the built packages, not guessed
@@ -43,6 +62,7 @@ let
       ids = [ "brave-browser.desktop" ];  # also ships com.brave.Browser.desktop; one launcher is enough
       pin = true;
       browser = true;                     # -> default handler for http/https/html
+      chromium = true;                    # -> modules.apps.chromiumFlags on its Exec
       probeDesktop = [ "brave-browser.desktop" "brave.desktop" "com.brave.Browser.desktop" "brave_brave.desktop" ];
       probeCommands = [ "brave-browser" "brave" ];
     }
@@ -52,6 +72,7 @@ let
       ids = [ "discord.desktop" ];        # Exec=Discord — bare name, needs patching
       pin = true;
       browser = false;
+      chromium = true;                    # Electron (opt/Discord/resources/app.asar)
       probeDesktop = [ "discord.desktop" "com.discordapp.Discord.desktop" "discord_discord.desktop" ];
       probeCommands = [ "discord" "Discord" ];
     }
@@ -61,6 +82,7 @@ let
       ids = [ "drawio.desktop" ];
       pin = false;                        # installed, not pinned
       browser = false;
+      chromium = true;                    # Electron (share/lib/drawio/resources/app.asar)
       probeDesktop = [ "drawio.desktop" "com.jgraph.drawio.desktop.desktop" "drawio_drawio.desktop" ];
       probeCommands = [ "drawio" ];
     }
@@ -79,6 +101,7 @@ let
       ids = [ "bruno.desktop" ];
       pin = false;
       browser = false;
+      chromium = true;                    # Electron (opt/bruno/resources/app.asar)
       probeDesktop = [ "bruno.desktop" "com.usebruno.Bruno.desktop" "bruno_bruno.desktop" ];
       probeCommands = [ "bruno" ];
     }
@@ -92,6 +115,7 @@ let
       ids = [ "joplin.desktop" ];
       pin = true;
       browser = false;
+      chromium = true;                    # Electron (share/joplin-desktop/resources/app.asar)
       probeDesktop = [ "joplin.desktop" "joplin-desktop.desktop" "net.cozic.joplin_desktop.desktop" "joplin_joplin.desktop" ];
       probeCommands = [ "joplin-desktop" "joplin" ];
     }
@@ -156,6 +180,7 @@ let
     ids = [ "code.desktop" "code-url-handler.desktop" ];
     pin = false;
     browser = false;
+    chromium = true;                      # Electron (lib/vscode/chrome_100_percent.pak)
     probeDesktop = [ "code.desktop" "visual-studio-code.desktop" "code_code.desktop" "com.visualstudio.code.desktop" ];
     probeCommands = [ "code" ];
   };
@@ -235,6 +260,52 @@ let
     ids = braveSystemIds;
   };
 
+  # Chromium-based apps the ROOT layer installed (apt/.deb), which therefore own
+  # their own .desktop file in /usr/share where Nix cannot rewrite it. These get
+  # modules.apps.chromiumFlags through an override written into XDG_DATA_HOME at
+  # activation — see chromium_flag_overrides in apps-setup.
+  #
+  # TO ADD A FUTURE ELECTRON APP: one entry here (apt-installed) or
+  # `chromium = true;` in desktopApps above (Nix-installed). Nothing else.
+  #
+  # Every one of these was confirmed to be Electron by finding its app.asar
+  # rather than assumed from the vendor — OBS Studio, for one, bundles Chromium
+  # (CEF, for browser sources) while being a Qt app whose windows this would do
+  # nothing for, so "ships Chromium" is not the same question.
+  #
+  # `wmClass` is set only where the vendor's entry omits StartupWMClass and the
+  # dash needs it to bind the window to this launcher; empty means leave it out.
+  systemChromiumApps = [
+    {
+      name = "claude-desktop";           # /usr/lib/claude-desktop/resources/app.asar
+      command = "claude-desktop";
+      ids = [ "claude-desktop.desktop" "Claude.desktop" "com.anthropic.Claude.desktop" "com.anthropic.claude.desktop" "anthropic-claude.desktop" ];
+      wmClass = "";
+    }
+    {
+      name = "open-whispr";              # /opt/OpenWhispr/resources/app.asar
+      command = "open-whispr";
+      ids = [ "open-whispr.desktop" "openwhispr.desktop" "OpenWhispr.desktop" ];
+      wmClass = "";
+    }
+    {
+      name = "curseforge";               # /opt/CurseForge/resources/app.asar
+      command = "curseforge";
+      ids = [ "curseforge.desktop" "CurseForge.desktop" ];
+      wmClass = "";
+    }
+  ] ++ lib.optional cfg.systemBrowser {
+    # The apt Brave. Same treatment as the Electron apps above — it is the same
+    # engine and the same problem: a .deb owns the launcher.
+    name = "brave";
+    command = "brave-browser";
+    ids = braveSystemIds;
+    # Brave's own entry declares no StartupWMClass and its main window reports
+    # app_id "brave-browser"; without this the dash can fall back to a generic
+    # icon for the window our override now owns.
+    wmClass = "brave-browser";
+  };
+
   # Apps listed in modules.apps.skip are dropped entirely: no package, no
   # desktop entry, no pin, never the default browser. setup.sh fills this in
   # automatically for anything it finds already installed outside Nix
@@ -284,6 +355,29 @@ let
       -e 's|^(Exec=)([^/[:space:]][^[:space:]]*)|\1${app.package}/bin/\2|' \
       -e 's|^(TryExec=)([^/[:space:]][^[:space:]]*)|\1${app.package}/bin/\2|' \
       "$src" > entry.desktop
+
+    ${lib.optionalString ((app.chromium or false) && cfg.chromiumFlags != [ ]) ''
+      # modules.apps.chromiumFlags for a Chromium-based app (`chromium = true`),
+      # inserted right after the program so a trailing %U/%F field code stays
+      # last, where the spec wants it. EVERY Exec= is rewritten, not just the
+      # first: Desktop Actions ("New Window", VS Code's "New Empty Window") have
+      # their own, and a switch missing from those is the "it works in some
+      # windows but not others" trap.
+      #
+      # Only NIX-installed apps come through here. Anything installed by apt
+      # owns a .desktop file in /usr/share that Nix cannot rewrite, so
+      # apps-setup overrides those at activation instead.
+      sed -i -E 's|^(Exec=[^[:space:]]+)|\1 ${chromiumFlagsStr}|' entry.desktop
+    ''}
+
+    ${lib.optionalString (app.chromium or false) ''
+      # Chromium never claims GNOME's xdg-activation token, so a startup sequence
+      # for it only ever ends by timing out — see the StartupNotify note in
+      # chromium_flag_override for what that costs and how it presents.
+      # Deliberately NOT gated on chromiumFlags: the stall has nothing to do with
+      # the switches, and emptying the flag list must not bring it back.
+      sed -i 's|^StartupNotify=true$|StartupNotify=false|' entry.desktop
+    ''}
 
     # Icon= — a themed name resolves through XDG_DATA_DIRS, so point it at the
     # actual file. Preference order: scalable, then largest raster.
@@ -367,7 +461,7 @@ let
   browserOpener =
     if browserBin == null then null
     else pkgs.writeShellScript "dome-browser" ''
-      exec ${pkgs.util-linux}/bin/setsid -f "${browserBin}" "$@" </dev/null >/dev/null 2>&1
+      exec ${pkgs.util-linux}/bin/setsid -f "${browserBin}" ${chromiumFlagsStr} "$@" </dev/null >/dev/null 2>&1
     '';
 
   # The app that owns mailto: — same idea as browserApp, read with `or false`
@@ -412,16 +506,20 @@ let
   # placement off the first label of the host (music.youtube.com -> "music",
   # www.notion.so -> "www"), and both entries in this profile were created with
   # no bounds at all, which is exactly the "why does it open tiny" symptom.
+  # StartupNotify is false below for the same reason it is forced off for every
+  # other Chromium launcher here — see the note in chromium_flag_override. A web
+  # app IS a Brave --app window, so it stalls the dash identically; Notion and
+  # YouTube Music were the two that showed it after Brave itself was fixed.
   webAppEntry = app: pkgs.writeTextDir "share/applications/${app.name}.desktop" ''
     [Desktop Entry]
     Type=Application
     Version=1.5
     Name=${app.title}
     Comment=${app.comment}
-    Exec=${builtins.toString browserBin} --app=${app.url} --class=${app.name} --start-maximized
+    Exec=${builtins.toString browserBin}${chromiumFlagsSuffix} --app=${app.url} --class=${app.name} --start-maximized
     Icon=${app.icon}
     Terminal=false
-    StartupNotify=true
+    StartupNotify=false
     StartupWMClass=${webAppWmClass app}
     Categories=${app.categories}
   '';
@@ -633,6 +731,158 @@ let
       done
     }
     is_foreign() { case " $FOREIGN " in *" $1 "*) return 0 ;; esac; return 1; }
+    # ── 0b. chromiumFlags on the launchers apt owns ──────────────────────────
+    # modules.apps.chromiumFlags reaches Nix-installed apps by being baked into
+    # the entries patchDesktop writes. Apps installed by apt own their .desktop
+    # file in /usr/share, which Nix cannot rewrite and which apt would overwrite
+    # anyway — so for those this writes an override of the SAME .desktop id into
+    # XDG_DATA_HOME, which XDG resolves in preference to /usr/share.
+    #
+    # Regenerated FROM the system entry on every switch rather than kept as a
+    # frozen copy. That is the whole reason it survives app upgrades: a new
+    # version that adds a launcher action or a translation shows up here on the
+    # next `make home` instead of being masked forever by a stale override —
+    # the failure mode of hand-copying a .desktop file once.
+    #
+    # Every file written carries a marker comment on line 1 (legal before the
+    # first group — checked with desktop-file-validate) carrying two things:
+    #
+    #   OVERRIDE_MARKER_ID  identifies the file as ours, so the sweep at the end
+    #                       can tell "dome put this here" from a launcher written
+    #                       by hand, and an app that is later uninstalled or
+    #                       dropped from the list leaves no dead entry behind.
+    #   a STAMP             hash of (system entry + flags), i.e. of the inputs
+    #                       this file was generated from.
+    #
+    # The stamp is what makes it safe for ANOTHER module to own the same Exec
+    # line afterwards. modules/gaming.nix legitimately prepends gamemoderun to
+    # CurseForge's, running after this by design. Comparing file CONTENT would
+    # then see "different" on every switch, rewrite the file, and drop
+    # gamemoderun until gaming.nix's activation put it back — and `apps-setup`
+    # run on its own (it is on PATH) would drop it with nothing to restore it.
+    # Comparing the stamp asks the question that actually matters instead: have
+    # the source entry or the flag list changed since this was generated? If
+    # not, leave the file alone, whatever else has since been layered onto it.
+    OVERRIDE_MARKER_ID='modules.apps.chromiumFlags'
+
+    # <flags> <wmclass-or-empty> <command> <candidate id>...
+    chromium_flag_override() {
+      local flags="$1" wmclass="$2" cmd="$3"
+      shift 3
+      local id src dir dst tmp stamp
+
+      id="$(system_desktop_id "$cmd" "$@" || true)"
+      # Not installed (yet). install.sh runs the system layer first, so this is
+      # the normal state only for apps the machine has switched off.
+      [ -n "$id" ] || return 0
+      dst="$HOME/.local/share/applications/$id"
+      WANTED="$WANTED $id"
+
+      src=""
+      for dir in $SYS_APP_DIRS; do
+        if [ -e "$dir/$id" ]; then src="$dir/$id"; break; fi
+      done
+      if [ -z "$src" ]; then
+        warn "found the id $id but not the file — chromiumFlags not applied to $cmd"
+        return 0
+      fi
+
+      # Hash of everything this file is generated FROM. Compared against the
+      # stamp in the existing file below instead of comparing content, so a
+      # later module's edit to the same Exec line survives — see the note on
+      # OVERRIDE_MARKER_ID above.
+      stamp="$(cat "$src" - <<< "$flags" | sha256sum | cut -c1-12)"
+      if [ -f "$dst" ] &&
+         [ "$(sed -n "1s/.*\[$OVERRIDE_MARKER_ID:\([0-9a-f]*\)\].*/\1/p" "$dst")" = "$stamp" ]; then
+        UNCHANGED="$UNCHANGED $id"
+        return 0
+      fi
+
+      tmp="$(mktemp)"
+      # EVERY Exec=, not just the first: Desktop Actions ("New Window", "New
+      # Incognito Window") have their own Exec lines, and a switch missing from
+      # those is the "it works in some windows but not others" trap. Switches go
+      # directly after the program so a trailing %U/%F field code stays last,
+      # where the desktop-entry spec wants it.
+      { printf '# dome: generated [%s:%s] — edits are overwritten by `make home`.\n' \
+          "$OVERRIDE_MARKER_ID" "$stamp"
+        sed -E "s|^(Exec=[^[:space:]]+)|\1 $flags|" "$src"
+      } > "$tmp"
+
+      # GNOME binds a window to its launcher by app_id. Where the vendor's entry
+      # declares no StartupWMClass and we know the class, spell it out, or the
+      # dash can fall back to a generic icon for the window this override now
+      # owns. Inserted after the FIRST Exec=, which is always the one in
+      # [Desktop Entry] — appending to the end of the file would land it inside
+      # the last [Desktop Action] group, where it means nothing. `0,/^Exec=/`
+      # bounds the substitution to that first line.
+      if [ -n "$wmclass" ] && ! grep -q '^StartupWMClass=' "$tmp"; then
+        sed -i -E "0,/^Exec=/ s|^(Exec=.*)$|\1\nStartupWMClass=$wmclass|" "$tmp"
+      fi
+
+      # StartupNotify=false, deliberately. Nothing to do with the switches above.
+      #
+      # GNOME opens a "startup sequence" for any launcher that asks for one, and
+      # ends it when the app claims the xdg-activation token it was handed.
+      # Chromium never claims that token, so on Wayland the sequence can only end
+      # by timing out. Until it does, the shell paints the busy cursor over its
+      # OWN chrome and holds the dash icon in "launching" state — which is why
+      # the icon will not respond to a click to minimise a window that is already
+      # on screen. Measured on this machine: ~10s of that, against a Brave window
+      # that maps in ~300ms. The sequence buys nothing here but the stall.
+      #
+      # The tell is that the busy cursor appears only over the panel, never over
+      # the window. Corroborated by the two Chromium apps that never showed the
+      # symptom, Discord and Joplin: they are precisely the two whose entries
+      # ship no StartupNotify at all.
+      sed -i 's|^StartupNotify=true$|StartupNotify=false|' "$tmp"
+
+      install -Dm644 "$tmp" "$dst"
+      rm -f "$tmp"
+      log "chromiumFlags written to $id"
+      CHANGED="$CHANGED $id"
+    }
+
+    # Remove overrides we previously wrote that nothing asks for any more — the
+    # app was uninstalled, dropped from systemChromiumApps, or chromiumFlags was
+    # emptied. Keyed off the marker, so a launcher the user wrote by hand (or
+    # one home-manager owns, which is a symlink and never carries the marker) is
+    # never touched.
+    chromium_flag_sweep() {
+      local f base
+      for f in "$HOME/.local/share/applications"/*.desktop; do
+        [ -f "$f" ] || continue
+        [ -L "$f" ] && continue
+        head -n1 "$f" 2>/dev/null | grep -qF "[$OVERRIDE_MARKER_ID:" || continue
+        base="$(basename "$f")"
+        case " $WANTED " in *" $base "*) continue ;; esac
+        log "removing stale chromiumFlags override: $base"
+        rm -f "$f"
+        CHANGED="$CHANGED $base"
+      done
+    }
+
+    chromium_flag_overrides() {
+      local flags=${lib.escapeShellArg chromiumFlagsStr}
+      WANTED="" CHANGED="" UNCHANGED=""
+
+      # Emptying modules.apps.chromiumFlags leaves WANTED empty, so the sweep
+      # takes every override away and hands the launchers back to their .debs,
+      # rather than leaving the last set of flags behind with nothing in the
+      # repo still asking for them.
+      if [ -n "$flags" ]; then
+        ${lib.concatMapStringsSep "\n        " (a:
+          ''chromium_flag_override "$flags" ${lib.escapeShellArg (a.wmClass or "")} ${lib.escapeShellArg a.command} ${lib.escapeShellArgs a.ids}''
+        ) systemChromiumApps}
+      fi
+      chromium_flag_sweep
+
+      if [ -n "$CHANGED" ]; then
+        log "  fully quit and reopen those apps to pick the switches up"
+      elif [ -n "$UNCHANGED" ]; then
+        log "chromiumFlags already on:$UNCHANGED"
+      fi
+    }
 
     # ── 1. default browser ───────────────────────────────────────────────────
     set_default_browser() {
@@ -780,6 +1030,10 @@ let
       fi
       log "dash pins updated: $joined"
     }
+
+    # Before the cache refresh below, so the overrides it writes are in the MIME
+    # cache in the same pass rather than only after the next switch.
+    chromium_flag_overrides
 
     # Refresh the MIME cache so the new entries are picked up without a re-login.
     update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
