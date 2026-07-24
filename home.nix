@@ -156,6 +156,22 @@ in
 
   programs.home-manager.enable = true;
 
+  # GNOME desktop preferences that aren't tied to any one module. Written
+  # through home-manager's dconf (a `dconf load`, straight into the dconf
+  # database) — the same mechanism modules/desktop-shell.nix uses, and the one
+  # that actually reaches GNOME Shell. It is NOT the gsettings/keyfile path that
+  # modules/apps.nix has to route around; that only matters for keys that merge
+  # with live user state (dash pins, default browser), not a static boolean.
+  #
+  # A harmless no-op where there is no GNOME session (WSL, Codespaces): with no
+  # session bus at activation, home-manager simply skips the dconf write.
+  dconf.settings = {
+    # Silence the click GNOME plays on every volume up/down keypress.
+    # input-feedback-sounds is exactly that beep — leaving event-sounds alone
+    # keeps the rest of the desktop's notification sounds working.
+    "org/gnome/desktop/sound".input-feedback-sounds = false;
+  };
+
   programs.vscode = {
     # Off when VS Code is already installed from apt/snap/flatpak (detected by
     # ./setup.sh --sync-apps-skip): two VS Codes on one machine is exactly the
