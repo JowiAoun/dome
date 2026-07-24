@@ -63,6 +63,14 @@ in
     # /etc/gamemode.ini, so one setting turns the whole feature on or off.
     gaming.enable = (userConfig.gameMode or false) && !isCodespaces;
 
+    # Lock-screen half of loginPinLength. The extension itself is installed by
+    # system/87-login-pin.sh — it has to be system-wide for the GDM greeter to
+    # see it — so all this does is add it to the authoritative
+    # enabled-extensions list. Only meaningful where desktopShell is on, i.e. a
+    # GNOME host; the host file decides that.
+    desktopShell.loginPinUnlock =
+      (userConfig.loginPinLength or 0) > 0 && !isCodespaces;
+
     # Ghostty. Deliberately NOT tied to `modules.apps`: that switch is for the
     # optional desktop-app bundle, and the terminal is the thing everything else
     # in this repo runs inside — including Claude Code, whose Shift+Enter needs a

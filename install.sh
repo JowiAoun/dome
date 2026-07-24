@@ -117,6 +117,11 @@ ensure_system_flag openWhispr true
 ensure_system_flag braveBrowser true
 ensure_system_flag braveManagedPolicy true
 ensure_system_flag gameMode false
+# Not a bool: 0 means "the login screen keeps asking for Enter". The seeded
+# default has to be OFF — a length guessed on someone else's behalf would
+# submit a prefix of their password on every attempt.
+ensure_system_flag loginPinLength 0
+ensure_system_flag loginRateLimit false
 if [ -n "$DOCKER_ENGINE" ];  then set_key dockerEngine  "$DOCKER_ENGINE";  echo "[dome] dockerEngine = $DOCKER_ENGINE";  fi
 if [ -n "$DOCKER_DESKTOP" ]; then set_key dockerDesktop "$DOCKER_DESKTOP"; echo "[dome] dockerDesktop = $DOCKER_DESKTOP"; fi
 if [ -n "$CLAUDE_DESKTOP" ]; then set_key claudeDesktop "$CLAUDE_DESKTOP"; echo "[dome] claudeDesktop = $CLAUDE_DESKTOP"; fi

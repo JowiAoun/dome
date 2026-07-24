@@ -44,6 +44,14 @@ let
   pinnedInGridUuid = "pinned-apps-in-appgrid@brunosilva.io";
   pinnedInGrid = pkgs.gnomeExtensions.keep-pinned-apps-in-appgrid;
 
+  # The one extension here that Nix does NOT install. It has to live in
+  # /usr/share/gnome-shell/extensions to be visible to the GDM greeter, which
+  # runs as the gdm user and cannot read anything under /home — so
+  # system/87-login-pin.sh installs it and this module only switches it on for
+  # the lock screen. Listing a uuid that is not installed is harmless: the shell
+  # logs that it cannot find it and carries on.
+  pinUnlockUuid = "pin-unlock@dome.local";
+
   # Panel contents. "stackedTL" = packed to the left on a bottom panel,
   # "stackedBR" = packed to the right, "centerMonitor" = centred on the screen
   # (rather than centred in the leftover space, which drifts as apps open).
@@ -184,6 +192,20 @@ in
     startup, and Wayland cannot restart it in place
   '';
 
+  options.modules.desktopShell.loginPinUnlock = lib.mkEnableOption ''
+    the pin-unlock extension on the LOCK screen, so a PIN of the configured
+    length unlocks without pressing Enter.
+
+    The login screen half is not here and cannot be: that is a separate
+    gnome-shell running as the gdm user, enabled from its own dconf database by
+    system/87-login-pin.sh. This only adds the uuid to enabled-extensions, which
+    is the authoritative list — without it the extension would be switched back
+    off on the next `make home`.
+
+    Wired from `loginPinLength` in user-config.nix, the same value the system
+    script writes for the extension to read
+  '';
+
   config = lib.mkIf cfg.enable {
     # Also the GC root for the symlinks below — see the header.
     home.packages = [ dashToPanel pinnedInGrid ];
@@ -206,7 +228,8 @@ in
       # the Extensions app is switched back off at the next `make home`. Add it
       # here instead — that is the trade for the set being reproducible.
       "org/gnome/shell" = {
-        enabled-extensions = [ "ding@rastersoft.com" "tiling-assistant@ubuntu.com" uuid pinnedInGridUuid ];
+        enabled-extensions = [ "ding@rastersoft.com" "tiling-assistant@ubuntu.com" uuid pinnedInGridUuid ]
+          ++ lib.optional cfg.loginPinUnlock pinUnlockUuid;
         disabled-extensions = [ "ubuntu-dock@ubuntu.com" ];
         # App grid order — see appFolders/topLevel above. New apps append at end.
         app-picker-layout = appPickerLayout;

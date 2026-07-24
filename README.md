@@ -975,6 +975,100 @@ unbind`/`bind` commands for both re-enrolling and turning it off. The enrol step
 needs your existing passphrase, so on a non-interactive run it prints the one
 command to run rather than failing.
 
+### Logging in without pressing Enter (opt-in)
+
+`loginPinLength = 4;` in `user-config.nix` makes the login screen and the lock
+screen submit the password by themselves the moment it reaches that many
+characters — a Windows Hello PIN, on GNOME. `0` (the default) leaves both
+screens asking for Enter. `loginRateLimit = true;` is the lockout that makes a
+short PIN defensible; the two are separate switches and either works alone.
+
+**It does not check the password after every character, and neither does Windows.**
+A Hello PIN is a fixed-length credential and Windows submits at that length. Per-
+character checking is not merely slow here, it is impossible, and gnome-shell's
+own `gdm/authPrompt.js` says so in three places: every check is a full PAM
+conversation and `pam_unix` on Ubuntu has no `nodelay`, so a wrong answer costs
+~2 s; `_onVerificationFailed()` calls `clear()`, which does `_entry.set_text('')`,
+so the box is **wiped** after every wrong answer; and `_activateNext()` calls
+`updateSensitivity(false)`, which drops the entry's `reactive` and moves key
+focus away until the answer comes back. Character 1 would be erased before
+character 2 could be typed.
+
+So `system/gnome-extensions/pin-unlock@dome.local` submits at a known length
+instead. It hooks nothing private: `authPrompt.js` wires the entry up with
+`entry.clutter_text.connect('activate', …)`, so emitting `activate` on that
+`ClutterText` *is* pressing Enter, and the entry is found through the stage's key
+focus rather than by importing the dialog — the same code covers both screens and
+a shell that rearranges either one quietly stops matching instead of breaking.
+
+The extension is installed to `/usr/share/gnome-shell/extensions`, not into
+`~/.local/share`, because **the login screen is not your session**: it is
+gnome-shell running as the `gdm` user, which cannot read anything under `/home`.
+One system-wide copy serves both screens. Enabling it is per-user and therefore
+happens twice — `system/87-login-pin.sh` writes the greeter's dconf drop-in and
+re-runs Ubuntu's own `/usr/share/gdm/generate-config`, and
+`modules/desktop-shell.nix` adds the uuid to `enabled-extensions` for the lock
+screen (that list is authoritative, so an extension merely switched on in the
+Extensions app is switched back off at the next `make home`).
+
+**If the length is wrong you are not locked out.** A `loginPinLength` shorter
+than the real password would otherwise submit a prefix forever with no way to
+finish typing, so the extension disarms after 3 auto-submits and the prompt falls
+back to type-it-and-press-Enter. The counter resets whenever the auth screen is
+re-entered, so a correct PIN always rearms it.
+
+Two things it genuinely costs. Auto-submitting at a known length **tells anyone
+holding the machine how long your password is** — they can type characters until
+it submits itself. And a typo becomes a failed attempt with no Enter pressed. It
+does not otherwise weaken anything: guessing was already unlimited, and Enter is
+not a speed bump to an attacker with a script.
+
+`metadata.json` declares `shell-version: ["46"]` only. A different GNOME lists it
+as outdated and does not load it, which is the safe direction; the script says so
+out loud rather than leaving a feature that silently does nothing.
+
+### Rate-limiting password guesses (opt-in)
+
+Ubuntu ships **no lockout at all**. `pam_faillock` is installed and
+`/etc/security/faillock.conf` exists with every line commented out, but nothing
+in `/etc/pam.d` references the module — so guessing is unlimited, at the ~30
+tries a minute `pam_unix`'s failure delay allows. A 4-digit PIN is 10,000
+combinations, i.e. under six hours. `loginRateLimit = true;` cuts that to 8 tries
+per 15 minutes, or several days.
+
+**It covers the login and lock screen only, deliberately.** The usual advice is
+to put faillock in `/etc/pam.d/common-auth`, which catches every service at once
+— including `sudo` and the TTYs. That is exactly what makes it wrong here: a
+lockout would then take the recovery tools with it, and the only way back into
+the machine is a rescue boot. Confined to `gdm-password`, a lockout is always
+fixable from the machine itself:
+
+```bash
+sudo faillock --user "$USER" --reset     # clear it now
+faillock --user "$USER"                  # see the current tally
+```
+
+`system/88-faillock.sh` **replaces** `@include common-auth` in
+`/etc/pam.d/gdm-password` rather than wrapping it. faillock has to bracket the
+module that checks the password — `preauth` before it, `authfail` after it to
+count the failure, `authsucc` after that to clear the count — and common-auth
+ends in `auth requisite pam_deny.so`, which aborts the stack the instant
+authentication fails. An `authfail` line placed after the include is therefore
+**unreachable, and no failure is ever counted**. The widely-copied Debian
+faillock recipes have this bug: the stack looks right, logs nothing, and locks
+nobody out. The block is common-auth's own module list with the three phases
+woven through it, and the script refuses to touch anything — restoring the stock
+`@include` — if `common-auth` ever stops being the list it was copied from
+(`pam-auth-update` running for a new module, fingerprint login, a domain join).
+
+`authsucc` is `optional`, not the customary `sufficient`: `sufficient` returns
+success immediately and would skip the `auth optional pam_gnome_keyring.so` line
+below it, so the login keyring would stop unlocking itself. The control flag only
+decides how the result is combined; the counter is cleared either way.
+
+Turning the switch off restores the byte-identical stock file, and a stock copy
+is kept at `/var/backups/dome/gdm-password.orig` before the first change.
+
 ### No icon flashing in the dash on copy/paste
 
 Claude Code checks the clipboard on every paste to see whether you pasted an
@@ -1124,6 +1218,8 @@ dome/
 │   ├── cloud.nix          # Terraform/Pulumi/cloud CLIs/k8s
 │   └── zenbook-duo/       # Duo-only home-manager wiring
 ├── system/                # Idempotent root-layer scripts (Ubuntu)
+│   └── gnome-extensions/  # Shell extensions the GDM greeter needs, so they
+│                          # install to /usr/share, not to ~/.local/share
 ├── tests/                 # Unit tests for system/lib.sh (`make test`)
 ├── duo/                   # zenduo hardware tooling (self-contained, MIT)
 └── docs/                  # PLAN.md, CHECKLIST.md, research archive

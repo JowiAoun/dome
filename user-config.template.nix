@@ -45,6 +45,21 @@
                           # bottleneck, which it is on Meteor Lake).
                           # TRADEOFF: more heat, more fan, less battery while playing.
                           # See system/86-gamemode.sh and modules/gaming.nix.
+  loginPinLength = 0;     # Log in without pressing Enter: the login and lock screen
+                          # submit the password by themselves once it reaches exactly
+                          # this many characters, the way a Windows Hello PIN does.
+                          # 0 = off (press Enter as usual); otherwise 4-64, and it
+                          # MUST equal your real password length.
+                          # SECURITY TRADEOFF: anyone holding the machine can learn
+                          # how long your password is, by typing until it submits
+                          # itself. Set loginRateLimit below when using a short one.
+                          # See system/87-login-pin.sh.
+  loginRateLimit = false; # Lock the login and lock screen after 8 failed passwords,
+                          # for 15 minutes (pam_faillock). Ubuntu ships NO lockout at
+                          # all, so guessing is otherwise unlimited. Deliberately does
+                          # not cover sudo or the TTYs, so a lockout is always
+                          # recoverable with `sudo faillock --user $USER --reset`.
+                          # See system/88-faillock.sh.
   tpmAutoUnlock = false;  # Enroll the LUKS root into the TPM (Clevis, PCR 7) so boot
                           # skips the passphrase. Keeps the passphrase as a fallback.
                           # SECURITY TRADEOFF: anyone who powers the machine on reaches

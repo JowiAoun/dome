@@ -1,0 +1,7 @@
+{
+  "uuid": "pin-unlock@dome.local",
+  "name": "PIN Unlock",
+  "description": "Submits the login and lock screen password once it reaches a fixed length, the way a Windows Hello PIN does, so a PIN of the configured length logs in without pressing Enter. The length is read from the 'pin-length' file in this directory, which system/87-login-pin.sh writes from loginPinLength in user-config.nix; with that file absent or unusable the extension does nothing at all.",
+  "shell-version": ["46"],
+  "session-modes": ["gdm", "unlock-dialog"]
+}

@@ -404,7 +404,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   # up its redirection first and truncates the file, so a $(cfg_get ...) inside
   # the heredoc body would read the now-empty file and every saved preference
   # would silently reset to the hard-coded default below on each re-run.
-  local git_branch git_editor pref_shell pref_editor docker_engine docker_desktop claude_desktop brave_browser brave_policy open_whispr game_mode
+  local git_branch git_editor pref_shell pref_editor docker_engine docker_desktop claude_desktop brave_browser brave_policy open_whispr game_mode login_pin_length login_rate_limit
   git_branch="$(cfg_get gitDefaultBranch)"
   git_editor="$(cfg_get gitEditor)"
   pref_shell="$(cfg_get preferredShell)"
@@ -419,6 +419,8 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   gecko_policy="$(cfg_get geckoPolicy)"
   open_whispr="$(cfg_get openWhispr)"
   game_mode="$(cfg_get gameMode)"
+  login_pin_length="$(cfg_get loginPinLength)"
+  login_rate_limit="$(cfg_get loginRateLimit)"
   # Carried through untouched. There is deliberately no prompt for this:
   # renaming a machine is a one-off, not something to be re-asked on every
   # re-run. Edit hostName in user-config.nix (or pass HOST_NAME=... for a
@@ -458,6 +460,8 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   braveManagedPolicy = $brave_policy;
   geckoPolicy = $gecko_policy;
   gameMode = $game_mode;
+  loginPinLength = $login_pin_length;
+  loginRateLimit = $login_rate_limit;
 
   # Where system/95-luks.sh writes the LUKS header backup. Must be removable
   # media: a header backup stored on the encrypted disk cannot be used to
@@ -503,6 +507,9 @@ EOF
   sed -i 's/geckoPolicy = ;/geckoPolicy = true;/' user-config.nix
   sed -i 's/openWhispr = ;/openWhispr = true;/' user-config.nix
   sed -i 's/gameMode = ;/gameMode = false;/' user-config.nix
+  # loginPinLength is a NUMBER, not a bool — 0 means "ask for Enter as usual".
+  sed -i 's/loginPinLength = ;/loginPinLength = 0;/' user-config.nix
+  sed -i 's/loginRateLimit = ;/loginRateLimit = false;/' user-config.nix
 }
 
 # ── non-interactive modes ────────────────────────────────────────────────────

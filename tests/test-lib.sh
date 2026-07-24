@@ -87,9 +87,9 @@ else
   no "naive pipeline returned $naive — expected 141 or 0"
 fi
 
-# ── config_flag / config_str ─────────────────────────────────────────────────
+# ── config_flag / config_str / config_num ────────────────────────────────────
 # The Nix -> bash bridge. A wrong answer here silently turns a feature off.
-group "config_flag / config_str"
+group "config_flag / config_str / config_num"
 
 fixture="$(mktemp -d)"
 DOME_ROOT="$fixture"
@@ -102,6 +102,10 @@ cat > "$fixture/user-config.nix" <<'EOF'
   gameMode = false;
   hostName = "";
   hostProfile = "zenbook-duo";
+  loginPinLength = 4;
+  zeroLength = 0;
+  quotedNumber = "6";
+  notANumber = true;
 }
 EOF
 
@@ -111,6 +115,16 @@ fails    "config_flag on a missing key is false"  config_flag neverDefined
 is "config_str reads a string"        "$(config_str hostProfile)" "zenbook-duo"
 is "config_str on an empty string"    "$(config_str hostName)"    ""
 is "config_str on a missing key"      "$(config_str neverDefined)" ""
+
+# config_num must always print a number, so callers can use [ "$n" -eq 0 ]
+# without first proving they got one. Everything unusable reads as 0, which is
+# the OFF value for every numeric switch — a typo disables a feature instead of
+# aborting the run with an arithmetic syntax error partway through.
+is "config_num reads an integer"       "$(config_num loginPinLength)" "4"
+is "config_num reads an explicit 0"    "$(config_num zeroLength)"     "0"
+is "config_num on a missing key is 0"  "$(config_num neverDefined)"   "0"
+is "config_num ignores a quoted number" "$(config_num quotedNumber)"  "0"
+is "config_num ignores a bool"         "$(config_num notANumber)"     "0"
 
 # Nested keys must NOT be picked up: config_flag anchors at the start of a line
 # for a reason — `apps = true;` inside `modules = { ... }` is a different
