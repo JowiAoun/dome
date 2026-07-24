@@ -567,6 +567,15 @@ in
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''run mkdir -p "$HOME/p"'';
 
   home.file = {
+    # mkdesktop: turn a locally-installed binary or AppImage (something without
+    # a .deb, so it ships no desktop entry) into a searchable GNOME app. Kept as
+    # a real .sh — like ai-statusline.sh — so it stays bash -n-checkable and free
+    # of Nix ${} escaping. Usage: `mkdesktop <exe> --name "…" [--wmclass …]`.
+    ".local/bin/mkdesktop" = {
+      source = ./modules/mkdesktop.sh;
+      executable = true;
+    };
+
     ".vimrc".text = ''
       set number
       set relativenumber
