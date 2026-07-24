@@ -35,6 +35,11 @@ jobs:
           # A browser must never be pinned to the flake: on by default so a
           # fresh machine gets Brave from apt, which keeps updating afterwards.
           grep -q 'braveBrowser = true;' user-config.nix
+          # Brave's settings live in /etc as managed policy, so they survive the
+          # upgrades braveBrowser exists to deliver. On by default, same as the
+          # browser itself.
+          grep -q 'braveManagedPolicy = true;' user-config.nix
+          grep -q 'openWhispr = true;' user-config.nix
           # appsSkip must be a real (here empty) Nix list, never `appsSkip = ;`
           grep -q 'appsSkip = \[ \];' user-config.nix
           # An empty hostName means "leave the machine name alone" — a first run

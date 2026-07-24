@@ -278,7 +278,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   # up its redirection first and truncates the file, so a $(cfg_get ...) inside
   # the heredoc body would read the now-empty file and every saved preference
   # would silently reset to the hard-coded default below on each re-run.
-  local git_branch git_editor pref_shell pref_editor docker_engine docker_desktop claude_desktop brave_browser
+  local git_branch git_editor pref_shell pref_editor docker_engine docker_desktop claude_desktop brave_browser brave_policy open_whispr
   git_branch="$(cfg_get gitDefaultBranch)"
   git_editor="$(cfg_get gitEditor)"
   pref_shell="$(cfg_get preferredShell)"
@@ -289,6 +289,8 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   docker_desktop="$(cfg_get dockerDesktop)"
   claude_desktop="$(cfg_get claudeDesktop)"
   brave_browser="$(cfg_get braveBrowser)"
+  brave_policy="$(cfg_get braveManagedPolicy)"
+  open_whispr="$(cfg_get openWhispr)"
   # Carried through untouched. There is deliberately no prompt for this:
   # renaming a machine is a one-off, not something to be re-asked on every
   # re-run. Edit hostName in user-config.nix (or pass HOST_NAME=... for a
@@ -319,7 +321,9 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   dockerEngine = $docker_engine;
   dockerDesktop = $docker_desktop;
   claudeDesktop = $claude_desktop;
+  openWhispr = $open_whispr;
   braveBrowser = $brave_browser;
+  braveManagedPolicy = $brave_policy;
 
   # Machine name (static + pretty + /etc/hosts). Empty = leave it alone.
   hostName = "$host_name";
@@ -356,6 +360,8 @@ EOF
   sed -i 's/dockerDesktop = ;/dockerDesktop = false;/' user-config.nix
   sed -i 's/claudeDesktop = ;/claudeDesktop = true;/' user-config.nix
   sed -i 's/braveBrowser = ;/braveBrowser = true;/' user-config.nix
+  sed -i 's/braveManagedPolicy = ;/braveManagedPolicy = true;/' user-config.nix
+  sed -i 's/openWhispr = ;/openWhispr = true;/' user-config.nix
 }
 
 # ── non-interactive modes ────────────────────────────────────────────────────

@@ -24,8 +24,15 @@
   dockerEngine = true;    # Docker Engine (CE) from Docker's apt repo: dockerd + docker + compose/buildx plugins
   dockerDesktop = false;  # Docker Desktop GUI: ~450 MB download, needs KVM
   claudeDesktop = true;   # Claude desktop app (Linux beta) from Anthropic's signed apt repo
-  braveBrowser = true;    # Brave from Brave's signed apt repo, so it self-updates
-                          # with the system instead of freezing at the flake pin
+  openWhispr = true;      # OpenWhispr voice-to-text dictation, from the vendor's GitHub
+                          # release (.deb). x64 Linux only, and a ~1 GB install — the
+                          # script refuses rather than filling a small disk.
+  braveBrowser = true;    # Brave from Brave's signed apt repo, upgraded to the newest
+                          # published build on every `sudo make system` instead of
+                          # freezing at the flake pin
+  braveManagedPolicy = true;  # Brave's settings as enterprise policy in /etc (survives
+                              # updates, cannot drift): Leo, Wallet, Rewards, VPN, News
+                              # and Web Discovery off. See system/79-brave-policy.sh.
 
   # Machine name - applied to /etc/hostname, the GNOME "Device Name" and
   # /etc/hosts. Empty leaves whatever the machine is already called.
