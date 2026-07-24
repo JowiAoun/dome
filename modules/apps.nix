@@ -323,11 +323,18 @@ let
     else if browserApp == null then null
     else "${browserApp.package}/bin/${browserApp.package.meta.mainProgram or browserApp.name}";
 
-  # The app_id prefix Chromium builds is the basename of the binary it was
-  # STARTED as, not the app's friendly name: nixpkgs installs `brave`, the .deb
-  # installs `brave-browser`, and the window follows whichever launched it.
-  # Deriving it here keeps the web app icons matching under either install.
-  browserWmPrefix = if browserBin == null then "" else baseNameOf browserBin;
+  # The app_id Chromium builds for an --app window is prefixed with the browser's
+  # PRODUCT name, NOT the basename of the binary that launched it. Both `brave`
+  # (nixpkgs) and `brave-browser` (the .deb) emit `brave-<host>…`, verified with
+  # WAYLAND_DEBUG=1 launching /usr/bin/brave-browser:
+  #   set_app_id("brave-music.youtube.com__-Default")
+  # Deriving the prefix from the binary basename produced `brave-browser-…` under
+  # the apt install, so StartupWMClass never matched: the web app showed its own
+  # icon only while Brave was already running (GNOME bound the fast-appearing
+  # window via startup-notification) and fell back to a generic cog on a cold
+  # launch. browserName already resolves to the product name ("brave") for both
+  # installs — reuse it so the class matches the real app_id.
+  browserWmPrefix = browserName;
 
   # What $BROWSER points at — a wrapper, NOT the browser binary directly.
   #
