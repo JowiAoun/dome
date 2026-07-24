@@ -233,6 +233,33 @@ in
       # The folder set. Replaces Ubuntu's stock children (Utilities/YaST/Pardus)
       # with ours; the per-folder name/apps live in folderSettings, merged below.
       "org/gnome/desktop/app-folders".folder-children = map (f: f.id) appFolders;
+
+      # Keep the file indexer out of the game directories.
+      #
+      # Tracker recursively indexes the XDG dirs, and ~/Documents is one of them
+      # — which is where CurseForge puts its Minecraft root by default (2.3 GB
+      # of instances, libraries and assets here). Nothing in a modpack is worth
+      # finding in GNOME search, and every modpack update rewrites hundreds of
+      # files, so leaving it in scope means a reindex sweep starting during the
+      # session you least want the CPU and disk taken.
+      #
+      # Absolute paths, not the bare directory name Tracker also accepts: a
+      # basename rule would silently swallow any directory called "curseforge"
+      # anywhere in the indexed tree.
+      #
+      # Note this pins the whole list, like enabled-extensions above — the four
+      # entries below the game paths are the schema defaults, repeated because a
+      # dconf write replaces rather than extends. Check them against
+      # `gsettings range org.freedesktop.Tracker3.Miner.Files ignored-directories`
+      # if a future Tracker changes them.
+      "org/freedesktop/Tracker3/Miner/Files".ignored-directories = [
+        "${config.home.homeDirectory}/Documents/curseforge"
+        "${config.home.homeDirectory}/Games"
+        "po"
+        "CVS"
+        "core-dumps"
+        "lost+found"
+      ];
     } // folderSettings;
   };
 }

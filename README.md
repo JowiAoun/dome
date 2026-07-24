@@ -298,6 +298,50 @@ leaves the previous copy at `/etc/hosts.dome.bak`.
 Not to be confused with `hostProfile`, which selects `hosts/<name>/` — the
 per-machine *configuration* profile, nothing to do with the machine's name.
 
+### Boot time
+
+Measured on this machine before any tuning:
+
+```
+$ systemd-analyze
+7.820s (firmware) + 5.906s (loader) + 5.347s (kernel) + 7.417s (userspace) = 26.491s
+```
+
+The firmware 7.8s is ASUS's and not ours. `system/35-boot-services.sh` takes
+**~5.1s off the userspace phase** by disabling two services this machine gets
+nothing from — each behind a guard, so a machine where they *do* matter keeps
+them:
+
+- **`NetworkManager-wait-online` (3.78s)** sits at the top of the critical
+  chain: `graphical.target` waits on `network-online.target` waits on this,
+  which blocks until DHCP finishes. What actually wants that target here is
+  printer discovery, firmware metadata, crash reporting and Docker — all of
+  which cope with a network arriving later, which is the normal condition for a
+  laptop that roams. *Guard:* an `nfs`/`cifs`/`_netdev` entry in `/etc/fstab`
+  means something really does need the network first, and the wait is kept.
+- **`gpu-manager` (1.32s)** is Ubuntu's hybrid-graphics arbiter, for NVIDIA
+  Optimus and switchable AMD. This machine has one Intel iGPU. *Guard:* more
+  than one GPU in `lspci`, or a loaded `nvidia`/`nouveau`/`amdgpu`/`radeon`
+  module, and it is kept.
+
+Both use `disable`, never `disable --now` and never `mask`: nothing running is
+stopped, and anything that genuinely needs them can still start them. Undo:
+
+```bash
+sudo systemctl enable NetworkManager-wait-online.service gpu-manager.service
+systemd-analyze blame | head        # after a reboot
+```
+
+`docker.service` was a further 914ms and is already gone — see
+[Docker](#docker), which is now socket-activated.
+
+**Still on the table, deliberately not done:** the initramfs is 89 MB because
+Ubuntu ships `MODULES=most`. `MODULES=dep` typically takes it to 20–30 MB and is
+worth another 3–5s across the loader and kernel phases. It is not automated here
+because a wrong `dep` set is an unbootable machine, and that trade wants a
+deliberate decision plus a verified reboot on both the HWE *and* GA kernel — not
+a provisioning script doing it on your behalf.
+
 ### Memory, swap, and what happens when RAM runs out
 
 The machine has 15 GiB of RAM shared with an iGPU that has no VRAM of its own.
