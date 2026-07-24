@@ -27,11 +27,17 @@
 # (Fable, Opus, …) is visible in /usage but is not passed to status lines, so
 # it cannot be shown here.
 #
-# Every percentage is shown as REMAINING and coloured green/yellow/red on how
-# much is left, so the whole line degrades in the same direction and one glance
-# reads the same way everywhere. Thresholds differ because the resources do:
-# context is worth reacting to earlier than a rate limit window, which refills
-# on its own.
+# The two kinds of percentage read in opposite directions on purpose:
+#
+#   ctx   how much of the context window is USED — it climbs as the session
+#         fills up, which is the way you think about a window you are filling
+#   5h/7d how much of the rate limit window is LEFT — a budget you spend down
+#
+# What keeps that legible is that the colour always means the same thing: it is
+# computed from the consumed share either way, so green/yellow/red degrade
+# together and red is bad everywhere. Context goes yellow at 60% consumed and
+# red at 80%; the rate limits are more forgiving (50%/80%) since they refill on
+# their own and a full window is a wait, not a loss.
 #
 # Output is two rows — the status line renders one row per line printed — so
 # the shell-like identity and the Claude session state stop competing for
@@ -56,13 +62,15 @@ input=$(cat)
 # not hypothetical: with no context_window in the payload, the 5-hour usage
 # landed in $remaining and got rendered as the context percentage. US is not
 # IFS whitespace, so empty fields survive as empty fields.
-IFS=$'\x1f' read -r model cwd remaining five_used five_reset seven_used seven_reset <<< "$(
+IFS=$'\x1f' read -r model cwd ctx_used five_used five_reset seven_used seven_reset <<< "$(
   printf '%s' "$input" | jq -r '
     def num(v): if v == null then "" else (v | tostring) end;
     [
       (.model.display_name // ""),
       (.workspace.current_dir // .cwd // ""),
-      num(.context_window.remaining_percentage),
+      num(.context_window.used_percentage //
+          (if .context_window.remaining_percentage == null then null
+           else 100 - .context_window.remaining_percentage end)),
       num(.rate_limits.five_hour.used_percentage),
       num(.rate_limits.five_hour.resets_at),
       num(.rate_limits.seven_day.used_percentage),
@@ -175,29 +183,27 @@ fi
 
 shell_block=$(join_by ' ' "$user_seg" "$dir_seg" "$git_seg")
 
-# Colour a "how much is left" percentage. Both thresholds are expressed on the
-# REMAINING value, since that is what every number on this line displays — a
-# budget you are spending down, not a meter filling up.
+# Colour by severity. Thresholds are always expressed on the CONSUMED share,
+# whichever way round the number beside them is displayed — so the colour means
+# the same thing everywhere on the line even though ctx counts up and the rate
+# limit windows count down.
 #
-#   style_for <remaining%> <warn at or below> <crit at or below>
+#   style_for <used%> <warn at or above> <crit at or above>
 style_for() {
-  local left="$1" warn="$2" crit="$3"
-  if   (( left <= crit )); then printf '%s' "$CRIT_STYLE"
-  elif (( left <= warn )); then printf '%s' "$WARN_STYLE"
+  local used="$1" warn="$2" crit="$3"
+  if   (( used >= crit )); then printf '%s' "$CRIT_STYLE"
+  elif (( used >= warn )); then printf '%s' "$WARN_STYLE"
   else                          printf '%s' "$OK_STYLE"
   fi
 }
 
-# ---- Claude segments: model + context remaining ----
+# ---- Claude segments: model + context used ----
 claude_segments=()
 [[ -n "$model" ]] && claude_segments+=("$model")
-if [[ -n "$remaining" ]]; then
-  pct=$(printf '%.0f' "$remaining" 2>/dev/null)
+if [[ -n "$ctx_used" ]]; then
+  pct=$(printf '%.0f' "$ctx_used" 2>/dev/null)
   if [[ -n "$pct" ]]; then
-    # Yellow once 60% of the window is consumed, red at 80% — stated here as
-    # the remaining figure actually shown, so 40% and 20% left respectively.
-    ctx_style=$(style_for "$pct" 40 20)
-    claude_segments+=("$(printf '%s%s%%%s ctx' "$ctx_style" "$pct" "$RESET")")
+    claude_segments+=("$(printf '%s%s%%%s ctx' "$(style_for "$pct" 60 80)" "$pct" "$RESET")")
   fi
 fi
 
@@ -218,7 +224,7 @@ limit_seg() {
   local label="$1" used="$2" reset_at="$3" left style eta=""
   [[ -z "$used" ]] && return                       # window absent: emit nothing
   left=$(awk -v u="$used" 'BEGIN { v = 100 - u; if (v < 0) v = 0; printf "%.0f", v }')
-  style=$(style_for "$left" 50 19)   # yellow at half spent, red under a fifth left
+  style=$(style_for $(( 100 - left )) 50 80)   # yellow at half spent, red at four fifths
   if [[ -n "$reset_at" ]]; then
     eta=$(printf '%s (%s)%s' "$DIM" "$(fmt_eta $(( ${reset_at%%.*} - $(date +%s) )))" "$RESET")
   fi
