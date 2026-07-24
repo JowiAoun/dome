@@ -1,4 +1,6 @@
-# Windows-style single bottom taskbar for the GNOME session.
+# Windows-style single bottom taskbar for the GNOME session, plus a tidied
+# "Show Apps" grid (default apps grouped into folders — see the App grid
+# organisation block below).
 #
 # Stock Ubuntu splits the desktop furniture in two: Ubuntu Dock down the left
 # edge and gnome-shell's own top bar holding the clock, tray and system menu.
@@ -53,13 +55,118 @@ let
   # Both built-in panels get the same treatment, so the bar looks right
   # whichever screen is primary and whether or not the second one is lit.
   perMonitor = value: builtins.toJSON { "0" = value; "1" = value; };
+
+  # ── App grid organisation ("Show Apps") ─────────────────────────────────────
+  # Tidies the grid so a fresh install is not a flat wall of system tools: the
+  # default/system apps are grouped into folders; the apps you actually launch
+  # sit at the top level. Every app NOT named below — i.e. anything installed
+  # later — is left out of the folders and off the layout, so GNOME appends it
+  # to the END of the grid, where you will notice it and can decide where it
+  # goes. File it by adding it to a folder (or to `topLevel`) here and re-running
+  # `make home`; until then it waits at the end.
+  #
+  # This is declarative and re-asserted on every switch, so the grid is
+  # reproducible — but a drag-rearrange in GNOME does NOT survive a `make home`.
+  # Organise here, in the repo, not by dragging.
+  #
+  # Folders use explicit `apps` lists rather than `categories` on purpose: a
+  # category folder would swallow matching new apps automatically, which is the
+  # opposite of "new apps wait at the end for me to sort".
+  appFolders = [
+    { id = "updaters"; name = "Updaters"; apps = [
+        "update-manager.desktop"
+        "firmware-updater_firmware-updater.desktop"
+        "software-properties-gtk.desktop"
+        "software-properties-drivers.desktop"
+        "snap-store_snap-store.desktop"
+      ]; }
+    { id = "monitoring"; name = "Monitoring"; apps = [
+        "org.gnome.SystemMonitor.desktop"
+        "gnome-system-monitor-kde.desktop"
+        "org.gnome.PowerStats.desktop"
+        "org.gnome.baobab.desktop"
+        "org.gnome.Logs.desktop"
+        "bottom.desktop"
+        "htop.desktop"
+      ]; }
+    { id = "system"; name = "System"; apps = [
+        "org.gnome.DiskUtility.desktop"
+        "timeshift-gtk.desktop"
+        "gnome-session-properties.desktop"
+        "org.gnome.seahorse.Application.desktop"
+      ]; }
+    { id = "settings"; name = "Settings"; apps = [
+        "nm-connection-editor.desktop"
+        "gnome-language-selector.desktop"
+        "org.freedesktop.IBus.Setup.desktop"
+        "im-config.desktop"
+      ]; }
+    { id = "utilities"; name = "Utilities"; apps = [
+        "org.gnome.Characters.desktop"
+        "org.gnome.font-viewer.desktop"
+        "yelp.desktop"
+        "org.gnome.Evince.desktop"
+        "org.gnome.eog.desktop"
+        "org.gnome.clocks.desktop"
+        "info.desktop"
+        "org.gnome.Terminal.desktop"
+        "vim.desktop"
+        "gvim.desktop"
+      ]; }
+  ];
+
+  # Top-level grid order: the apps you launch, then the folders. Newly-installed
+  # apps are deliberately absent, so GNOME appends them after all of this.
+  topLevel = [
+    "brave-browser.desktop"
+    "discord.desktop"
+    "notion.desktop"
+    "joplin.desktop"
+    "thunderbird.desktop"
+    "youtube-music.desktop"
+    "com.anthropic.Claude.desktop"
+    "com.mitchellh.ghostty.desktop"
+    "code.desktop"
+    "bruno.desktop"
+    "drawio.desktop"
+    "com.obsproject.Studio.desktop"
+    "LocalSend.desktop"
+    "open-whispr.desktop"
+    "Zoom.desktop"
+    "curseforge.desktop"
+    "warthunder-launcher.desktop"
+    "org.gnome.Nautilus.desktop"
+    "org.gnome.Settings.desktop"
+    "org.gnome.Calculator.desktop"
+    "org.gnome.TextEditor.desktop"
+  ] ++ map (f: f.id) appFolders;
+
+  # Build the app-picker-layout GVariant by hand (its type is aa{sv} — an array
+  # of pages, each a dict of item -> {'position': <n>}). One page is enough;
+  # GNOME repaginates for display. Anything not positioned here lands after the
+  # last position, i.e. at the end of the grid.
+  gv = lib.hm.gvariant;
+  svType = gv.type.dictionaryEntryOf [ gv.type.string gv.type.variant ];   # {sv}
+  positionOf = n: gv.mkVariant (gv.mkArray svType [
+    (gv.mkDictionaryEntry [ "position" (gv.mkVariant (gv.mkInt32 n)) ])
+  ]);
+  appPickerPage = gv.mkArray svType
+    (lib.imap0 (i: id: gv.mkDictionaryEntry [ id (positionOf i) ]) topLevel);
+  appPickerLayout = gv.mkArray (gv.type.arrayOf svType) [ appPickerPage ];
+
+  # One dconf path per folder: /org/gnome/desktop/app-folders/folders/<id>.
+  folderSettings = lib.listToAttrs (map (f: {
+    name = "org/gnome/desktop/app-folders/folders/${f.id}";
+    value = { name = f.name; translate = false; apps = f.apps; };
+  }) appFolders);
 in
 {
   options.modules.desktopShell.enable = lib.mkEnableOption ''
     a single Windows-style taskbar along the bottom of the screen: Dash to Panel
     replaces Ubuntu Dock and folds gnome-shell's top bar (clock, tray, system
-    menu) into the same panel. Takes effect at the next login — gnome-shell only
-    picks up extensions at startup, and Wayland cannot restart it in place
+    menu) into the same panel. Also organises the "Show Apps" grid into folders.
+    Takes effect at the next login — gnome-shell only picks up extensions at
+    startup, and Wayland cannot restart it in place
   '';
 
   config = lib.mkIf cfg.enable {
@@ -80,6 +187,8 @@ in
       "org/gnome/shell" = {
         enabled-extensions = [ "ding@rastersoft.com" "tiling-assistant@ubuntu.com" uuid ];
         disabled-extensions = [ "ubuntu-dock@ubuntu.com" ];
+        # App grid order — see appFolders/topLevel above. New apps append at end.
+        app-picker-layout = appPickerLayout;
       };
 
       "org/gnome/shell/extensions/dash-to-panel" = {
@@ -99,6 +208,10 @@ in
       # Only consulted if Ubuntu Dock is ever turned back on, but it keeps the
       # "dash lives at the bottom" intent true in that fallback too.
       "org/gnome/shell/extensions/dash-to-dock".dock-position = "BOTTOM";
-    };
+
+      # The folder set. Replaces Ubuntu's stock children (Utilities/YaST/Pardus)
+      # with ours; the per-folder name/apps live in folderSettings, merged below.
+      "org/gnome/desktop/app-folders".folder-children = map (f: f.id) appFolders;
+    } // folderSettings;
   };
 }
