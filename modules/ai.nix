@@ -255,9 +255,13 @@ in
         - Telemetry is on by default; `DISABLE_TELEMETRY=1` or the cross-tool
           `DO_NOT_TRACK=1` turns it off
 
-        ## Claude Code keybindings
+        ## Claude Code keybindings and behaviour
         - `~/.claude/keybindings.json` is managed by modules/ai.nix
         - Shift+Enter inserts a newline (Ctrl+J still does too)
+        - "Copy on select" is seeded off in `~/.claude.json`, so highlighting
+          text in the fullscreen TUI no longer replaces your clipboard. Copy
+          deliberately with Ctrl+Shift+C. Change it any time in `/config` —
+          that choice wins, the module only seeds the key when it is missing
         - It needs a terminal that can encode a modified Enter — that is what
           Ghostty is for; GNOME Terminal cannot, and there Ctrl+J is the only
           newline key that works
@@ -315,6 +319,50 @@ in
     # pulls a newer one. It moves fast (1.5.20 shipped the day before this was
     # written), so pinning a version here would be wrong within a week.
     #
+    # Claude Code's "Copy on select": off.
+    #
+    # In the fullscreen TUI, Claude Code does its own mouse selection, and
+    # highlighting anything copies it to the clipboard immediately — replacing
+    # whatever was there. Ctrl+Shift+C (selection:copy) is the deliberate way to
+    # copy, so the automatic one only ever costs you the clipboard.
+    #
+    # This is NOT a settings.json key, which is why it is not next to the
+    # keybindings above: it is not in the published schema (125 properties,
+    # checked) and lives in ~/.claude.json, the app's own 46 KB state file —
+    # auth, project history, onboarding flags, caches. That file is written by
+    # the app constantly, so managing it as a home.file symlink would make it
+    # read-only and break Claude Code outright. Hence a merge instead.
+    #
+    # Seeded, not enforced: it writes the key only when absent, so toggling
+    # "Copy on select" back on in /config sticks instead of being reverted by
+    # the next `make home`.
+    home.activation.claudeCopyOnSelect = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      export PATH="${lib.makeBinPath [ pkgs.jq pkgs.coreutils ]}:$PATH"
+      f="$HOME/.claude.json"
+      if [ -n "''${DRY_RUN_CMD:-}" ]; then
+        echo "(dry run) would set copyOnSelect = false in ~/.claude.json if unset"
+      elif [ ! -e "$f" ]; then
+        # Claude Code has not run yet. A partial file is fine — it reads,
+        # merges and writes back — and onboarding keys off the VALUE of
+        # hasCompletedOnboarding, not the file existing, so this cannot skip it.
+        printf '{\n  "copyOnSelect": false\n}\n' > "$f"
+        chmod 600 "$f"
+      elif jq -e 'has("copyOnSelect")' "$f" >/dev/null 2>&1; then
+        : # already decided, by us or in /config — leave it alone
+      else
+        # Temp file in $HOME so the rename is atomic (same filesystem), and
+        # nothing is replaced unless jq produced parseable, non-empty output:
+        # a botched merge here would cost the session's auth and history.
+        tmp="$(mktemp "$HOME/.claude.json.XXXXXX")"
+        if jq '.copyOnSelect = false' "$f" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+          mv "$tmp" "$f" && chmod 600 "$f"
+        else
+          rm -f "$tmp"
+          echo "⚠️ could not set copyOnSelect in ~/.claude.json — turn it off in /config" >&2
+        fi
+      fi
+    '';
+
     # Node comes from modules.node when that is on and from home.packages above
     # when it is not, so this runs on every machine with the AI module — which
     # is the point: it is one of the tools this module exists to provide, not an

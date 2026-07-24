@@ -124,6 +124,11 @@ Zenbook Duo tooling stays out of generic setups).
 - **Claude Code keybindings** (`~/.claude/keybindings.json`): **Shift+Enter**
   inserts a newline. That needs a terminal that can encode a modified Enter —
   see the terminal module below
+- **Copy on select, off**: in the fullscreen TUI Claude Code runs its own mouse
+  selection, and highlighting anything replaced the clipboard. Seeded off in
+  `~/.claude.json` — app state, not `settings.json`, so it is merged in rather
+  than symlinked, and only when the key is absent so a `/config` change sticks.
+  Ghostty's `copy-on-select = false` covers the terminal's own version of this
 
 #### Terminal (always on, not part of `modules.apps`)
 **Ghostty**, installed on every machine with a desktop — deliberately *outside*
