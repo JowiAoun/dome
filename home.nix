@@ -226,6 +226,7 @@ in
       la = "ls -la";
       grep = "grep --color=auto";
       ".." = "cd ..";
+      p = "cd ~/p";
       l = "lazygit";
       c = "claude --dangerously-skip-permissions";
       g = "gemini --model gemini-3-flash";
@@ -281,6 +282,10 @@ in
         eval "$(nodenv init - bash)"
       fi
 
+      # Same as zsh: a new terminal that starts at $HOME lands in ~/p, while a
+      # shell opened inside a project keeps its directory.
+      if [[ $- == *i* && $PWD == "$HOME" && -d "$HOME/p" ]]; then cd "$HOME/p"; fi
+
       # Source ghcup environment for Haskell development
       [ -f "$HOME/.ghcup/env" ] && source "$HOME/.ghcup/env"
     '';
@@ -309,6 +314,7 @@ in
       la = "ls -la";
       grep = "grep --color=auto";
       ".." = "cd ..";
+      p = "cd ~/p";
       l = "lazygit";
       lg = "lazygit";
       c = "claude --dangerously-skip-permissions";
@@ -382,6 +388,12 @@ in
       zle -N down-line-or-beginning-search
       bindkey "^[[A" up-line-or-beginning-search
       bindkey "^[[B" down-line-or-beginning-search
+
+      # A fresh interactive shell that starts at $HOME jumps to the projects
+      # dir, so a new terminal (Ghostty, VS Code with no folder open, tmux)
+      # lands in ~/p without a manual cd. A shell opened inside a project starts
+      # in that folder — PWD is not $HOME — so it is left where it is.
+      if [[ -o interactive && $PWD == $HOME && -d $HOME/p ]]; then cd "$HOME/p"; fi
 
       # Source ghcup environment for Haskell development (must be at the end)
       [ -f "$HOME/.ghcup/env" ] && source "$HOME/.ghcup/env"
@@ -542,6 +554,17 @@ in
       bind l select-pane -R
     '';
   };
+
+  # $HOME is for the XDG dirs (Documents, Music, …) and dotfiles; code lives in
+  # ~/p. Create both on every host: a WSL install ships with neither the XDG
+  # user dirs nor a projects folder, and we want them there too. The shells
+  # auto-cd a fresh terminal into ~/p (see programs.zsh / programs.bash above).
+  xdg.userDirs = {
+    enable = true;
+    createDirectories = true;
+  };
+  home.activation.projectsDir =
+    lib.hm.dag.entryAfter [ "writeBoundary" ] ''run mkdir -p "$HOME/p"'';
 
   home.file = {
     ".vimrc".text = ''
