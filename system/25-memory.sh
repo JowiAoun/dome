@@ -359,10 +359,17 @@ if [ "$SYSTEMD_CHANGED" != 1 ]; then
 elif [ "$DRY_RUN" = 1 ]; then
   log "DRY RUN: would reload systemd and restart systemd-oomd"
 else
+  # daemon-reload is enough, and systemd-oomd is deliberately NOT restarted.
+  #
+  # oomd does not read unit files: PID 1 pushes it the set of cgroups to watch
+  # over the io.systemd.ManagedOOM varlink socket, and re-sends on reload. A
+  # restart throws that live subscription away — and measured on this machine,
+  # the system-level entry did not come back. `oomctl` listed only the user
+  # manager's own scopes (which re-register themselves as they come and go),
+  # with user@1000.service missing entirely, i.e. no pressure monitoring at the
+  # level this drop-in configures. Reloading alone leaves the running oomd
+  # subscribed and simply updates it.
   systemctl daemon-reload
-  # oomd caches unit properties; a restart is the cheap way to make the new
-  # pressure limit take effect now rather than at the next boot.
-  systemctl try-restart systemd-oomd.service 2>/dev/null || true
 
   # The app.slice and gnome-shell drop-ins belong to the USER manager, which
   # root's daemon-reload does not reach. Reload it in place so the settings
