@@ -281,6 +281,8 @@ in
             - Theme: dark (also why a fresh machine never opens on the picker)
             - Show tips: off (`spinnerTipsEnabled`)
             - Use auto mode during plan: off (`useAutoModeDuringPlan`)
+            - Attribution: off — no Co-Authored-By trailer on commits and no
+              generated-with line in PR bodies (`attribution`)
             - Copy on select: off — highlighting text in the fullscreen TUI no
               longer replaces your clipboard; copy with Ctrl+Shift+C
         - Everything else in those two files is passed through untouched: they
@@ -435,10 +437,18 @@ in
         #                       rather than relying on the exec bit, so it still
         #                       works if the file is ever copied somewhere
         #                       without its mode.
+        # attribution           empty strings hide the byline Claude Code
+        #                       otherwise appends: the Co-Authored-By trailer on
+        #                       commits, and the generated-with line in PR
+        #                       bodies. Both halves are set because they are
+        #                       separate fields and hiding one leaves the other.
+        #                       This replaces includeCoAuthoredBy, which the
+        #                       schema now marks DEPRECATED.
         apply_json "$HOME/.claude/settings.json" '{
           "theme": "dark",
           "spinnerTipsEnabled": false,
           "useAutoModeDuringPlan": false,
+          "attribution": { "commit": "", "pr": "" },
           "statusLine": {
             "type": "command",
             "command": "bash ~/.claude/statusline-command.sh"
