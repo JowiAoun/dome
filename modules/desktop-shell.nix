@@ -194,6 +194,10 @@ in
       "${pinnedInGrid}/share/gnome-shell/extensions/${pinnedInGridUuid}";
 
     dconf.settings = {
+      # 12-hour clock (AM/PM) instead of GNOME's 24h default; affects both the
+      # top-bar clock and the Dash to Panel clock, which reads this same key.
+      "org/gnome/desktop/interface".clock-format = "12h";
+
       # Ubuntu Dock and Dash to Panel both own the dash; running both gives two
       # docks, so the stock one is explicitly disabled rather than just dropped
       # from the enabled list (Ubuntu's session re-enables it otherwise).
