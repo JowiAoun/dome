@@ -231,6 +231,18 @@ in
         # Claude Code, which reads the clipboard on every paste.
         copy-on-select = false
 
+        # Familiar Ctrl+C / Ctrl+V copy-paste — without losing Ctrl+C as the
+        # interrupt. The `performable:` prefix makes Ctrl+C consume the key ONLY
+        # when there is a selection to copy (Ghostty's own documented example for
+        # the prefix); with nothing selected Ghostty acts as if the bind were
+        # absent, so Ctrl+C still sends SIGINT to the running program. Net effect:
+        # select-then-Ctrl+C copies, plain Ctrl+C interrupts — so copying output
+        # while a command runs no longer kills it. The stock Ctrl+Shift+C/V binds
+        # keep working; these are additive. (copy-on-select is off above, so this
+        # explicit Ctrl+C is the only thing that writes the clipboard.)
+        keybind = performable:ctrl+c=copy_to_clipboard
+        keybind = ctrl+v=paste_from_clipboard
+
         # Get the pointer out of the way while typing; it comes back on the
         # next mouse move.
         mouse-hide-while-typing = true
