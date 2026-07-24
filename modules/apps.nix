@@ -41,6 +41,32 @@ let
   #   the web app launchers        -> webAppEntry
   #   $BROWSER                     -> browserOpener
   #   a terminal `brave-browser`   -> NOT covered; nothing owns that argv
+  # NOT every Electron app forwards what it does not recognise. Most hand argv
+  # straight to Chromium, but an app that parses its own can reject a switch and
+  # refuse to start: Joplin ends its parser with
+  #
+  #   if (arg.length && arg[0] === "-") throw new Error(_("Unknown flag: %s", arg))
+  #
+  # having allowlisted a specific set of Chromium switches by name — including
+  # --enable-features=, which is why autoscroll works there, but not
+  # --blink-settings=, which put up a modal "An error occurred: Unknown flag"
+  # instead of a window. (Read out of its app.asar; Joplin is unusual this way
+  # because the desktop app shares CLI parsing with joplin-cli.)
+  #
+  # So an app can drop individual switches with `chromiumFlagsExclude`, matched
+  # by PREFIX so `--blink-settings` covers any value. Excluding one costs only
+  # what that switch bought — Joplin keeps autoscroll and keeps middle-click
+  # paste — which beats the app not opening.
+  #
+  # There is no way to test this cheaply: the failure is a GUI dialog, so the
+  # app still runs and prints nothing to stdout or stderr. If another app ever
+  # shows that dialog, add one line to its entry here.
+  chromiumFlagsFor = app:
+    let excludes = app.chromiumFlagsExclude or [ ];
+    in lib.filter (f: !(lib.any (p: lib.hasPrefix p f) excludes)) cfg.chromiumFlags;
+  chromiumFlagsStrFor = app: lib.concatStringsSep " " (chromiumFlagsFor app);
+
+  # The unfiltered list, for the launch paths that are always the browser.
   chromiumFlagsStr = lib.concatStringsSep " " cfg.chromiumFlags;
   # " --flag ..." or "", so call sites can concatenate unconditionally.
   chromiumFlagsSuffix = lib.optionalString (cfg.chromiumFlags != [ ]) " ${chromiumFlagsStr}";
@@ -116,6 +142,12 @@ let
       pin = true;
       browser = false;
       chromium = true;                    # Electron (share/joplin-desktop/resources/app.asar)
+      # Joplin parses its own argv and throws "Unknown flag" on anything it does
+      # not allowlist — a modal error dialog instead of a window. It allows
+      # --enable-features=, so autoscroll works; it does not allow
+      # --blink-settings=, so Joplin keeps middle-click paste. See the note on
+      # chromiumFlagsFor above.
+      chromiumFlagsExclude = [ "--blink-settings" ];
       probeDesktop = [ "joplin.desktop" "joplin-desktop.desktop" "net.cozic.joplin_desktop.desktop" "joplin_joplin.desktop" ];
       probeCommands = [ "joplin-desktop" "joplin" ];
     }
@@ -356,7 +388,7 @@ let
       -e 's|^(TryExec=)([^/[:space:]][^[:space:]]*)|\1${app.package}/bin/\2|' \
       "$src" > entry.desktop
 
-    ${lib.optionalString ((app.chromium or false) && cfg.chromiumFlags != [ ]) ''
+    ${lib.optionalString ((app.chromium or false) && chromiumFlagsFor app != [ ]) ''
       # modules.apps.chromiumFlags for a Chromium-based app (`chromium = true`),
       # inserted right after the program so a trailing %U/%F field code stays
       # last, where the spec wants it. EVERY Exec= is rewritten, not just the
@@ -367,7 +399,7 @@ let
       # Only NIX-installed apps come through here. Anything installed by apt
       # owns a .desktop file in /usr/share that Nix cannot rewrite, so
       # apps-setup overrides those at activation instead.
-      sed -i -E 's|^(Exec=[^[:space:]]+)|\1 ${chromiumFlagsStr}|' entry.desktop
+      sed -i -E 's|^(Exec=[^[:space:]]+)|\1 ${chromiumFlagsStrFor app}|' entry.desktop
     ''}
 
     ${lib.optionalString (app.chromium or false) ''
@@ -863,18 +895,15 @@ let
     }
 
     chromium_flag_overrides() {
-      local flags=${lib.escapeShellArg chromiumFlagsStr}
       WANTED="" CHANGED="" UNCHANGED=""
 
-      # Emptying modules.apps.chromiumFlags leaves WANTED empty, so the sweep
-      # takes every override away and hands the launchers back to their .debs,
-      # rather than leaving the last set of flags behind with nothing in the
-      # repo still asking for them.
-      if [ -n "$flags" ]; then
-        ${lib.concatMapStringsSep "\n        " (a:
-          ''chromium_flag_override "$flags" ${lib.escapeShellArg (a.wmClass or "")} ${lib.escapeShellArg a.command} ${lib.escapeShellArgs a.ids}''
-        ) systemChromiumApps}
-      fi
+      # Flags are passed PER APP, not from one shared variable: an app may drop
+      # individual switches with chromiumFlagsExclude (see chromiumFlagsFor).
+      # An app whose exclusions empty the list is omitted entirely, so it is
+      # swept rather than given an override that changes nothing.
+      ${lib.concatMapStringsSep "\n      "
+        (a: ''chromium_flag_override ${lib.escapeShellArg (chromiumFlagsStrFor a)} ${lib.escapeShellArg (a.wmClass or "")} ${lib.escapeShellArg a.command} ${lib.escapeShellArgs a.ids}'')
+        (lib.filter (a: chromiumFlagsFor a != [ ]) systemChromiumApps)}
       chromium_flag_sweep
 
       if [ -n "$CHANGED" ]; then

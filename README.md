@@ -661,6 +661,33 @@ everywhere and survives Brave fixing its typo. Note it is `--enable-features`,
 is absent from Blink's `runtime_enabled_features.json5`, so that form is a
 silent no-op.
 
+#### When an app rejects a switch
+
+Not every Electron app forwards what it does not recognise. Most hand argv
+straight to Chromium, but one that parses its own can **refuse to start**.
+Joplin ends its parser with
+
+```js
+if (arg.length && arg[0] === "-") throw new Error(_("Unknown flag: %s", arg))
+```
+
+having allowlisted specific Chromium switches by name — `--enable-features=` is
+on that list, which is why autoscroll works there; `--blink-settings=` is not, so
+it put up a modal *"An error occurred: Unknown flag"* instead of a window.
+(Joplin is unusual this way: its desktop app shares CLI parsing with joplin-cli.)
+
+An app drops individual switches with `chromiumFlagsExclude`, matched by prefix:
+
+```nix
+chromiumFlagsExclude = [ "--blink-settings" ];   # Joplin keeps autoscroll, keeps paste
+```
+
+Excluding one costs only what that switch bought, which beats the app not
+opening. **There is no cheap way to test for this**: the failure is a GUI dialog,
+so the app keeps running and prints nothing to stdout or stderr — launching it
+and grepping the output finds nothing even when it is broken. If an app ever
+shows that dialog, add one line to its entry.
+
 A switch reaches a Chromium process **only** through the command line that
 started it — no config file, no policy key, no environment variable. So every
 launch path has to carry it, or the setting holds in some windows and not others:
