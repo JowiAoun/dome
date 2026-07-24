@@ -1,5 +1,34 @@
 # CLAUDE.md — agent guide for this repo
 
+## Never write `cmd | grep -q` in a system script
+
+`system/lib.sh` sets `pipefail`, and `grep -q` exits at the **first match** —
+which can SIGPIPE a writer that still has output to produce. The pipeline then
+returns 141, so **a successful match is reported as a failure**. It is a race
+against the writer's buffering, not a size threshold: `apt-cache policy <pkg>`
+prints six lines and still loses it.
+
+This has already shipped twice (`system/25-memory.sh` silently skipped its whole
+zram section; `system/20-kernel.sh` would have left a fresh machine on the GA
+kernel). `shellcheck` and `nix eval` both pass on it, and the script still
+exits 0 — it just does the wrong thing and logs a plausible reason.
+
+Use the `out_matches` helper in `system/lib.sh`: capture the output first, then
+match it. A herestring is backed by a temp file, so there is no writer left to
+hang up on.
+
+```bash
+out_matches "$(lsblk -no TYPE --inverse "$src")" -x crypt     # not: lsblk … | grep -qx crypt
+out_matches "$out" -E '^(Hit|Get):'                           # not: printf … | grep -qE …
+[ -n "$(find "$d" -name foo)" ]                               # not: find … | grep -q .
+```
+
+Related helper: **`install_conf <path> <content>`** writes a config file only
+when it differs, honours `DRY_RUN`, and returns 0 when it changed something —
+so use `if install_conf …; then <reload>; fi` and reload only when needed. Both
+helpers are covered by `tests/test-lib.sh`; run `make test` after touching
+`lib.sh`.
+
 Instructions for AI agents (Claude Code and the like) working in this dotfiles
 repository. This file is loaded into agent context automatically, so keep it
 short and factual. For a full tour, read `README.md`; the machine is configured

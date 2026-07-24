@@ -30,7 +30,7 @@ fi
 # A single DNS label: alphanumeric ends, hyphens inside, 63 characters max.
 # Rejecting here beats letting systemd silently mangle the name into something
 # that no longer matches what /etc/hosts says.
-if ! printf '%s' "$NAME" | grep -qE '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$'; then
+if ! out_matches "$NAME" -E '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$'; then
   warn "hostName '$NAME' is not a valid hostname (letters, digits and inner hyphens, 63 max) — skipping"
   exit 0
 fi

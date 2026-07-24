@@ -71,7 +71,7 @@ root_luks_partition() {
   local src
   src="$(findmnt -no SOURCE / 2>/dev/null)" || return 1
   [ -n "$src" ] || return 1
-  lsblk -no TYPE --inverse "$src" 2>/dev/null | grep -qx crypt || return 1
+  out_matches "$(lsblk -no TYPE --inverse "$src" 2>/dev/null)" -x crypt || return 1
   # -r (raw): without it lsblk prepends tree-drawing glyphs (└─) to NAME, which
   # get glued onto the device path and passed to cryptsetup as `└─/dev/...`.
   lsblk -rnpo FSTYPE,NAME --inverse "$src" 2>/dev/null \
@@ -95,7 +95,7 @@ fi
 # silently break unlock the day SB gets turned on. Refuse rather than enroll a
 # binding that does not mean what it says.
 if command -v mokutil >/dev/null 2>&1; then
-  if ! mokutil --sb-state 2>/dev/null | grep -qi 'SecureBoot enabled'; then
+  if ! out_matches "$(mokutil --sb-state 2>/dev/null)" -i 'SecureBoot enabled'; then
     warn "Secure Boot is not enabled — a PCR 7 binding would be weak and would"
     warn "  break the moment Secure Boot is turned on. Enable Secure Boot in"
     warn "  firmware first, then re-run. Skipping TPM enrollment."
@@ -156,7 +156,7 @@ fi
 
 # ── TPM binding ──────────────────────────────────────────────────────────────
 # Adds a new keyslot bound to PCR 7; the passphrase keyslot is left intact.
-if clevis luks list -d "$LUKS_DEV" 2>/dev/null | grep -q tpm2; then
+if out_matches "$(clevis luks list -d "$LUKS_DEV" 2>/dev/null)" tpm2; then
   log "a TPM2 (clevis) keyslot already exists on $LUKS_DEV — not re-binding"
 else
   if [ "$DRY_RUN" = 1 ]; then
@@ -181,7 +181,7 @@ if [ "$NEED_INITRAMFS" = 1 ]; then
   run update-initramfs -u -k all
 fi
 
-if [ "$DRY_RUN" != 1 ] && clevis luks list -d "$LUKS_DEV" 2>/dev/null | grep -q tpm2; then
+if [ "$DRY_RUN" != 1 ] && out_matches "$(clevis luks list -d "$LUKS_DEV" 2>/dev/null)" tpm2; then
   img="/boot/initrd.img-$(uname -r)"
   # Structural check: ONE extraction, then look for both the tss user and the
   # tpm2 decrypt helper in the same tree. `lsinitramfs` is avoided here — on a
@@ -195,7 +195,7 @@ if [ "$DRY_RUN" != 1 ] && clevis luks list -d "$LUKS_DEV" 2>/dev/null | grep -q 
     else
       warn "tss user not found inside the initramfs — TPM unlock may not fire yet"
     fi
-    if find "$tmp" -path '*/usr/bin/clevis-decrypt-tpm2' 2>/dev/null | grep -q .; then
+    if [ -n "$(find "$tmp" -path '*/usr/bin/clevis-decrypt-tpm2' 2>/dev/null)" ]; then
       log "verified: clevis-decrypt-tpm2 is present in the initramfs"
     else
       warn "clevis-decrypt-tpm2 not in the initramfs — unlock would fall back to passphrase"

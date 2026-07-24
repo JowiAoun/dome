@@ -66,33 +66,8 @@ SWAP_TARGET_GB=16
 # Set by install_conf; read at the end to decide what needs reloading.
 SYSTEMD_CHANGED=0
 
-TMPD="$(mktemp -d)"
-# shellcheck disable=SC2064  # expand TMPD now so the trap knows the path
-trap "rm -rf '$TMPD'" EXIT
-
-# Install a generated config file iff its content differs.
-# Returns 0 ("true") when it wrote something, 1 when the file was already
-# correct — so callers can do `if install_conf ...; then <reload>; fi` and only
-# pay for a reload when one is actually needed. Always call it in a conditional
-# context: a bare call returning 1 would abort the script under `set -e`.
-install_conf() {
-  local path="$1" body="$2" tmp="$TMPD/conf"
-  if [ -f "$path" ] && [ "$(cat "$path")" = "$body" ]; then
-    log "up to date: $path"
-    return 1
-  fi
-  if [ "$DRY_RUN" = 1 ]; then
-    log "DRY RUN: would write $path"
-    mark_change
-    return 0
-  fi
-  log "writing $path"
-  install -d -o root -g root -m 0755 "$(dirname "$path")"
-  printf '%s\n' "$body" > "$tmp"
-  install -o root -g root -m 0644 "$tmp" "$path"
-  mark_change
-  return 0
-}
+# install_conf (compare, then write only on a difference) comes from lib.sh, as
+# do out_matches and the rest. Unit tests: tests/test-lib.sh.
 
 # ── 1. zram: the fast swap tier ──────────────────────────────────────────────
 # Compressed swap that lives in RAM. Anonymous pages go in at ~3:1 on a Java

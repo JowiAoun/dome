@@ -18,7 +18,7 @@ DRY_RUN ?=
 HOST_RESOLVED := $(if $(HOST),$(HOST),$(shell sed -nE 's/.*hostProfile *= *"([^"]+)".*/\1/p' user-config.nix 2>/dev/null | head -n1))
 HOST_RESOLVED := $(if $(HOST_RESOLVED),$(HOST_RESOLVED),generic)
 
-.PHONY: help setup system home doctor audit-apps preflight-wipe backup restore update rollback
+.PHONY: help setup system home doctor test audit-apps preflight-wipe backup restore update rollback gc
 
 help:
 	@echo "dome targets:"
@@ -26,9 +26,11 @@ help:
 	@echo "  sudo make system [HOST=zenbook-duo] [DRY_RUN=1]  - apply system layer (apt/kernel/GRUB/duo helper)"
 	@echo "  make home [HOST=zenbook-duo]                     - home-manager switch for the host profile"
 	@echo "  make doctor                                      - run 'duo doctor' (read-only hardware probe)"
+	@echo "  make test                                        - unit-test system/lib.sh (sudo make test covers root paths)"
 	@echo "  make audit-apps                                  - report duplicate apps / colliding .desktop ids"
 	@echo "  make update                                      - git pull + nix flake update"
 	@echo "  make rollback                                    - undo a bad update (restore flake.lock + re-activate)"
+	@echo "  make gc                                          - delete Nix generations older than 30 days"
 	@echo ""
 	@echo "  reinstalling this machine:"
 	@echo "  make preflight-wipe [DEST=/media/you/STICK]      - what an erase would destroy that git cannot restore"
@@ -48,6 +50,12 @@ home:
 
 doctor:
 	bash duo/bin/duo doctor
+
+# Behavioural tests for system/lib.sh. Plain bash + coreutils, so this runs on a
+# fresh machine before Nix exists. Without sudo the root-only cases (install_conf
+# writes root-owned files) report as skipped rather than failing.
+test:
+	bash tests/test-lib.sh
 
 # Read-only: which apps are installed from where, and which .desktop ids clash.
 audit-apps:
@@ -74,3 +82,12 @@ update:
 rollback:
 	git restore flake.lock 2>/dev/null || git checkout -- flake.lock
 	nix run home-manager/master -- switch --flake path:.#$(HOST_RESOLVED) -b backup
+
+# Every `make home` leaves the previous generation behind, and each one pins its
+# whole closure — nothing is ever reclaimed without this. 30 days keeps enough
+# history to roll back a bad switch while stopping the store growing forever.
+# Deliberately not automatic: deleting the generation you were about to roll back
+# to is exactly the kind of surprise a provisioning run should not spring on you.
+gc:
+	nix-collect-garbage --delete-older-than 30d
+	@echo "[dome] older generations removed. 'nix path-info -S ~/.nix-profile' shows the current closure size."

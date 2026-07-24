@@ -164,7 +164,7 @@ elif ! getent group docker >/dev/null 2>&1; then
   else
     warn "no docker group (engine not installed?) — not adding $DOCKER_USER"
   fi
-elif id -nG "$DOCKER_USER" | tr ' ' '\n' | grep -qx docker; then
+elif out_matches "$(id -nG "$DOCKER_USER" | tr ' ' '\n')" -x docker; then
   log "$DOCKER_USER is already in the docker group"
 else
   log "adding $DOCKER_USER to the docker group (root-equivalent — see the note above)"

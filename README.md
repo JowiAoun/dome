@@ -792,10 +792,26 @@ home-manager switch --flake path:.#generic -b backup   # or your host profile
 
 # Update packages
 nix flake update
+
+# Tests and housekeeping
+make test               # unit-test system/lib.sh (sudo make test covers the root paths)
+make gc                 # delete Nix generations older than 30 days
 ```
 
 Note the `path:.` — a plain `.` flake ref copies only git-*tracked* files, which
 would silently skip your git-ignored `user-config.nix`.
+
+`make test` runs `tests/test-lib.sh` against the helpers in `system/lib.sh` —
+plain bash and coreutils, so it works on a fresh machine before Nix exists. It
+exists because `shellcheck` and `nix eval` both pass happily on a script whose
+*detection* helper returns the wrong answer, which is how a `| grep -q` pipeline
+under `pipefail` came to silently disable a whole section of
+`system/25-memory.sh`. See the note at the top of `CLAUDE.md`.
+
+Nothing runs `nix-collect-garbage` automatically: every `make home` leaves the
+previous generation behind and each one pins its whole closure, but deleting the
+generation you were about to roll back to is not a surprise a provisioning run
+should spring on you. `make gc` is the deliberate version.
 
 ## Updating & recovering
 
@@ -859,6 +875,7 @@ dome/
 │   ├── cloud.nix          # Terraform/Pulumi/cloud CLIs/k8s
 │   └── zenbook-duo/       # Duo-only home-manager wiring
 ├── system/                # Idempotent root-layer scripts (Ubuntu)
+├── tests/                 # Unit tests for system/lib.sh (`make test`)
 ├── duo/                   # zenduo hardware tooling (self-contained, MIT)
 └── docs/                  # PLAN.md, CHECKLIST.md, research archive
 ```

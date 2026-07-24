@@ -48,7 +48,7 @@ root_crypt_backing() {
   local src
   src="$(findmnt -no SOURCE / 2>/dev/null)" || return 1
   [ -n "$src" ] || return 1
-  lsblk -no TYPE --inverse "$src" 2>/dev/null | grep -qx crypt || return 1
+  out_matches "$(lsblk -no TYPE --inverse "$src" 2>/dev/null)" -x crypt || return 1
   # The raw partition holding the LUKS header, e.g. /dev/nvme0n1p3.
   # -r (raw): without it lsblk prepends tree-drawing glyphs (└─) to NAME on a
   # multi-level stack (ext4 → LVM → dm-crypt → partition), and they get glued
@@ -62,7 +62,7 @@ root_crypt_backing() {
 luks_keyslot_count() {
   local out
   out="$(cryptsetup luksDump "$1" 2>/dev/null)" || return 1
-  if printf '%s\n' "$out" | grep -q '^Keyslots:'; then
+  if out_matches "$out" '^Keyslots:'; then
     printf '%s\n' "$out" | awk '
       /^Keyslots:/            { inks = 1; next }
       /^[^[:space:]]/         { inks = 0 }

@@ -103,20 +103,7 @@ softrealtime=off
 whitelist=java
 EOF
 
-if [ -f "$CONF" ] && [ "$(cat "$CONF")" = "$CONF_BODY" ]; then
-  log "gamemode config up to date: $CONF"
-elif [ "$DRY_RUN" = 1 ]; then
-  log "DRY RUN: would write $CONF"
-  mark_change
-else
-  log "writing $CONF"
-  tmp="$(mktemp)"
-  # shellcheck disable=SC2064  # expand tmp now so the trap knows the path
-  trap "rm -f '$tmp'" EXIT
-  printf '%s\n' "$CONF_BODY" > "$tmp"
-  install -o root -g root -m 0644 "$tmp" "$CONF"
-  mark_change
-fi
+install_conf "$CONF" "$CONF_BODY" || true   # nothing to reload; gamemoded re-reads on launch
 
 # The daemon is a user service and D-Bus-activated, so there is nothing to
 # enable: it starts when a game asks for it and exits again afterwards. It does

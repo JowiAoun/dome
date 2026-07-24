@@ -103,7 +103,7 @@ fi
 # Docker's docs: the desktop VM needs the invoking user in the kvm group.
 DD_USER="$(target_user 2>/dev/null || true)"
 if [ -n "$DD_USER" ] && id "$DD_USER" >/dev/null 2>&1 && getent group kvm >/dev/null 2>&1; then
-  if id -nG "$DD_USER" | tr ' ' '\n' | grep -qx kvm; then
+  if out_matches "$(id -nG "$DD_USER" | tr ' ' '\n')" -x kvm; then
     log "$DD_USER is already in the kvm group"
   else
     log "adding $DD_USER to the kvm group (needed by Docker Desktop's VM)"
