@@ -425,10 +425,26 @@ Off by default. `gameMode = true;` in `user-config.nix` turns on both halves:
   cores to `performance` takes watts away from the GPU that is actually the
   bottleneck. GameMode backs the governor off again once the iGPU is doing the
   work, which is the correct behaviour on an integrated part.
-- `modules/gaming.nix` replaces the CurseForge launcher with one that starts it
-  through `gamemoderun`. GameMode does nothing until a process asks for it, and
-  nothing on a stock Ubuntu ever does — so an installed-but-unwired `gamemode`
-  (which is what you get by default) never actually runs.
+- `modules/gaming.nix` makes the CurseForge launcher start through
+  `gamemoderun`. GameMode does nothing until a process asks for it, and nothing
+  on a stock Ubuntu ever does — so an installed-but-unwired `gamemode` (which is
+  what you get by default) never actually runs.
+
+  It does this by *amending* the launcher at activation rather than declaring
+  its own, because `modules/apps.nix` already writes that same file to append
+  `chromiumFlags` to apt-installed Electron apps. Two modules declaring one
+  `.desktop` does not fail loudly — apps.nix writes a real file from an
+  activation script, which silently overwrites the symlink an `xdg.dataFile`
+  puts there, so the last writer wins and gamemode loses with nothing reported.
+  Ordering after `appsDesktopIntegration` and prepending the wrapper keeps both
+  features on the same Exec line:
+
+  ```
+  Exec=/usr/games/gamemoderun /opt/CurseForge/curseforge --enable-features=… %U
+  ```
+
+  Turning `gameMode` off is self-healing: apps.nix rewrites the entry from the
+  package's own on every switch, so the prefix just stops being re-applied.
 
 `gamemoderun` works by setting `LD_PRELOAD=libgamemodeauto.so.0`, which children
 inherit, so wrapping the launcher reaches the game's JVM. `[filter] whitelist=java`

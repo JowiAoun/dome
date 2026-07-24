@@ -250,9 +250,22 @@ in
       # Note this pins the whole list, like enabled-extensions above — the four
       # entries below the game paths are the schema defaults, repeated because a
       # dconf write replaces rather than extends. Check them against
-      # `gsettings range org.freedesktop.Tracker3.Miner.Files ignored-directories`
+      # `gsettings get org.freedesktop.Tracker3.Miner.Files ignored-directories`
       # if a future Tracker changes them.
-      "org/freedesktop/Tracker3/Miner/Files".ignored-directories = [
+      #
+      # The path is NOT the schema id lowercased-with-slashes, which is the
+      # obvious guess and is wrong. The id is org.freedesktop.Tracker3.Miner.Files
+      # but the schema declares path="/org/freedesktop/tracker/miner/files/" — no
+      # "3", all lower case. dconf.settings writes wherever it is told and never
+      # validates against a schema, so the wrong path stores a value that simply
+      # nothing reads: `gsettings get` keeps returning the default and it looks
+      # like the setting was ignored. Confirmed against the shipped schema:
+      #
+      #   grep -o 'id="org.freedesktop.Tracker3.Miner.Files" path="[^"]*"' \
+      #     /usr/share/glib-2.0/schemas/*.xml
+      #
+      # Worth doing for any non-org/gnome schema before trusting the path.
+      "org/freedesktop/tracker/miner/files".ignored-directories = [
         "${config.home.homeDirectory}/Documents/curseforge"
         "${config.home.homeDirectory}/Games"
         "po"

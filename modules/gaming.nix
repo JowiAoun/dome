@@ -16,56 +16,73 @@
 # actually want registered. (system/86-gamemode.sh's whitelist is what keeps the
 # Electron launcher itself from counting; see its header.)
 #
-# Why a shadowing .desktop entry rather than mkdesktop: CurseForge comes from a
-# .deb and already ships /usr/share/applications/curseforge.desktop, so it is
-# not the hand-installed-binary case CLAUDE.md points mkdesktop at. An entry
-# with the same id in ~/.local/share/applications takes precedence over the
-# system one (XDG_DATA_HOME is searched before XDG_DATA_DIRS), so this replaces
-# the launcher without touching the package — and keeps working across
-# CurseForge updates, which cannot clobber a file in $HOME.
+# Why this edits the launcher at activation instead of declaring it.
+#
+# CurseForge comes from a .deb, so /usr/share/applications/curseforge.desktop
+# belongs to the package and Nix cannot rewrite it. The established answer in
+# this repo is an override in XDG_DATA_HOME, which wins because the desktop spec
+# searches XDG_DATA_HOME before XDG_DATA_DIRS — and modules/apps.nix ALREADY
+# writes that override, to append modules.apps.chromiumFlags to the Exec of
+# apt-installed Electron apps.
+#
+# So there is exactly one file and two modules with an opinion about its Exec
+# line. Declaring it here as well does not work: apps.nix writes a real file
+# from an activation script, which silently overwrites the symlink an
+# `xdg.dataFile` would have placed there — the last writer wins, gamemode loses,
+# and nothing reports a conflict because there is no Nix-level conflict to
+# report. (It also leaves home-manager with an unmanaged file where it expects
+# its own symlink, which fails the NEXT switch on a backup collision.)
+#
+# Composing is the fix: run after apps.nix's entry and prepend the wrapper to
+# whatever Exec it produced. Both features survive, apps.nix needs no knowledge
+# of gaming.nix, and turning gameMode off is self-healing — apps.nix rewrites the
+# entry from the package's own on every switch, so the prefix simply stops being
+# re-applied.
 let
   cfg = config.modules.gaming;
 
   curseforgeBin = "/opt/CurseForge/curseforge";
   gamemoderun = "/usr/games/gamemoderun";
-
-  # Every field except Exec is copied verbatim from the shipped entry.
-  #
-  # StartupWMClass is the one that cannot be guessed (CLAUDE.md): it is the
-  # class the running window reports, and dropping it makes the dash show a
-  # generic placeholder instead of CurseForge's own icon.
-  #
-  # TryExec points at CurseForge, NOT at the wrapper: the desktop spec hides an
-  # entry whose TryExec is missing, so uninstalling CurseForge makes this
-  # launcher disappear on its own rather than leaving a dead tile in the grid.
-  #
-  # The id stays curseforge.desktop, so the grid placement in
-  # modules/desktop-shell.nix's `topLevel` keeps pointing at it.
-  curseforgeEntry = pkgs.writeTextDir "share/applications/curseforge.desktop" ''
-    [Desktop Entry]
-    Name=CurseForge
-    Comment=The CurseForge Electron App
-    Exec=${gamemoderun} ${curseforgeBin} %U
-    TryExec=${curseforgeBin}
-    Icon=curseforge
-    Type=Application
-    Terminal=false
-    StartupWMClass=CurseForge
-    MimeType=x-scheme-handler/curseforge;x-scheme-handler/cfauth;x-scheme-handler/curseforge-checkout;
-    Categories=Game;
-  '';
 in
 {
   options.modules.gaming.enable = lib.mkEnableOption ''
-    game launchers wired to Feral GameMode. Replaces the CurseForge launcher
-    with one that starts through gamemoderun, so Minecraft's JVM registers with
-    the daemon and gets the performance CPU governor for as long as it runs.
-    Pairs with system/86-gamemode.sh, which writes /etc/gamemode.ini — enable
-    both with `gameMode = true;` in user-config.nix
+    game launchers wired to Feral GameMode. Starts the CurseForge launcher
+    through gamemoderun, so Minecraft's JVM registers with the daemon and gets
+    the performance CPU governor for as long as it runs. Pairs with
+    system/86-gamemode.sh, which writes /etc/gamemode.ini — enable both with
+    `gameMode = true;` in user-config.nix
   '';
 
   config = lib.mkIf cfg.enable {
-    xdg.dataFile."applications/curseforge.desktop".source =
-      "${curseforgeEntry}/share/applications/curseforge.desktop";
+    # entryAfter appsDesktopIntegration, not linkGeneration: that is the entry in
+    # modules/apps.nix that writes the override this one amends. Ordering after
+    # it is the whole point — see the header.
+    home.activation.gamemodeLaunchers =
+      lib.hm.dag.entryAfter [ "appsDesktopIntegration" ] ''
+        _cf_entry="${config.xdg.dataHome}/applications/curseforge.desktop"
+        _cf_system=/usr/share/applications/curseforge.desktop
+
+        if [ ! -x ${gamemoderun} ]; then
+          echo "[gaming] ${gamemoderun} is missing — run 'sudo make system' to install gamemode"
+        elif [ ! -x ${curseforgeBin} ]; then
+          echo "[gaming] CurseForge is not installed — nothing to wrap"
+        else
+          # apps.nix normally put the override there already. If modules.apps is
+          # off it did not, so seed one from the package's own entry.
+          if [ ! -e "$_cf_entry" ] && [ -e "$_cf_system" ]; then
+            run mkdir -p "$(dirname "$_cf_entry")"
+            run cp "$_cf_system" "$_cf_entry"
+            run chmod u+w "$_cf_entry"
+          fi
+
+          # Idempotent: prepend only when the wrapper is not already the Exec.
+          # Everything after Exec= is preserved, which is what keeps apps.nix's
+          # chromiumFlags on the line.
+          if [ -e "$_cf_entry" ] && ! grep -q "^Exec=${gamemoderun} " "$_cf_entry"; then
+            run sed -i -E 's|^Exec=|Exec=${gamemoderun} |' "$_cf_entry"
+            echo "[gaming] CurseForge now launches through gamemoderun"
+          fi
+        fi
+      '';
   };
 }
