@@ -258,10 +258,17 @@ in
         ## Claude Code keybindings and behaviour
         - `~/.claude/keybindings.json` is managed by modules/ai.nix
         - Shift+Enter inserts a newline (Ctrl+J still does too)
-        - "Copy on select" is seeded off in `~/.claude.json`, so highlighting
-          text in the fullscreen TUI no longer replaces your clipboard. Copy
-          deliberately with Ctrl+Shift+C. Change it any time in `/config` —
-          that choice wins, the module only seeds the key when it is missing
+        - These values are declared by the module and re-applied on every
+          `make home`, so changing one in `/config` lasts until then — edit
+          modules/ai.nix to change it for good:
+            - Theme: dark (also why a fresh machine never opens on the picker)
+            - Show tips: off (`spinnerTipsEnabled`)
+            - Use auto mode during plan: off (`useAutoModeDuringPlan`)
+            - Copy on select: off — highlighting text in the fullscreen TUI no
+              longer replaces your clipboard; copy with Ctrl+Shift+C
+        - Everything else in those two files is passed through untouched: they
+          are the app's own files, merged with jq rather than symlinked, because
+          Claude Code writes to both constantly
         - It needs a terminal that can encode a modified Enter — that is what
           Ghostty is for; GNOME Terminal cannot, and there Ctrl+J is the only
           newline key that works
@@ -336,30 +343,87 @@ in
     # Seeded, not enforced: it writes the key only when absent, so toggling
     # "Copy on select" back on in /config sticks instead of being reverted by
     # the next `make home`.
-    home.activation.claudeCopyOnSelect = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    home.activation.claudeDefaults = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       export PATH="${lib.makeBinPath [ pkgs.jq pkgs.coreutils ]}:$PATH"
-      f="$HOME/.claude.json"
-      if [ -n "''${DRY_RUN_CMD:-}" ]; then
-        echo "(dry run) would set copyOnSelect = false in ~/.claude.json if unset"
-      elif [ ! -e "$f" ]; then
-        # Claude Code has not run yet. A partial file is fine — it reads,
-        # merges and writes back — and onboarding keys off the VALUE of
-        # hasCompletedOnboarding, not the file existing, so this cannot skip it.
-        printf '{\n  "copyOnSelect": false\n}\n' > "$f"
-        chmod 600 "$f"
-      elif jq -e 'has("copyOnSelect")' "$f" >/dev/null 2>&1; then
-        : # already decided, by us or in /config — leave it alone
-      else
-        # Temp file in $HOME so the rename is atomic (same filesystem), and
-        # nothing is replaced unless jq produced parseable, non-empty output:
-        # a botched merge here would cost the session's auth and history.
-        tmp="$(mktemp "$HOME/.claude.json.XXXXXX")"
-        if jq '.copyOnSelect = false' "$f" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
-          mv "$tmp" "$f" && chmod 600 "$f"
+
+      # apply_json <file> <JSON object of values this module declares>
+      #
+      # `. + $want`: in jq the RIGHT operand wins on duplicate keys, so these
+      # values are applied over whatever is in the file, and every other key it
+      # holds is passed through untouched.
+      #
+      # Declared, not merely seeded — "write it only if the key is missing" was
+      # the first attempt and it does not work here, because Claude Code
+      # materialises its own defaults into settings.json as you use it. This
+      # machine already had `useAutoModeDuringPlan: true` on disk, so a
+      # seed-if-absent pass would have found the key present and left the
+      # opposite of the requested value in place, silently. The cost is that
+      # changing one of these in /config lasts until the next `make home`; the
+      # module is the place to change it for good.
+      #
+      # Nothing is written when the file already agrees, which keeps this off
+      # its mtime and stops jq reformatting a file the app is about to rewrite.
+      apply_json() {
+        local f="$1" d="$2" mode tmp
+        mkdir -p "$(dirname "$f")"
+
+        if [ ! -e "$f" ]; then
+          printf '%s\n' "$d" | jq '.' > "$f" && chmod 600 "$f"
+          return
+        fi
+
+        if ! jq -e . "$f" >/dev/null 2>&1; then
+          echo "⚠️ $f is not readable JSON — leaving it untouched, set these in /config" >&2
+          return
+        fi
+
+        if jq -e --argjson want "$d" \
+             '. as $cur | all($want | to_entries[]; $cur[.key] == .value)' \
+             "$f" >/dev/null 2>&1; then
+          return                      # already exactly as declared
+        fi
+
+        # Temp file beside the target so the replacement is an atomic rename on
+        # the same filesystem, and nothing is replaced unless jq produced
+        # parseable, non-empty output: a botched merge into ~/.claude.json would
+        # cost the session's credentials and history. The original mode is put
+        # back because these two files do not agree on one (644 and 600).
+        mode="$(stat -c '%a' "$f" 2>/dev/null || echo 600)"
+        tmp="$(mktemp "$f.XXXXXX")"
+        if jq --argjson want "$d" '. + $want' "$f" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+          mv "$tmp" "$f" && chmod "$mode" "$f"
         else
           rm -f "$tmp"
-          echo "⚠️ could not set copyOnSelect in ~/.claude.json — turn it off in /config" >&2
+          echo "⚠️ could not apply defaults to $f — set them in /config" >&2
         fi
+      }
+
+      if [ -n "''${DRY_RUN_CMD:-}" ]; then
+        echo "(dry run) would apply Claude Code defaults to ~/.claude/settings.json and ~/.claude.json"
+      else
+        # All three are real settings.json keys, confirmed against the published
+        # schema rather than guessed, and /config writes the same names:
+        #
+        # theme                 dark. Also what stops a fresh machine opening on
+        #                       the theme picker.
+        # spinnerTipsEnabled    /config calls this "Show tips" — the hints that
+        #                       cycle in the spinner while Claude works. The
+        #                       menu id is `tips`, the setting is this.
+        # useAutoModeDuringPlan "Use auto mode during plan". Off: planning should
+        #                       ask before running things rather than classify
+        #                       them as safe on its own.
+        apply_json "$HOME/.claude/settings.json" '{
+          "theme": "dark",
+          "spinnerTipsEnabled": false,
+          "useAutoModeDuringPlan": false
+        }'
+
+        # copyOnSelect is NOT a settings.json key — it is absent from the schema
+        # and lives in the app's state file, next to auth and history. Claude
+        # Code may not have run yet on a fresh machine, and creating the file is
+        # safe: it reads, merges and writes back, and onboarding keys off the
+        # VALUE of hasCompletedOnboarding rather than the file existing.
+        apply_json "$HOME/.claude.json" '{ "copyOnSelect": false }'
       fi
     '';
 

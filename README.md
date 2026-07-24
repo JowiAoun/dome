@@ -124,11 +124,24 @@ Zenbook Duo tooling stays out of generic setups).
 - **Claude Code keybindings** (`~/.claude/keybindings.json`): **Shift+Enter**
   inserts a newline. That needs a terminal that can encode a modified Enter —
   see the terminal module below
-- **Copy on select, off**: in the fullscreen TUI Claude Code runs its own mouse
-  selection, and highlighting anything replaced the clipboard. Seeded off in
-  `~/.claude.json` — app state, not `settings.json`, so it is merged in rather
-  than symlinked, and only when the key is absent so a `/config` change sticks.
-  Ghostty's `copy-on-select = false` covers the terminal's own version of this
+- **Claude Code defaults**: theme dark (so a fresh machine never opens on the
+  theme picker), *Show tips* off, *Use auto mode during plan* off, and *Copy on
+  select* off — in the fullscreen TUI Claude Code runs its own mouse selection,
+  and highlighting anything replaced the clipboard. Ghostty's
+  `copy-on-select = false` covers the terminal's own version of that.
+
+  The first three are `settings.json` keys; `copyOnSelect` is not in that schema
+  and lives in `~/.claude.json` with the app's auth and history. Both files are
+  written by Claude Code constantly, so neither can be a home-manager symlink —
+  that would make the target read-only and break the app. They are merged with
+  `jq` instead, every other key passed through untouched, and only when the file
+  does not already agree.
+
+  These values are **declared, not seeded**: they are re-applied on each
+  `make home`, so a `/config` change to one of them lasts until then. Seeding
+  only-if-missing was tried first and does not work — Claude Code materialises
+  its own defaults into `settings.json` as you use it, so the key is usually
+  already there holding the value you wanted changed.
 
 #### Terminal (always on, not part of `modules.apps`)
 **Ghostty**, installed on every machine with a desktop — deliberately *outside*
