@@ -129,6 +129,19 @@ let
       probeDesktop = [ "Zoom.desktop" "zoom.desktop" "us.zoom.Zoom.desktop" "zoom-client_zoom-client.desktop" ];
       probeCommands = [ "zoom" "zoom-us" ];
     }
+    {
+      # GTK4/libadwaita weather dashboard (Open-Meteo backed). Ships a bare
+      # Exec=mousam and a themed Icon, so it needs the usual absolute-path
+      # patching. Its entry is the reverse-DNS id, not mousam.desktop — read off
+      # the built package. Left unpinned by request.
+      name = "mousam";
+      package = pkgs.mousam;
+      ids = [ "io.github.amit9838.mousam.desktop" ];
+      pin = false;
+      browser = false;
+      probeDesktop = [ "io.github.amit9838.mousam.desktop" "mousam.desktop" "mousam_mousam.desktop" ];
+      probeCommands = [ "mousam" ];
+    }
   ];
 
   # VS Code is installed by home-manager's programs.vscode (home.nix), not by
