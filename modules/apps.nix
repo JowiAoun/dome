@@ -574,6 +574,25 @@ let
       appName = builtins.replaceStrings [ "/" ] [ "_" ] "${host}_${path}";
     in app.wmClass or "${browserWmPrefix}-${appName}-Default";
 
+  # Where Brave keeps an --app window's saved geometry, as a JSON path into the
+  # profile's Preferences file:
+  #   browser.app_window_placement.<host labels, split on ".">.<last label>_<path>
+  # so https://www.notion.so/ is  www -> notion -> "so_/", and
+  #    https://music.youtube.com/ is  music -> youtube -> "com_/".
+  #
+  # Read off this machine's own profile rather than derived from Chromium
+  # source; the shape matches both web apps here and is only claimed for the
+  # bare "https://host/" case these defs use.
+  webAppPlacementPath = app:
+    let
+      noScheme = lib.removePrefix "https://" (lib.removePrefix "http://" app.url);
+      parts = builtins.match "([^/]+)(/.*)" noScheme;
+      host = if parts == null then noScheme else builtins.elemAt parts 0;
+      path = if parts == null then "/" else builtins.elemAt parts 1;
+      labels = lib.splitString "." host;
+      leaf = "${lib.last labels}_${path}";
+    in [ "browser" "app_window_placement" ] ++ (lib.init labels) ++ [ leaf ];
+
   # One launcher per web app.
   #
   # --class is kept even though Wayland ignores it: it is what sets WM_CLASS
@@ -583,11 +602,13 @@ let
   # it is already an immutable absolute path, which is exactly what the GNOME
   # session needs (it cannot resolve themed icon names from the Nix profile).
   #
-  # --start-maximized because an --app= window has no saved geometry the first
-  # time it opens, so Chromium falls back to a small default. It keys saved
-  # placement off the first label of the host (music.youtube.com -> "music",
-  # www.notion.so -> "www"), and both entries in this profile were created with
-  # no bounds at all, which is exactly the "why does it open tiny" symptom.
+  # --start-maximized covers only the FIRST launch, before the profile has a
+  # placement entry for the app; from then on Chromium restores that entry and
+  # ignores the flag entirely (measured — notion's entry read
+  # {maximized: false, right: 945} and every launch honoured it, flag or not).
+  # Keeping the flag is still right for a fresh profile; the saved entry is
+  # handled by the braveWebAppWindowState activation below, which is what
+  # actually fixes "why does it open tiny" on a machine that has run before.
   # StartupNotify is false below for the same reason it is forced off for every
   # other Chromium launcher here — see the note in chromium_flag_override. A web
   # app IS a Brave --app window, so it parks the dash icon identically.
@@ -1168,6 +1189,61 @@ in
       # and the icons never appeared. Worse, the next switch saw the key
       # already "up to date" and never re-pinned, so it stayed broken until the
       # next login.
+      # Web apps open maximized.
+      #
+      # --start-maximized on the Exec line does NOT do this once the profile has
+      # a placement entry for the app — measured: notion's entry read
+      # {maximized: false, right: 945}, and the flag was ignored on every
+      # launch. Chromium restores that entry and treats the flag as the
+      # first-run fallback only, so the launcher cannot win this.
+      #
+      # The bounds are rewritten too, not just the flag: they are what an
+      # un-maximize restores to, and they held the same 945px half-width rect.
+      #
+      # Skipped while Brave is running — it rewrites Preferences from the live
+      # window state when it exits, which would quietly undo this. Applied over
+      # whatever is there rather than seeded when absent, because the entry
+      # always exists after the app has been opened once, which is precisely
+      # when it is wrong.
+      home.activation.braveWebAppWindowState =
+        lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+          export PATH="${lib.makeBinPath [ pkgs.jq pkgs.coreutils pkgs.procps ]}:$PATH"
+
+          _dome_prefs="$HOME/.config/BraveSoftware/Brave-Browser/Default/Preferences"
+
+          if [ -n "''${DRY_RUN_CMD:-}" ]; then
+            echo "(dry run) would set web apps to open maximized in $_dome_prefs"
+          elif [ ! -f "$_dome_prefs" ]; then
+            : # no Brave profile yet — the app's first launch takes --start-maximized
+          elif pgrep -x brave >/dev/null 2>&1 || pgrep -f brave-browser >/dev/null 2>&1; then
+            echo "⚠️ Brave is running — web-app window state left alone (re-run \`make home\` after quitting it)" >&2
+          else
+            for _dome_placement in ${
+              lib.escapeShellArgs (map (a: builtins.toJSON (webAppPlacementPath a)) webAppDefs)
+            }; do
+              _dome_tmp="$(mktemp)"
+              if jq --argjson p "$_dome_placement" '
+                   (getpath($p) // {}) as $e
+                   | setpath($p; $e
+                       + { maximized: true }
+                       + (if ($e.work_area_right // null) == null then {} else {
+                           left: ($e.work_area_left // 0),
+                           top: ($e.work_area_top // 0),
+                           right: $e.work_area_right,
+                           bottom: $e.work_area_bottom,
+                         } end))
+                 ' "$_dome_prefs" > "$_dome_tmp" && [ -s "$_dome_tmp" ]; then
+                # Truncate-and-copy, not mv: keeps the file's own inode and mode
+                # rather than leaving it world-readable from mktemp's default.
+                cat "$_dome_tmp" > "$_dome_prefs"
+              else
+                echo "⚠️ could not update web-app window state in $_dome_prefs" >&2
+              fi
+              rm -f "$_dome_tmp"
+            done
+          fi
+        '';
+
       home.activation.appsDesktopIntegration = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
         if [ -n "''${DRY_RUN_CMD:-}" ]; then
           echo "(dry run) would run apps-setup (default browser + GNOME dash pins)"
