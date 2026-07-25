@@ -1,6 +1,9 @@
 # Dotfiles
 
-Here's my simple development environment that works in WSL, GitHub Codespaces, and local environment.
+Here's my development environment that works in WSL, GitHub Codespaces, and local environment. It includes many near-native functionalities previously not supported on Asus Zenbook Duo (the 2024 edition)!
+
+> ⚠️ I found out that this is a very strong breakthrough for Asus Zenbook Duo support on Ubuntu which many people struggled with for a while, and as such I will be soon working on a repository that will have all the support possible to aim for near-native support of Asus Zenbook Duo, hopefully for the largest set possible! Linux is an amazing experience which i'm finding out now finally. Make an issue or something if you have any concerns or suggestions meanwhile! ⚠️
+> ⚠️ Although development and results are extremely solid, this repository will be getting pushes directly to main during development and can be very unstable, use at your own risk ⚠️
 
 > **ZenDuo project:** this repo also provisions a full Ubuntu 24.04 dual-boot on the
 > ASUS Zenbook Duo (2024) UX8406MA. Start at **[docs/PLAN.md](docs/PLAN.md)** — the
