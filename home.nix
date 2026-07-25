@@ -182,6 +182,40 @@ in
     # PINNED — home-manager rewrites it on every `make home`, so a later switch
     # to light would be undone at the next activation. It is seeded once instead;
     # see home.activation.seedDarkMode below.
+
+    # Stop "<App> is not responding — Wait / Force Quit" firing at apps that are
+    # merely slow to start.
+    #
+    # mutter pings a window's main loop when you interact with it and puts up its
+    # MetaCloseDialog if no reply comes back inside check-alive-timeout. An app
+    # that blocks its main loop while loading (game launchers, an Electron app
+    # opening a large workspace) is not frozen, but it cannot answer either — so
+    # GNOME's 5s default catches it every single time, and the dialog appears
+    # while the app is still doing exactly what it was asked to do.
+    #
+    # 30s clears any realistic startup while still offering force-quit on a
+    # genuinely hung window within half a minute. Set 0 to switch the check off
+    # entirely — then a truly frozen app offers no dialog at all and has to be
+    # killed from a terminal or System Monitor.
+    #
+    # mkUint32 is NOT decoration. The schema key is type "u", and a bare Nix
+    # integer is written as int32: dconf stores it happily and `dconf read` shows
+    # it back, but GSettings sees the wrong type and silently returns the schema
+    # default, so mutter keeps its 5s and the setting looks ignored. Measured
+    # here both ways:
+    #
+    #   dconf write /org/gnome/mutter/check-alive-timeout 30000
+    #   gsettings get org.gnome.mutter check-alive-timeout   # -> uint32 5000
+    #   dconf write /org/gnome/mutter/check-alive-timeout "uint32 30000"
+    #   gsettings get org.gnome.mutter check-alive-timeout   # -> uint32 30000
+    #
+    # Check `gsettings range <schema> <key>` before trusting a plain number for
+    # any numeric key here — the same trap is waiting on every "u"/"x"/"d" key.
+    #
+    # mutter reads this through its live preference binding
+    # (meta_prefs_get_check_alive_timeout), so it applies to the next ping
+    # without a logout.
+    "org/gnome/mutter".check-alive-timeout = lib.hm.gvariant.mkUint32 30000;
   };
 
   # Seed GNOME dark mode ONCE, at first setup — not a pinned dconf.settings entry.
