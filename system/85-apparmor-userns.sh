@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# 85-apparmor-userns.sh — let Nix-installed Chromium/Electron apps start on
-# Ubuntu 24.04.
+# 85-apparmor-userns.sh — let Chromium/Electron apps that Ubuntu did not package
+# start on Ubuntu 24.04. Two kinds: installed by Nix, and installed by hand into
+# ~/Applications.
 #
 # The failure it fixes (Brave, verbatim):
 #   FATAL:sandbox/linux/suid/client/setuid_sandbox_host.cc:166] The SUID
@@ -15,20 +16,26 @@
 #      does not carry the `userns` permission (i.e. everything "unconfined").
 #   2. Chromium therefore cannot use its namespace sandbox and falls back to
 #      the setuid-root sandbox helper.
-#   3. That helper has to be mode 4755 root-owned, and the Nix store is
-#      read-only and carries no setuid bits — so it can never be.
+#   3. That helper has to be mode 4755 root-owned, and neither kind of install
+#      can offer that. The Nix store is read-only and carries no setuid bits, so
+#      it never can be. A tarball extracted into ~/Applications unpacks its
+#      helper mode 0755 owned by the user — and setuid-rooting it there would
+#      put a setuid-root binary inside a directory its owner can rewrite at
+#      will, which is a worse bargain than the error.
 #   4. Chromium refuses to run unsandboxed and aborts. Correct of it.
 #
 # Ubuntu's own answer is a per-application AppArmor profile that is unconfined
 # apart from granting `userns` — see /etc/apparmor.d/{brave,code,Discord},
-# which cover the .deb paths only. This installs the same thing for the store,
-# so the namespace sandbox works and the sandbox stays ON. That is why this is
-# not --no-sandbox: disabling Chromium's sandbox to work around a sandboxing
-# restriction would trade a startup error for a genuinely less safe browser.
+# which cover the .deb paths only. This installs the same thing for the two
+# paths Ubuntu does not package, so the namespace sandbox works and the sandbox
+# stays ON. That is why this is not --no-sandbox and not a setuid bit: both
+# would trade a startup error for a genuinely less safe app.
 #
-# Scope: `userns` for executables under /nix/store, nothing else — narrower
-# than flipping the sysctl off, which would hand unprivileged userns back to
-# every binary on the system, including anything downloaded to /tmp.
+# Scope: `userns` for executables under /nix/store and under ~/Applications,
+# nothing else — narrower than flipping the sysctl off, which would hand
+# unprivileged userns back to every binary on the system, including anything
+# downloaded to /tmp. The ~/Applications half is the looser of the two and says
+# so at its profile; see home_apps_profile below.
 #
 # It also settles one adjacent problem that has nothing to do with Nix: two
 # packages shipping an AppArmor profile for the same apt-installed Brave
@@ -40,7 +47,8 @@ source ./lib.sh
 
 require_root
 
-PROFILE_PATH=/etc/apparmor.d/nix-store-userns
+NIX_PROFILE_PATH=/etc/apparmor.d/nix-store-userns
+HOME_PROFILE_PATH=/etc/apparmor.d/home-apps-userns
 
 if ! command -v apparmor_parser >/dev/null 2>&1; then
   log "apparmor_parser not present — nothing to configure"
@@ -117,7 +125,67 @@ if [ "$restricted" != 1 ]; then
   exit 0
 fi
 
-read -r -d '' PROFILE <<'EOF' || true
+# Install one "unconfined apart from userns" profile and make sure the kernel
+# has it. <name> must match the profile name inside <body>: it is the key the
+# kernel lists in /sys/kernel/security/apparmor/profiles, and the only way to
+# tell a profile that is merely on disk from one that is actually in force.
+#
+# Hand-rolled rather than install_conf because a bad profile reaching
+# /etc/apparmor.d can stop the apparmor service starting at the next boot, so
+# the content has to be parsed *before* it lands.
+userns_profile() { # <name> <path> <body>
+  local name="$1" path="$2" body="$3" tmp loaded=0
+
+  if [ -r /sys/kernel/security/apparmor/profiles ] &&
+     grep -q "^$name " /sys/kernel/security/apparmor/profiles 2>/dev/null; then
+    loaded=1
+  fi
+
+  if [ -f "$path" ] && [ "$(cat "$path")" = "$body" ]; then
+    log "AppArmor profile up to date: $path"
+    # /sys/kernel/security is not persistent, so a correct file on disk is no
+    # guarantee the running kernel has the profile.
+    if [ "$loaded" = 1 ]; then
+      log "  and it is loaded"
+      return 0
+    fi
+    log "  on disk but not loaded — loading it"
+  else
+    log "installing AppArmor profile: $path"
+    if [ "$DRY_RUN" = 1 ]; then
+      log "DRY RUN: would write $path and load it"
+      mark_change
+      return 0
+    fi
+    tmp="$(mktemp)"
+    printf '%s\n' "$body" > "$tmp"
+    if ! apparmor_parser -Q -T "$tmp" >/dev/null 2>&1; then
+      warn "generated AppArmor profile failed to parse — not installing it"
+      apparmor_parser -Q -T "$tmp" 2>&1 | sed 's/^/    /' >&2 || true
+      rm -f "$tmp"
+      return 0
+    fi
+    install -o root -g root -m 0644 "$tmp" "$path"
+    rm -f "$tmp"
+    mark_change
+  fi
+
+  if [ "$DRY_RUN" = 1 ]; then
+    log "DRY RUN: would load $path"
+    return 0
+  fi
+
+  # Non-fatal, like the GPU setup next door: an app that will not start is
+  # annoying, losing the rest of the provision over it is worse.
+  if apparmor_parser -r -W "$path" 2>/dev/null || apparmor_parser -r "$path"; then
+    log "  loaded — already-running copies must be fully quit and reopened"
+  else
+    warn "could not load $path — the apps it covers will still refuse to start"
+    warn "  retry with:  sudo apparmor_parser -r $path"
+  fi
+}
+
+read -r -d '' NIX_PROFILE <<'EOF' || true
 # Managed by dome (system/85-apparmor-userns.sh) — regenerated on every run.
 #
 # Grants unprivileged-user-namespace permission to executables in the Nix
@@ -136,49 +204,40 @@ profile nix-store-userns /nix/store/*/{bin,lib,libexec,opt,share}/** flags=(unco
 }
 EOF
 
-if [ -f "$PROFILE_PATH" ] && [ "$(cat "$PROFILE_PATH")" = "$PROFILE" ]; then
-  log "AppArmor profile up to date: $PROFILE_PATH"
-  # Still make sure it is loaded — /sys/kernel/security is not persistent and a
-  # profile file on disk is no guarantee the kernel has it.
-  if [ -r /sys/kernel/security/apparmor/profiles ] &&
-     grep -q '^nix-store-userns ' /sys/kernel/security/apparmor/profiles 2>/dev/null; then
-    log "profile is loaded"
-    exit 0
-  fi
-  log "profile is on disk but not loaded — loading it"
-else
-  log "installing AppArmor profile: $PROFILE_PATH"
-  if [ "$DRY_RUN" = 1 ]; then
-    log "DRY RUN: would write $PROFILE_PATH and load it"
-    mark_change
-    exit 0
-  fi
-  tmp="$(mktemp)"
-  # shellcheck disable=SC2064  # expand tmp now so the trap knows the path
-  trap "rm -f '$tmp'" EXIT
-  printf '%s\n' "$PROFILE" > "$tmp"
-  # Parse before installing: a bad profile that reaches /etc/apparmor.d can
-  # make the apparmor service fail to start on the next boot.
-  if ! apparmor_parser -Q -T "$tmp" >/dev/null 2>&1; then
-    warn "generated AppArmor profile failed to parse — not installing it"
-    apparmor_parser -Q -T "$tmp" 2>&1 | sed 's/^/    /' >&2 || true
-    exit 0
-  fi
-  install -o root -g root -m 0644 "$tmp" "$PROFILE_PATH"
-  mark_change
-fi
+# ── Hand-installed apps under ~/Applications ────────────────────────────────
+# The same grant for the other place Chromium/Electron arrives from outside a
+# package manager: a tarball or AppImage the user extracted themselves, which
+# ships its own Chromium and its own chrome-sandbox helper and no launcher (see
+# `mkdesktop` in modules/ for that half of the problem).
+#
+# SCOPE, stated plainly: the attachment is a glob over the whole directory, not
+# a list of known apps, so an Electron app dropped in later works with no repo
+# change. That is deliberate — but ~/Applications is user-writable, so anything
+# put there gains unprivileged userns too. It stays far narrower than turning
+# kernel.apparmor_restrict_unprivileged_userns off, and userns is an amplifier
+# for kernel bugs rather than a privilege by itself. To tighten it, replace the
+# ** attachment below with the specific binaries.
+#
+# @{HOME} comes from tunables/home via tunables/global and expands to every
+# user's home, so this needs no username baked in.
+read -r -d '' HOME_PROFILE <<'EOF' || true
+# Managed by dome (system/85-apparmor-userns.sh) — regenerated on every run.
+#
+# Grants unprivileged-user-namespace permission to programs installed by hand
+# under ~/Applications, so a downloaded Chromium/Electron app can use its
+# namespace sandbox on Ubuntu 24.04 instead of falling back to the setuid
+# helper it cannot legally own. Modelled on Ubuntu's own /etc/apparmor.d/brave.
+# Unconfined apart from that one permission.
+abi <abi/4.0>,
+include <tunables/global>
 
-if [ "$DRY_RUN" = 1 ]; then
-  log "DRY RUN: would load $PROFILE_PATH"
-  exit 0
-fi
+profile home-apps-userns @{HOME}/Applications/** flags=(unconfined) {
+  userns,
 
-# Non-fatal, like the GPU setup next door: a browser that will not start is
-# annoying, losing the rest of the provision over it is worse.
-if apparmor_parser -r -W "$PROFILE_PATH" 2>/dev/null || apparmor_parser -r "$PROFILE_PATH"; then
-  log "AppArmor profile loaded — Nix Chromium/Electron apps can sandbox properly now"
-  log "already-running copies must be restarted"
-else
-  warn "could not load $PROFILE_PATH — Nix Chromium/Electron apps will still refuse to start"
-  warn "  retry with:  sudo apparmor_parser -r $PROFILE_PATH"
-fi
+  # Site-specific additions and overrides.
+  include if exists <local/home-apps-userns>
+}
+EOF
+
+userns_profile nix-store-userns  "$NIX_PROFILE_PATH"  "$NIX_PROFILE"
+userns_profile home-apps-userns "$HOME_PROFILE_PATH" "$HOME_PROFILE"

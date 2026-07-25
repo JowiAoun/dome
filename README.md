@@ -950,6 +950,58 @@ keyring actually ships (checked). `78-brave.sh` therefore pins the fingerprint
 fetch was honest, but it turns any later key swap into a loud failure rather
 than silent trust for every future upgrade.
 
+### A hand-installed Electron app that will not start
+
+Symptom: an app extracted into `~/Applications` and given a launcher with
+`mkdesktop` does nothing at all when clicked in the dash — no window, no error,
+no crash dialog. From a terminal the same binary starts perfectly, which makes
+it look like a launcher problem. It is not. Ask the journal:
+
+```bash
+journalctl --user -b | grep -iE 'FATAL|sandbox'
+```
+
+```
+FATAL:sandbox/linux/suid/client/setuid_sandbox_host.cc:166] The SUID sandbox
+helper binary was found, but is not configured correctly. … you need to make
+sure that …/chrome-sandbox is owned by root and has mode 4755.
+```
+
+**Why the terminal lies.** On Ubuntu 24.04 `kernel.apparmor_restrict_unprivileged_userns=1`
+means a process whose AppArmor profile lacks `userns` cannot create the user
+namespace Chromium's sandbox needs; it is transitioned into the restrictive
+`unprivileged_userns` profile and denied `CAP_SYS_ADMIN`. Chromium then tries the
+setuid helper, which a tarball unpacked as your own user can never satisfy, and
+aborts rather than run unsandboxed. **Confinement is inherited across `exec`**,
+and this repo's shell is a Nix binary already covered by `nix-store-userns` — so
+an app launched from that terminal inherits the `userns` grant and works, while
+the same app launched by gnome-shell (unconfined) does not. The kernel says so
+outright:
+
+```bash
+journalctl -b | grep -i userns   # → "Userns create - transitioning profile" then DENIED sys_admin
+```
+
+**The fix** is `system/85-apparmor-userns.sh`, which installs
+`/etc/apparmor.d/home-apps-userns` — unconfined apart from granting `userns` to
+`@{HOME}/Applications/**`, modelled on Ubuntu's own `/etc/apparmor.d/brave`.
+Applied by `sudo make system`; the app must be **fully quit** and reopened
+afterwards. Note that a still-running copy makes a dash click merely focus the
+existing window, which looks like success either way.
+
+Deliberately *not* the two obvious shortcuts. `--no-sandbox` answers a
+sandboxing restriction by removing the sandbox. `chmod 4755` on the helper puts
+a setuid-root binary inside a directory its owner can rewrite at will, and is
+undone by the next time the app is re-extracted.
+
+The scope is stated plainly in the profile: the attachment is a glob over the
+whole directory rather than a list of known apps, so an Electron app added later
+needs no repo change — but `~/Applications` is user-writable, so anything put
+there gains unprivileged userns too. That remains far narrower than turning the
+sysctl off, which would hand it back to every binary on the machine including
+anything downloaded to `/tmp`. To tighten it, name the binaries explicitly in
+place of the `**`.
+
 ### Reinstalling this machine
 
 Most of a rebuild is already free: the repo is on GitHub and `./install.sh`
