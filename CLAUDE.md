@@ -29,6 +29,56 @@ so use `if install_conf …; then <reload>; fi` and reload only when needed. Bot
 helpers are covered by `tests/test-lib.sh`; run `make test` after touching
 `lib.sh`.
 
+## Never write a bare number into `dconf.settings`
+
+Same failure shape as above — everything passes and the setting does nothing.
+home-manager types a plain Nix integer as **int32**. If the GSettings schema
+declares any other numeric type, dconf stores the value and `dconf read` shows it
+back, but GSettings type-checks on read, **silently falls back to the schema
+default**, and the app keeps its old behaviour. `nix build` passes, activation
+passes, `dconf read` looks right, nothing warns.
+
+Measured on `org.gnome.mutter check-alive-timeout`, whose schema type is `u`:
+
+```bash
+dconf write /org/gnome/mutter/check-alive-timeout 30000
+gsettings get org.gnome.mutter check-alive-timeout   # -> uint32 5000   IGNORED
+dconf write /org/gnome/mutter/check-alive-timeout "uint32 30000"
+gsettings get org.gnome.mutter check-alive-timeout   # -> uint32 30000  applied
+```
+
+So check the type before writing the key, and wrap anything that is not `i`:
+
+```bash
+gsettings range <schema.id> <key>        # "type u" -> needs mkUint32
+```
+
+```nix
+"org/gnome/mutter".check-alive-timeout = lib.hm.gvariant.mkUint32 30000;   # home.nix
+```
+
+The generated keyfile shows the difference directly — build both ways and grep
+the `hm-dconf.ini` derivation: a bare `30000` is emitted as
+`check-alive-timeout=30000` (untyped, so int32), `mkUint32 30000` as
+`check-alive-timeout=@u 30000`.
+
+`lib.hm.gvariant` also has `mkUint16/64`, `mkInt16/64`, `mkDouble`, `mkUchar`,
+`mkArray`, `mkTuple`, `mkVariant`, `mkDictionaryEntry` — see
+`modules/desktop-shell.nix`, which builds the `aa{sv}` app-grid layout by hand.
+
+To verify after `make home`, read the key **both ways**. They must agree; if
+`gsettings` still reports the old value, the type is wrong:
+
+```bash
+dconf read /org/gnome/mutter/check-alive-timeout      # what we wrote
+gsettings get org.gnome.mutter check-alive-timeout    # what the app sees
+```
+
+The sibling trap, documented at the Tracker setting in `modules/desktop-shell.nix`:
+the dconf **path** is not the schema id lowercased with slashes. `dconf.settings`
+writes wherever it is told and never validates against a schema, so a wrong path
+stores a value that simply nothing reads — and it looks identical to this one.
+
 Instructions for AI agents (Claude Code and the like) working in this dotfiles
 repository. This file is loaded into agent context automatically, so keep it
 short and factual. For a full tour, read `README.md`; the machine is configured
