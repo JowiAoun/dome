@@ -109,6 +109,13 @@ in
     jq
     yq
     httpie
+    # DigitalOcean CLI, for the App Platform deploys (`doctl apps
+    # create-deployment`). Deliberately NOT in modules/cloud.nix: that module is
+    # the whole multi-cloud toolkit — terraform, pulumi, awscli2, azure-cli,
+    # google-cloud-sdk, oci-cli — and it is off on this machine. doctl is one Go
+    # binary, so it lives here rather than dragging in gigabytes of SDKs for
+    # clouds this machine never talks to.
+    doctl
     age
     hyperfine
     bottom
@@ -406,6 +413,54 @@ in
       # shell opened inside a project keeps its directory.
       if [[ $- == *i* && $PWD == "$HOME" && -d "$HOME/p" ]]; then cd "$HOME/p"; fi
 
+      # Auto-activate a project's Python virtualenv — same behaviour and same
+      # hands-off rules as the zsh copy below, see the comment there.
+      _venv_auto_find() {
+        _VENV_AUTO_FOUND=""
+        local d=$PWD name
+        while [ -n "$d" ] && [ "$d" != / ] && [ "$d" != "$HOME" ]; do
+          for name in .venv venv; do
+            if [ -f "$d/$name/bin/activate" ]; then
+              _VENV_AUTO_FOUND="$d/$name"
+              return
+            fi
+          done
+          d=''${d%/*}
+        done
+      }
+
+      _venv_auto() {
+        _venv_auto_find
+        # Someone else owns the live venv -> hands off.
+        if [ -n "$VIRTUAL_ENV" ] && [ "$VIRTUAL_ENV" != "$_VENV_AUTO" ]; then return; fi
+        if [ "$_VENV_AUTO_FOUND" = "$VIRTUAL_ENV" ]; then return; fi
+        if [ -n "$VIRTUAL_ENV" ]; then
+          deactivate 2>/dev/null
+          _VENV_AUTO=""
+        fi
+        if [ -n "$_VENV_AUTO_FOUND" ]; then
+          . "$_VENV_AUTO_FOUND/bin/activate"
+          _VENV_AUTO="$_VENV_AUTO_FOUND"
+        fi
+      }
+
+      # bash has no chpwd hook, so the check rides on PROMPT_COMMAND and returns
+      # immediately unless $PWD actually changed. Starship's init is appended
+      # after this block and preserves an existing PROMPT_COMMAND (it moves it to
+      # $STARSHIP_PROMPT_COMMAND and re-evals it), so registering here survives.
+      _venv_auto_prompt() {
+        if [ "$PWD" != "$_VENV_AUTO_PWD" ]; then
+          _VENV_AUTO_PWD=$PWD
+          _venv_auto
+        fi
+      }
+
+      export VIRTUAL_ENV_DISABLE_PROMPT=1
+      case ";$PROMPT_COMMAND;" in
+        *";_venv_auto_prompt;"*) ;;
+        *) PROMPT_COMMAND="_venv_auto_prompt''${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
+      esac
+
       # Source ghcup environment for Haskell development
       [ -f "$HOME/.ghcup/env" ] && source "$HOME/.ghcup/env"
     '';
@@ -514,6 +569,54 @@ in
       # lands in ~/p without a manual cd. A shell opened inside a project starts
       # in that folder — PWD is not $HOME — so it is left where it is.
       if [[ -o interactive && $PWD == $HOME && -d $HOME/p ]]; then cd "$HOME/p"; fi
+
+      # Auto-activate a project's Python virtualenv on entering it, and drop it
+      # again on leaving. Walks up from $PWD so a shell sitting in src/ or
+      # tests/ still finds the venv at the project root, and stops below $HOME
+      # so a stray ~/.venv never leaks into every unrelated directory.
+      #
+      # Only a venv this hook activated is ever deactivated — $_VENV_AUTO
+      # records which one that was. A venv sourced by hand, or one that
+      # pyenv-virtualenv switched on from a .python-version file, is left
+      # strictly alone: pyenv registers its own chpwd hook earlier in this file
+      # and therefore runs first, so we see its $VIRTUAL_ENV and stand down.
+      _venv_auto_find() {
+        _VENV_AUTO_FOUND=""
+        local d=$PWD name
+        while [ -n "$d" ] && [ "$d" != / ] && [ "$d" != "$HOME" ]; do
+          for name in .venv venv; do
+            if [ -f "$d/$name/bin/activate" ]; then
+              _VENV_AUTO_FOUND="$d/$name"
+              return
+            fi
+          done
+          d=''${d%/*}
+        done
+      }
+
+      _venv_auto() {
+        _venv_auto_find
+        # Someone else owns the live venv -> hands off.
+        if [ -n "$VIRTUAL_ENV" ] && [ "$VIRTUAL_ENV" != "$_VENV_AUTO" ]; then return; fi
+        if [ "$_VENV_AUTO_FOUND" = "$VIRTUAL_ENV" ]; then return; fi
+        if [ -n "$VIRTUAL_ENV" ]; then
+          deactivate 2>/dev/null
+          _VENV_AUTO=""
+        fi
+        if [ -n "$_VENV_AUTO_FOUND" ]; then
+          . "$_VENV_AUTO_FOUND/bin/activate"
+          _VENV_AUTO="$_VENV_AUTO_FOUND"
+        fi
+      }
+
+      # Starship's [python] module already renders ($virtualenv) and redraws the
+      # prompt on every line, so let it own the indicator instead of having
+      # activate prepend a "(.venv) " that Starship immediately overwrites.
+      export VIRTUAL_ENV_DISABLE_PROMPT=1
+
+      autoload -U add-zsh-hook
+      add-zsh-hook chpwd _venv_auto
+      _venv_auto   # for the directory this shell opened in
 
       # Source ghcup environment for Haskell development (must be at the end)
       [ -f "$HOME/.ghcup/env" ] && source "$HOME/.ghcup/env"
