@@ -151,3 +151,15 @@ repo, never by dragging in GNOME (a drag-rearrange is wiped on the next switch).
 The `app-picker-layout` dconf value is a GVariant generated from `topLevel` —
 edit the Nix lists, not the dconf. Takes effect on `make home` / `setup.sh`; a
 full grid rebuild happens at the next login if it looks half-updated.
+
+## Zenbook Duo hardware support lives in linux-on-zenbook-duo
+
+The dock policy, keyboard hotkeys and backlight, speaker chain, battery limit,
+touchpad quirk and the PSR fix are NOT in this repo any more. They live in
+`~/p/linux-on-zenbook-duo` (github.com/JowiAoun/linux-on-zenbook-duo), which
+this repo consumes: `hosts/zenbook-duo/default.nix` imports its home-manager
+module (flake input `zenbook-duo`, options under `zenduo.*`) and
+`system/40-zenbook-duo.sh` runs its root installer with `--dev`, so the
+daemons run from that checkout. Fix Duo behaviour there, never here. Daemon
+edits are live after `systemctl --user restart duo-*`; when the *module* or
+its options change, `nix flake update zenbook-duo` here, then `make home`.

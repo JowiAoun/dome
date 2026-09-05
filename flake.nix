@@ -15,9 +15,20 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Hardware support for the ASUS Zenbook Duo (2024): the dock policy, the
+    # keyboard hotkeys and backlight, speaker voicing, battery limit. It is its
+    # own project so anyone can install it without this repo (or Nix at all);
+    # hosts/zenbook-duo imports its home-manager module and
+    # system/40-zenbook-duo.sh runs its root-level installer. Bump with
+    # `nix flake update zenbook-duo` when the MODULE changes; the daemons run
+    # live from the checkout (zenduo.repoPath), so tooling edits need no bump.
+    zenbook-duo = {
+      url = "github:JowiAoun/linux-on-zenbook-duo";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-ghostty, home-manager, ... }:
+  outputs = inputs@{ self, nixpkgs, nixpkgs-ghostty, home-manager, ... }:
   let
     system = "x86_64-linux";
     # Take Ghostty from the newer pin; everything else stays on the main one.
@@ -35,6 +46,9 @@
     # reads are needed. Select with: home-manager switch --flake .#<host>
     mkHome = host: home-manager.lib.homeManagerConfiguration {
       inherit pkgs;
+      # Host profiles get the flake inputs, so hosts/zenbook-duo can import
+      # the zenbook-duo module without this file knowing about it.
+      extraSpecialArgs = { inherit inputs; };
       modules = [
         ./home.nix
         (./hosts + "/${host}/default.nix")

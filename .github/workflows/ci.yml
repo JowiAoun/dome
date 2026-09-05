@@ -12,14 +12,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: bash syntax
         run: |
-          for f in bootstrap.sh install.sh setup.sh system/*.sh tests/*.sh duo/bin/duo duo/helper/zenduo-helper; do
+          for f in bootstrap.sh install.sh setup.sh system/*.sh tests/*.sh; do
             bash -n "$f"
           done
       - name: shellcheck
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq shellcheck
-          shellcheck -x system/*.sh tests/*.sh install.sh setup.sh bootstrap.sh duo/bin/duo duo/helper/zenduo-helper
+          shellcheck -x system/*.sh tests/*.sh install.sh setup.sh bootstrap.sh
       # Behavioural tests for system/lib.sh. shellcheck and `nix eval` both pass
       # on a script whose detection helper returns the wrong answer — that is
       # exactly how the pipefail/SIGPIPE bug shipped. Run under sudo so the
@@ -78,8 +78,6 @@ jobs:
           # no Nix profile and no colliding entries.
           ./setup.sh --audit-apps
           rm user-config.nix
-      - name: python bytecompile
-        run: python3 -m py_compile duo/lib/*.py
 
   hygiene:
     runs-on: ubuntu-24.04

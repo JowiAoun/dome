@@ -2,7 +2,7 @@
 #
 #   sudo make system [HOST=zenbook-duo] [DRY_RUN=1]   apply the root-level system layer
 #   make home [HOST=zenbook-duo]                      apply the home-manager user layer
-#   make doctor                                       zenduo hardware probe (read-only, live-USB safe)
+#   make doctor                                       Zenbook Duo hardware probe (linux-on-zenbook-duo's `duo doctor`)
 #   make update                                       pull repo + update flake inputs
 #   make rollback                                     undo a bad flake update: restore flake.lock + re-activate
 #
@@ -23,9 +23,9 @@ HOST_RESOLVED := $(if $(HOST_RESOLVED),$(HOST_RESOLVED),generic)
 help:
 	@echo "dome targets:"
 	@echo "  make setup                                       - interactive machine setup (writes user-config.nix)"
-	@echo "  sudo make system [HOST=zenbook-duo] [DRY_RUN=1]  - apply system layer (apt/kernel/GRUB/duo helper)"
+	@echo "  sudo make system [HOST=zenbook-duo] [DRY_RUN=1]  - apply system layer (apt/kernel/GRUB, + the Duo installer on that host)"
 	@echo "  make home [HOST=zenbook-duo]                     - home-manager switch for the host profile"
-	@echo "  make doctor                                      - run 'duo doctor' (read-only hardware probe)"
+	@echo "  make doctor                                      - run 'duo doctor' from linux-on-zenbook-duo (read-only hardware probe)"
 	@echo "  make test                                        - unit-test system/lib.sh (sudo make test covers root paths)"
 	@echo "  make audit-apps                                  - report duplicate apps / colliding .desktop ids"
 	@echo "  make update                                      - git pull + nix flake update"
@@ -48,8 +48,12 @@ system:
 home:
 	home-manager switch --flake path:.#$(HOST_RESOLVED) -b backup
 
+# The probe lives in linux-on-zenbook-duo; `sudo make system` clones it to
+# ~/p/linux-on-zenbook-duo on a Duo host and puts `duo` on PATH.
 doctor:
-	bash duo/bin/duo doctor
+	@if command -v duo >/dev/null 2>&1; then duo doctor; \
+	elif [ -x "$$HOME/p/linux-on-zenbook-duo/bin/duo" ]; then "$$HOME/p/linux-on-zenbook-duo/bin/duo" doctor; \
+	else echo "duo is not installed: git clone https://github.com/JowiAoun/linux-on-zenbook-duo ~/p/linux-on-zenbook-duo && ~/p/linux-on-zenbook-duo/bin/duo doctor" >&2; exit 1; fi
 
 # Behavioural tests for system/lib.sh. Plain bash + coreutils, so this runs on a
 # fresh machine before Nix exists. Without sudo the root-only cases (install_conf

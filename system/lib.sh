@@ -190,7 +190,7 @@ out_matches() { # <text> <grep-arg...>
 # the script under `set -e`. Parent directories are created; mode is 0644
 # root:root. Anything wanting different ownership, a validation step before the
 # file lands, or a "did dome write this?" marker check should still hand-roll it
-# (see 85-apparmor-userns.sh and 55-touchpad-quirks.sh).
+# (see 85-apparmor-userns.sh).
 install_conf() { # <path> <content>
   local path="$1" body="$2" tmp
   if [ -f "$path" ] && [ "$(cat "$path")" = "$body" ]; then

@@ -33,7 +33,7 @@ fi
 
 # Pin the snapshot destination to the ROOT filesystem's own device. Without
 # this, Timeshift's first-run mode auto-picks a destination and on the Duo it
-# chose the 2 GiB /boot partition and filled it (see docs/INSTALL-LOG.md).
+# chose the 2 GiB /boot partition and filled it (linux-on-zenbook-duo/docs/install/INSTALL-LOG.md).
 ROOT_SRC="$(findmnt -n -o SOURCE / 2>/dev/null || true)"
 case "$ROOT_SRC" in
   /dev/*) ;;

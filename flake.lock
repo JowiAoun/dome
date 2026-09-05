@@ -20,6 +20,27 @@
         "type": "github"
       }
     },
+    "home-manager_2": {
+      "inputs": {
+        "nixpkgs": [
+          "zenbook-duo",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1788487777,
+        "narHash": "sha256-Ro/e1N4ZR8/XaFF+sF9SgfPK79HM5YNEppzFj8p+0Ak=",
+        "owner": "nix-community",
+        "repo": "home-manager",
+        "rev": "693e8ce0fb240a73c116a03cfd7b19269c87af88",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "repo": "home-manager",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1766651565,
@@ -56,7 +77,29 @@
       "inputs": {
         "home-manager": "home-manager",
         "nixpkgs": "nixpkgs",
-        "nixpkgs-ghostty": "nixpkgs-ghostty"
+        "nixpkgs-ghostty": "nixpkgs-ghostty",
+        "zenbook-duo": "zenbook-duo"
+      }
+    },
+    "zenbook-duo": {
+      "inputs": {
+        "home-manager": "home-manager_2",
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1788616882,
+        "narHash": "sha256-6l20HpaxgqI0FCfapetXCH4dxOzprocyOEWSnsR1FCQ=",
+        "owner": "JowiAoun",
+        "repo": "linux-on-zenbook-duo",
+        "rev": "2c73574be1aba697f0ae946a031bca071835c686",
+        "type": "github"
+      },
+      "original": {
+        "owner": "JowiAoun",
+        "repo": "linux-on-zenbook-duo",
+        "type": "github"
       }
     }
   },

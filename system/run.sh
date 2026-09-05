@@ -11,8 +11,8 @@
 # ...` and `sudo make system DRY_RUN=1` do work — the flags just remove the trap.)
 #
 # Order: preflight (read-only) → Timeshift snapshot → base → kernel → GRUB,
-# then the duo-only scripts (40, 45, 46, 50, 55) when the host profile is
-# zenbook-duo, then the host-independent extras (60 docker, 70 docker-desktop,
+# then 40-zenbook-duo.sh (the linux-on-zenbook-duo installer) when the host
+# profile is zenbook-duo, then the host-independent extras (60 docker, 70 docker-desktop,
 # 75 claude-desktop, 76 openwhispr, 77 gecko-policy, 78 brave, 79 brave-policy, 80 nix-gpu,
 # 85 apparmor-userns, 86 gamemode, 87 login-pin, 88 faillock, 96 tpm-unlock, 95 luks).
 #
@@ -76,12 +76,10 @@ for script in 05-hostname.sh 10-apt-base.sh 20-kernel.sh 25-memory.sh 30-grub-pa
 done
 
 if [ "$PROFILE" = zenbook-duo ]; then
-  for script in 40-duo-deps.sh 45-duo-udev.sh 46-duo-speaker-amp.sh 50-duo-sudoers.sh 55-touchpad-quirks.sh; do
-    log "── $script"
-    bash "./$script"
-  done
+  log "── 40-zenbook-duo.sh"
+  bash ./40-zenbook-duo.sh
 else
-  log "skipping duo-only scripts (40, 45, 46, 50, 55) for profile '$PROFILE'"
+  log "skipping 40-zenbook-duo.sh (hardware support from linux-on-zenbook-duo) for profile '$PROFILE'"
 fi
 
 # Host-independent extras. Each one either honors a user-config.nix switch

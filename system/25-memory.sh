@@ -163,7 +163,7 @@ EOF
 fi
 
 # ── 2. swapfile: 4 GB -> 16 GB of overflow ───────────────────────────────────
-# Not for hibernation (docs/PLAN.md D8: this machine is s2idle-only). This is
+# Not for hibernation (this machine is s2idle-only). This is
 # purely the tier behind zram, for pages cold enough that compressing them in
 # RAM is a waste of RAM — a browser's idle heap, a chat client in the tray.
 swap_want_bytes=$((SWAP_TARGET_GB * 1024 * 1024 * 1024))

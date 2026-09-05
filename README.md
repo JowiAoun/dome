@@ -1,21 +1,19 @@
 # Dotfiles
 
-Here's my development environment that works in WSL, GitHub Codespaces, and local environment. It includes many near-native functionalities previously not supported on Asus Zenbook Duo (the 2024 edition)!
+Here's my development environment that works in WSL, GitHub Codespaces, and local environment.
 
-> ⚠️ I found out that this is a very strong breakthrough for Asus Zenbook Duo support on Ubuntu which many people struggled with for a while, and as such I will be soon working on a repository that will have all the support possible to aim for near-native support of Asus Zenbook Duo, hopefully for the largest set possible! Linux is an amazing experience which i'm finding out now finally. Make an issue or something if you have any concerns or suggestions meanwhile! ⚠️
 > ⚠️ Although development and results are extremely solid, this repository will be getting pushes directly to main during development and can be very unstable, use at your own risk ⚠️
 
-> **ZenDuo project:** this repo also provisions a full Ubuntu 24.04 dual-boot on the
-> ASUS Zenbook Duo (2024) UX8406MA. Start at **[docs/PLAN.md](docs/PLAN.md)** — the
-> exhaustive, phase-gated master plan (research archive in
-> [docs/research/](docs/research/)). The moving parts:
+> **ASUS Zenbook Duo (2024)?** The hardware support that was built here — the
+> bottom panel following the keyboard, the Fn/media row and keyboard backlight,
+> speaker voicing, battery limit, palm rejection, the OLED flicker fix — now
+> lives in its own repo, **[linux-on-zenbook-duo](https://github.com/JowiAoun/linux-on-zenbook-duo)**,
+> installable on any Duo with no Nix and customisable feature by feature. This
+> repo only consumes it: the `zenbook-duo` host profile imports its home-manager
+> module, and `sudo make system` runs its installer. The moving parts here:
 >
 > - `system/` — idempotent root-layer scripts (`sudo make system HOST=zenbook-duo`,
 >   add `DRY_RUN=1` as a make argument to preview)
-> - `duo/` — **zenduo** hardware tooling; `duo doctor` is the read-only probe used as
->   the live-USB install gate. Day to day it keeps the bottom panel in step with the
->   keyboard (off while docked, back on when you lift it off) and makes the Fn/media
->   row work — see [duo/README.md](duo/README.md)
 > - `hosts/` + `flake.nix` — per-machine home-manager profiles
 >   (`home-manager switch --flake path:.#generic` or `path:.#zenbook-duo`)
 > - `install.sh` — one-command setup on a fresh Ubuntu machine
@@ -27,7 +25,7 @@ Here's my development environment that works in WSL, GitHub Codespaces, and loca
 | GitHub Codespaces | Enable dotfiles (below) — `bootstrap.sh` runs automatically |
 | WSL / existing Linux that already has (or wants only) Nix | `./bootstrap.sh` (interactive) |
 | **Fresh Ubuntu LTS machine (24.04 or 26.04) — any hardware** | `./install.sh --host generic` |
-| ASUS Zenbook Duo (2024) UX8406MA | Follow [docs/PLAN.md](docs/PLAN.md) + [docs/CHECKLIST.md](docs/CHECKLIST.md), then `./install.sh --host zenbook-duo` |
+| ASUS Zenbook Duo (2024) UX8406MA | Install Ubuntu per [linux-on-zenbook-duo/docs/install](https://github.com/JowiAoun/linux-on-zenbook-duo/blob/main/docs/install/README.md), then `./install.sh --host zenbook-duo` — the system layer clones and installs the Duo support |
 
 ### GitHub Codespaces
 1. Go to [GitHub Settings → Codespaces](https://github.com/settings/codespaces)
@@ -86,9 +84,11 @@ cd ~/.dotfiles
 2. Add `homeConfigurations.<name> = mkHome "<name>";` in `flake.nix`
 3. `./install.sh --host <name>`
 
-Machine-specific code lives in `modules/<name>/` and is imported **only** by
-that host's profile — every other machine never evaluates it (that's how the
-Zenbook Duo tooling stays out of generic setups).
+Machine-specific code is imported **only** by that host's profile — every
+other machine never evaluates it. The Zenbook Duo profile imports nothing from
+this repo at all: its hardware support comes from the
+[linux-on-zenbook-duo](https://github.com/JowiAoun/linux-on-zenbook-duo) flake
+input, and `system/40-zenbook-duo.sh` runs that repo's installer.
 
 ## What You Get
 
@@ -1375,14 +1375,12 @@ dome/
 │   ├── ai.nix             # AI tools (Claude Code, skills CLI, keybindings)
 │   ├── terminal.nix       # Ghostty + default-terminal wiring (not under apps)
 │   ├── gaming.nix         # GameMode-wrapped game launchers (see system/86-)
-│   ├── cloud.nix          # Terraform/Pulumi/cloud CLIs/k8s
-│   └── zenbook-duo/       # Duo-only home-manager wiring
+│   └── cloud.nix          # Terraform/Pulumi/cloud CLIs/k8s
 ├── system/                # Idempotent root-layer scripts (Ubuntu)
 │   └── gnome-extensions/  # Shell extensions the GDM greeter needs, so they
 │                          # install to /usr/share, not to ~/.local/share
 ├── tests/                 # Unit tests for system/lib.sh (`make test`)
-├── duo/                   # zenduo hardware tooling (self-contained, MIT)
-└── docs/                  # PLAN.md, CHECKLIST.md, research archive
+└── docs/                  # research archive
 ```
 
 ## Secrets policy
@@ -1395,7 +1393,7 @@ This is a public repository — treat it accordingly:
 - No keys, tokens, or passphrases belong anywhere in the tree. CI runs a
   gitleaks scan on every push/PR as a backstop.
 - Future encrypted secrets (API tokens etc.) are planned via `sops-nix`
-  (age-encrypted, safe to commit — see docs/PLAN.md G6). Until then, keep
+  (age-encrypted, safe to commit). Until then, keep
   secrets out entirely.
 
 ## Troubleshooting
