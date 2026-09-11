@@ -179,8 +179,8 @@ the default browser, and the GNOME dash:
 - **Discord** — pinned to the dash
 - **Xournal++** — pinned to the dash; handwritten notes and PDF annotation
   with the pen; `modules/xournalpp.nix` configures how it looks
-- **draw.io**, **LocalSend**, **Bruno**, **OBS Studio**, **Zoom** — installed,
-  not pinned
+- **draw.io**, **LocalSend**, **Bruno**, **OBS Studio**, **Zoom**, **Rnote** —
+  installed, not pinned
 - **Notion**, **YouTube Music** — pinned **web apps**, see below
 
 Budget roughly **5 GiB** of disk for the set. To hold one back without

@@ -91,6 +91,7 @@ APP_PROBES=(
   "localsend|LocalSend.desktop localsend.desktop org.localsend.localsend_app.desktop localsend_localsend.desktop|localsend localsend_app"
   "bruno|bruno.desktop com.usebruno.Bruno.desktop bruno_bruno.desktop|bruno"
   "xournalpp|com.github.xournalpp.xournalpp.desktop xournalpp.desktop xournalpp_xournalpp.desktop|xournalpp"
+  "rnote|com.github.flxzt.rnote.desktop rnote.desktop rnote_rnote.desktop|rnote"
   "obs-studio|com.obsproject.Studio.desktop obs-studio.desktop obs-studio_obs-studio.desktop|obs obs-studio"
   "thunderbird|thunderbird.desktop mozilla-thunderbird.desktop net.thunderbird.Thunderbird.desktop thunderbird_thunderbird.desktop|thunderbird"
   "zoom|Zoom.desktop zoom.desktop us.zoom.Zoom.desktop zoom-client_zoom-client.desktop|zoom zoom-us"

@@ -183,6 +183,25 @@ let
       probeCommands = [ "xournalpp" ];
     }
     {
+      # A second pen app, installed unpinned BESIDE Xournal++ rather than
+      # instead of it. GTK4/libadwaita and stylus-first, so it looks native on
+      # GNOME where Xournal++ looks like the GTK3 app it is — but Xournal++ owns
+      # PDF annotation and a file format that has been stable for years, so the
+      # two are complementary on a pen laptop rather than a replacement.
+      #
+      # Its entry is the reverse-DNS id, with a bare `Exec=rnote %f` and a themed
+      # Icon. Its "New Window" desktop action carries a second Exec, which
+      # patchDesktop rewrites too — every Exec line is patched, not just the
+      # first, which is exactly what that is for.
+      name = "rnote";
+      package = pkgs.rnote;
+      ids = [ "com.github.flxzt.rnote.desktop" ];
+      pin = false;
+      browser = false;
+      probeDesktop = [ "com.github.flxzt.rnote.desktop" "rnote.desktop" "rnote_rnote.desktop" ];
+      probeCommands = [ "rnote" ];
+    }
+    {
       name = "obs-studio";
       package = pkgs.obs-studio;
       ids = [ "com.obsproject.Studio.desktop" ];
