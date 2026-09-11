@@ -87,7 +87,26 @@ in
 
       if [ -e "$_xpp_marker" ]; then
         :   # already seeded once; the settings are yours from here on
-      elif ${pkgs.procps}/bin/pgrep -x xournalpp >/dev/null 2>&1; then
+      # NEVER match a nixpkgs GUI app with `pgrep -x <name>` alone. The binary on
+      # PATH is a makeCWrapper stub that execs .<name>-wrapped, so the process
+      # NAME is the wrapper's — and the kernel truncates comm to 15 characters,
+      # which turns ".xournalpp-wrapped" into ".xournalpp-wrap". `pgrep -x
+      # xournalpp` therefore NEVER matches a running Xournal++. Measured: with
+      # the app up, -x returns nothing while the process list plainly shows it.
+      #
+      # That is the silent-wrong-answer shape CLAUDE.md is about — the guard
+      # exits 0, the seed runs underneath a live instance, the app overwrites it
+      # on quit, and the marker written here stops it ever being retried.
+      # migrate/backup.sh hit the same wrapper and spells ".brave-wrapped" out
+      # for it; that name is 14 characters, so it survives truncation and the
+      # hazard stayed hidden.
+      #
+      # Both forms, the way apps.nix pairs them for Brave. The comm match is
+      # precise; the cmdline match survives a rename of the wrapper. It can
+      # over-match a shell that ran that path, which only DEFERS the seed and
+      # logs it, and no marker is written — the safe direction to fail in.
+      elif ${pkgs.procps}/bin/pgrep -x 'xournalpp|\.xournalpp-wrap' >/dev/null 2>&1 \
+        || ${pkgs.procps}/bin/pgrep -f '/bin/xournalpp' >/dev/null 2>&1; then
         # It rewrites settings.xml in full when it exits, so seeding underneath
         # a running instance would be undone the moment the window closes. No
         # marker is written, so the next switch tries again.
