@@ -178,7 +178,7 @@ the default browser, and the GNOME dash:
   `message/rfc822` (`.eml`) and `mid:`
 - **Discord** — pinned to the dash
 - **Xournal++** — pinned to the dash; handwritten notes and PDF annotation
-  with the pen
+  with the pen; `modules/xournalpp.nix` configures how it looks
 - **draw.io**, **LocalSend**, **Bruno**, **OBS Studio**, **Zoom** — installed,
   not pinned
 - **Notion**, **YouTube Music** — pinned **web apps**, see below
@@ -195,6 +195,26 @@ appsSkip = [ "bruno" "obs-studio" "zoom" ];   # install later, keep the config
 `appsSkip` lives in `user-config.nix`, which is gitignored and regenerated on a
 fresh machine — so anything parked there is *held back on this machine only*
 and installs normally on a clean run.
+
+**Xournal++'s appearance.** The app is themed in two places and only one of them
+is GTK's. Its window chrome already follows Yaru-dark, but the canvas, the icon
+set and the colour palette are drawn by Xournal++ itself out of
+`~/.config/xournalpp/settings.xml`, where the shipped defaults are a multicolour
+icon set, a light-grey canvas under a dark desktop and a pure-green pen.
+`modules/xournalpp.nix` installs a **Notion** colour palette (Notion's own text
+colours as ink, six lifted hues as highlighters) and seeds the rest: Lucide
+icons, a dark canvas, Notion-coloured selection handles, and the stroke
+stabiliser, which is off in a shipped Xournal++ and is what makes handwriting
+look smooth rather than shaky.
+
+It is a **seed, not a pin** — the same contract as GNOME dark mode below.
+Xournal++ rewrites that whole file every time it exits, so it cannot be a
+managed symlink; the seed runs once, leaves a marker beside it, and never
+touches your settings again. To take dome's look back after changing things:
+
+```bash
+rm ~/.config/xournalpp/.dome-appearance && make home
+```
 
 **Web apps.** Some services ship no Linux client at all: Notion publishes macOS
 and Windows builds only (nixpkgs' `notion-app` is macOS-only, and

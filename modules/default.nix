@@ -8,6 +8,7 @@
     ./ai.nix
     ./cloud.nix
     ./apps.nix
+    ./xournalpp.nix
     ./terminal.nix
     ./desktop-shell.nix
     ./gaming.nix

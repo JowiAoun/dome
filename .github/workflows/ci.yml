@@ -20,6 +20,11 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq shellcheck
           shellcheck -x system/*.sh tests/*.sh install.sh setup.sh bootstrap.sh
+      # modules/ carries python that runs during a home-manager ACTIVATION, where
+      # a syntax error surfaces as a failed switch rather than anything readable.
+      # Same reason bash syntax is checked above.
+      - name: python syntax
+        run: python3 -m py_compile modules/*.py
       # Behavioural tests for system/lib.sh. shellcheck and `nix eval` both pass
       # on a script whose detection helper returns the wrong answer — that is
       # exactly how the pipefail/SIGPIPE bug shipped. Run under sudo so the
