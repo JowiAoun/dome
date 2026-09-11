@@ -177,7 +177,8 @@ the default browser, and the GNOME dash:
 - **Thunderbird** — pinned, and set as the default mail client for `mailto:`,
   `message/rfc822` (`.eml`) and `mid:`
 - **Discord** — pinned to the dash
-- **Joplin** — pinned to the dash
+- **Xournal++** — pinned to the dash; handwritten notes and PDF annotation
+  with the pen
 - **draw.io**, **LocalSend**, **Bruno**, **OBS Studio**, **Zoom** — installed,
   not pinned
 - **Notion**, **YouTube Music** — pinned **web apps**, see below
@@ -188,7 +189,7 @@ the already-installed detection uses, so it also skips the pin and the desktop
 entry:
 
 ```nix
-appsSkip = [ "bruno" "obs-studio" "joplin" ];   # install later, keep the config
+appsSkip = [ "bruno" "obs-studio" "zoom" ];   # install later, keep the config
 ```
 
 `appsSkip` lives in `user-config.nix`, which is gitignored and regenerated on a
@@ -614,7 +615,7 @@ app:
 
 | engine | apps | mechanism |
 | --- | --- | --- |
-| Chromium | Brave, Discord, VS Code, Joplin, draw.io, Bruno, Claude Desktop, OpenWhispr, CurseForge | `modules.apps.chromiumFlags` (a command-line switch) |
+| Chromium | Brave, Discord, VS Code, draw.io, Bruno, Claude Desktop, OpenWhispr, CurseForge | `modules.apps.chromiumFlags` (a command-line switch) |
 | Gecko | Firefox, Thunderbird | `system/77-gecko-policy.sh` (`general.autoScroll`, as policy) |
 
 #### Chromium: `modules.apps.chromiumFlags`
@@ -708,7 +709,7 @@ chromiumFlagsExclude = [ "--enable-features" ];   # no autoscroll, caret stays p
 
 Not every Electron app forwards what it does not recognise. Most hand argv
 straight to Chromium, but one that parses its own can **refuse to start**.
-Joplin ends its parser with
+Joplin (installed here until 2026-09) ended its parser with
 
 ```js
 if (arg.length && arg[0] === "-") throw new Error(_("Unknown flag: %s", arg))
@@ -718,6 +719,8 @@ having allowlisted specific Chromium switches by name — `--enable-features=` i
 on that list, which is why autoscroll works there; `--blink-settings=` is not, so
 it put up a modal *"An error occurred: Unknown flag"* instead of a window.
 (Joplin is unusual this way: its desktop app shares CLI parsing with joplin-cli.)
+Nothing installed today needs the exclusion; the mechanism stays for the next
+such app.
 
 An app drops individual switches with `chromiumFlagsExclude`, matched by prefix:
 

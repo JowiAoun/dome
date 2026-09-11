@@ -77,7 +77,7 @@ let
   #   a terminal `brave-browser`   -> NOT covered; nothing owns that argv
   # NOT every Electron app forwards what it does not recognise. Most hand argv
   # straight to Chromium, but an app that parses its own can reject a switch and
-  # refuse to start: Joplin ends its parser with
+  # refuse to start. Joplin (installed here until 2026-09) ended its parser with
   #
   #   if (arg.length && arg[0] === "-") throw new Error(_("Unknown flag: %s", arg))
   #
@@ -85,11 +85,12 @@ let
   # --enable-features=, which is why autoscroll works there, but not
   # --blink-settings=, which put up a modal "An error occurred: Unknown flag"
   # instead of a window. (Read out of its app.asar; Joplin is unusual this way
-  # because the desktop app shares CLI parsing with joplin-cli.)
+  # because the desktop app shares CLI parsing with joplin-cli.) Nothing here
+  # needs the exclusion today; the mechanism stays for the next such app.
   #
   # So an app can drop individual switches with `chromiumFlagsExclude`, matched
   # by PREFIX so `--blink-settings` covers any value. Excluding one costs only
-  # what that switch bought — Joplin keeps autoscroll and keeps middle-click
+  # what that switch bought — Joplin kept autoscroll and kept middle-click
   # paste — which beats the app not opening.
   #
   # There is no way to test this cheaply: the failure is a GUI dialog, so the
@@ -166,37 +167,20 @@ let
       probeCommands = [ "bruno" ];
     }
     {
-      # Note-taking. `joplin` in nixpkgs is the CLI — the GUI is joplin-desktop.
-      # Its entry is joplin.desktop, not joplin-desktop.desktop: read off the
-      # joplin.desktop.drv input of the derivation rather than by building it,
-      # since this one ships held back (see appsSkip).
-      name = "joplin";
-      package = pkgs.joplin-desktop;
-      ids = [ "joplin.desktop" ];
+      # Handwritten notes and PDF annotation — the pen app for the Duo's touch
+      # screens. GTK, not Electron, so no chromiumFlags. Its entry is the
+      # reverse-DNS id (read off the built package), with a bare
+      # `Exec=xournalpp-wrapper %f` and a themed Icon, so it gets the usual
+      # absolute-path patching. The entry also claims application/pdf, which
+      # only makes it an *option* for PDFs — the default stays whatever
+      # mimeapps.list says. Replaced Joplin here in 2026-09.
+      name = "xournalpp";
+      package = pkgs.xournalpp;
+      ids = [ "com.github.xournalpp.xournalpp.desktop" ];
       pin = true;
       browser = false;
-      chromium = true;                    # Electron (share/joplin-desktop/resources/app.asar)
-      # Joplin takes NO chromiumFlags, for two unrelated reasons.
-      #
-      # --blink-settings  it rejects outright. Joplin parses its own argv and
-      #                   throws "Unknown flag" on anything not in its allowlist,
-      #                   which put up a modal error dialog instead of a window.
-      #                   See the note on chromiumFlagsFor above.
-      #
-      # --enable-features autoscroll itself, dropped by choice. It worked here,
-      #                   but in an editable area Blink also drags the text caret
-      #                   to wherever the middle button went down, and nothing
-      #                   can separate the two: the caret placement and the
-      #                   autoscroll start are both default behaviour of the same
-      #                   mousedown (see the KNOWN LIMITATION note on
-      #                   modules.apps.chromiumFlags). In a notes editor a caret
-      #                   that jumps mid-edit costs more than panning saves, so
-      #                   Joplin keeps a still caret and scrolls by wheel.
-      #
-      # This empties Joplin's list, so patchDesktop adds no switches at all.
-      chromiumFlagsExclude = [ "--blink-settings" "--enable-features" ];
-      probeDesktop = [ "joplin.desktop" "joplin-desktop.desktop" "net.cozic.joplin_desktop.desktop" "joplin_joplin.desktop" ];
-      probeCommands = [ "joplin-desktop" "joplin" ];
+      probeDesktop = [ "com.github.xournalpp.xournalpp.desktop" "xournalpp.desktop" "xournalpp_xournalpp.desktop" ];
+      probeCommands = [ "xournalpp" ];
     }
     {
       name = "obs-studio";
@@ -701,7 +685,7 @@ let
     [ config.modules.terminal.desktopId ]                                     # Ghostty
     (candidatesFor "discord")
     (candidatesFor "thunderbird")
-    (candidatesFor "joplin")
+    (candidatesFor "xournalpp")
     [ "notion.desktop" ]
     claudeIds                                                                 # Claude Desktop
     [ "youtube-music.desktop" ]

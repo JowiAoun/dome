@@ -90,7 +90,7 @@ APP_PROBES=(
   "drawio|drawio.desktop com.jgraph.drawio.desktop.desktop drawio_drawio.desktop|drawio"
   "localsend|LocalSend.desktop localsend.desktop org.localsend.localsend_app.desktop localsend_localsend.desktop|localsend localsend_app"
   "bruno|bruno.desktop com.usebruno.Bruno.desktop bruno_bruno.desktop|bruno"
-  "joplin|joplin.desktop joplin-desktop.desktop net.cozic.joplin_desktop.desktop joplin_joplin.desktop|joplin-desktop joplin"
+  "xournalpp|com.github.xournalpp.xournalpp.desktop xournalpp.desktop xournalpp_xournalpp.desktop|xournalpp"
   "obs-studio|com.obsproject.Studio.desktop obs-studio.desktop obs-studio_obs-studio.desktop|obs obs-studio"
   "thunderbird|thunderbird.desktop mozilla-thunderbird.desktop net.thunderbird.Thunderbird.desktop thunderbird_thunderbird.desktop|thunderbird"
   "zoom|Zoom.desktop zoom.desktop us.zoom.Zoom.desktop zoom-client_zoom-client.desktop|zoom zoom-us"

@@ -147,7 +147,7 @@ let
     "brave-browser.desktop"
     "discord.desktop"
     "notion.desktop"
-    "joplin.desktop"
+    "com.github.xournalpp.xournalpp.desktop"
     "thunderbird.desktop"
     "youtube-music.desktop"
     "com.anthropic.Claude.desktop"
