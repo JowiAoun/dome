@@ -117,6 +117,13 @@ input, and `system/40-zenbook-duo.sh` runs that repo's installer.
 #### AI Tools (`modules.ai = true`)
 - **Claude Code**: AI coding assistant, from the official installer so it is
   always current and self-updating
+- **Codex CLI** (`codex`): OpenAI's coding agent, run locally. From **npm**,
+  not nixpkgs, for the same reason as Claude Code and `gcloud` — and here the
+  gap is nine months rather than theoretical: `pkgs.codex` is 0.77.0 from last
+  December against 0.154.0 on npm. The npm package is a launcher that pulls the
+  real Rust binary as a per-platform optional dependency, so it is a download
+  rather than a build. Its config (`~/.codex/config.toml`) is deliberately
+  **not** managed here: approval mode, sandbox policy and model are yours
 - **skills** ([vercel-labs/skills](https://github.com/vercel-labs/skills)): the
   open agent-skills CLI. Upstream documents `npx skills …`; this installs it
   globally instead, so it is a real `skills` command that starts instantly and
@@ -1395,7 +1402,7 @@ dome/
 │   ├── python.nix         # Python + pyenv
 │   ├── node.nix           # Node.js + nodenv
 │   ├── java.nix           # Java development
-│   ├── ai.nix             # AI tools (Claude Code, skills CLI, keybindings)
+│   ├── ai.nix             # AI tools (Claude Code, Codex, skills CLI, keybindings)
 │   ├── terminal.nix       # Ghostty + default-terminal wiring (not under apps)
 │   ├── gaming.nix         # GameMode-wrapped game launchers (see system/86-)
 │   └── cloud.nix          # Terraform/Pulumi/cloud CLIs/k8s

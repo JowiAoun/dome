@@ -131,6 +131,9 @@ in
     # binary runs as-is without Nix's autoPatchelf.
     #
     # Gemini CLI is installed via npm (for the latest 0.22.x) by `ai-setup`.
+    # Codex CLI likewise, by the activation hook below — same reasoning as
+    # Claude Code, and the gap is not academic: nixpkgs carries 0.77.0, from
+    # last December, against 0.154.0 on npm.
 
     # Ubuntu ships neither xclip nor wl-clipboard by default — on this machine
     # they only exist because `pass` recommends them. Without one of the two,
@@ -232,6 +235,14 @@ in
             npm install -g @google/gemini-cli@latest
           fi
 
+          # Codex CLI (OpenAI) — latest via npm, like Gemini above.
+          if command -v npm >/dev/null 2>&1; then
+            echo "📦 Installing/refreshing the Codex CLI..."
+            npm install -g @openai/codex@latest \
+              && echo "🔧 codex ready — $(codex --version 2>/dev/null || echo installed)" \
+              || echo "⚠️  codex install failed; retry: npm install -g @openai/codex@latest"
+          fi
+
           # skills (vercel-labs) — always to the latest, unlike the activation
           # hook, which only installs it when missing. This is the command to
           # run when a newer release is wanted.
@@ -291,6 +302,20 @@ in
         - It needs a terminal that can encode a modified Enter — that is what
           Ghostty is for; GNOME Terminal cannot, and there Ctrl+J is the only
           newline key that works
+
+        ## Codex CLI (OpenAI)
+        - OpenAI's coding agent, run locally: `codex`
+        - `codex` opens the interactive TUI; `codex "..."` starts on a prompt;
+          `codex exec "..."` runs headless, for scripts and CI
+        - `codex resume` picks a previous session back up, `/model` switches
+          model and reasoning effort, `codex mcp` manages MCP servers
+        - Sign in on first run with a ChatGPT Plus/Pro/Team account, or set
+          `OPENAI_API_KEY` to pay per token instead
+        - Config lives in `~/.codex/config.toml`, which this repo does NOT
+          manage — approval mode, sandbox policy and model belong to you
+        - Installed globally via npm rather than from nixpkgs, which carries a
+          release nine months older; update with `ai-setup`, or
+          `npm install -g @openai/codex@latest`
 
         ## Gemini CLI
         - Interactive AI development assistant: `gemini` (alias: `g`)
@@ -486,6 +511,41 @@ in
             echo "✅ skills installed to ~/.npm-global/bin (on PATH via the shell config) — try 'skills find'"
           else
             echo "⚠️ skills install did not complete (network?). Re-run later: npm install -g skills@latest" >&2
+          fi
+        fi
+      fi
+    '';
+
+    # `codex` — OpenAI's coding agent CLI.
+    #
+    # From npm, NOT from nixpkgs, for the reason Claude Code and gcloud are not
+    # either: a store path is frozen at the flake pin and cannot update itself.
+    # Here the gap is nine months wide rather than theoretical — `pkgs.codex` is
+    # 0.77.0, published last December, against 0.154.0 on npm published three
+    # days before this was written. An agent CLI that far behind is a different
+    # product, not an older build of the same one.
+    #
+    # The npm package is a thin launcher: the real binary is a Rust build pulled
+    # in as one optionalDependency per platform (@openai/codex-linux-x64 here),
+    # so this is a download rather than a compile. It declares node >= 16, well
+    # under the nodejs_22 this module already guarantees, so it installs whether
+    # or not modules.node is on.
+    #
+    # Installed only when missing, exactly like skills above — `ai-setup` is the
+    # command that pulls a newer one. Same entryAfter reasoning too: ~/.npmrc is
+    # a linked file, so before linkGeneration npm would try the store prefix and
+    # fail on a read-only filesystem.
+    home.activation.installCodexCli = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+      export PATH="${lib.makeBinPath [ pkgs.nodejs_22 pkgs.coreutils ]}:$PATH"
+      if [ ! -x "$HOME/.npm-global/bin/codex" ]; then
+        if [ -n "''${DRY_RUN_CMD:-}" ]; then
+          echo "(dry run) would install the Codex CLI (npm install -g @openai/codex)"
+        else
+          echo "📦 Installing the Codex CLI (OpenAI)…"
+          if npm install -g --prefix "$HOME/.npm-global" @openai/codex@latest >/dev/null 2>&1; then
+            echo "✅ codex installed to ~/.npm-global/bin (on PATH via the shell config) — run 'codex' to sign in"
+          else
+            echo "⚠️ codex install did not complete (network?). Re-run later: npm install -g @openai/codex@latest" >&2
           fi
         fi
       fi
