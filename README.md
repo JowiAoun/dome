@@ -188,9 +188,17 @@ the default browser, and the GNOME dash:
   with the pen; `modules/xournalpp.nix` configures how it looks
 - **draw.io**, **LocalSend**, **Bruno**, **OBS Studio**, **Zoom**, **Rnote** —
   installed, not pinned
+- **LibreOffice Draw** — installed, not pinned; the vector and page editor, and
+  the one app here that opens a PDF and lets you edit the text inside it.
+  nixpkgs has no Draw-only package, so the whole suite comes along (~1.6 GiB,
+  all from the binary cache) — but **only Draw gets an app-grid icon**. Writer,
+  Calc, Impress, Base and Math are installed and still work (they open their own
+  file types from Files, and appear under "Open With"); they are just marked
+  `NoDisplay` via `hideIds` in `modules/apps.nix` so they stay out of the grid.
+  Move one into that entry's `ids` to give it an icon
 - **Notion**, **YouTube Music** — pinned **web apps**, see below
 
-Budget roughly **5 GiB** of disk for the set. To hold one back without
+Budget roughly **7 GiB** of disk for the set. To hold one back without
 removing it from the module, name it in `appsSkip` — that is the same switch
 the already-installed detection uses, so it also skips the pin and the desktop
 entry:

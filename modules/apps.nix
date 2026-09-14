@@ -148,6 +148,62 @@ let
       probeCommands = [ "drawio" ];
     }
     {
+      # LibreOffice, installed for Draw: the vector/page editor, and the one
+      # tool here that can open a PDF and edit the text inside it. It sits
+      # beside draw.io above rather than replacing it — that one is a diagram
+      # editor (boxes, arrows, a shape library), this one is a drawing and
+      # layout canvas.
+      #
+      # WHY THE WHOLE SUITE. nixpkgs has no Draw-only package; LibreOffice is
+      # one derivation, so pkgs.libreoffice is the only way to get Draw at all.
+      # ~1.6 GiB unpacked, fully substituted from cache.nixos.org — the dry-run
+      # fetches 39 paths and builds none, so this costs download time, not a
+      # compile. pkgs.libreoffice is the conservative "still" branch (25.2.x);
+      # pkgs.libreoffice-fresh is 25.8.x and equally cached if ever wanted.
+      #
+      # ONLY Draw gets an app-grid icon, which takes actual work: the package
+      # also ships writer/calc/impress/base/math/startcenter launchers, and
+      # simply not listing them here is NOT enough to keep them out of the grid.
+      #
+      # MEASURED, because it is the opposite of what the VS Code note further
+      # down this file assumes: gnome-shell's own XDG_DATA_DIRS *does* contain
+      # ~/.nix-profile/share, so every .desktop file in the installed package is
+      # visible to the grid whether or not this module writes an entry for it.
+      # Read it off the running shell, not from the login environment:
+      #
+      #   tr '\0' '\n' < /proc/$(pgrep -x gnome-shell)/environ | grep XDG_DATA_DIRS
+      #
+      # So installing the suite for Draw alone silently adds SIX unasked-for
+      # icons. hideIds is the answer: each one is patched like any other entry
+      # and written to XDG_DATA_HOME, which XDG resolves in preference to the
+      # profile, with NoDisplay=true added. They keep working — Writer still
+      # opens a .odt from Files and still appears under "Open With" — they just
+      # do not clutter the grid. Move one into `ids` to give it an icon.
+      #
+      # xsltfilter.desktop is not listed: it is an internal helper that upstream
+      # already ships NoDisplay, so there is nothing to override.
+      name = "libreoffice";
+      package = pkgs.libreoffice;
+      ids = [ "draw.desktop" ];           # bare generic name, not reverse-DNS — read off the package
+      hideIds = [ "writer.desktop" "calc.desktop" "impress.desktop" "base.desktop" "math.desktop" "startcenter.desktop" ];
+      pin = false;
+      browser = false;
+      # The probes are Draw-specific on purpose, where the entries above just
+      # list every spelling of the app's own name. Both of the obvious choices
+      # are wrong here:
+      #   - the bare "draw.desktop" is generic enough that some other app could
+      #     own it in /usr/share, which would falsely mark this "already
+      #     installed" and skip it;
+      #   - /usr/bin/libreoffice and soffice appear as soon as ANY apt component
+      #     does, so a Writer-only machine would suppress the Nix copy and end up
+      #     with no Draw at all — the opposite of the point of this entry.
+      # Debian/Ubuntu package Draw as libreoffice-draw.desktop plus /usr/bin/
+      # lodraw, and the flatpak ships the whole suite, so these are true exactly
+      # when Draw itself is already present outside Nix.
+      probeDesktop = [ "libreoffice-draw.desktop" "org.libreoffice.LibreOffice.desktop" "libreoffice_libreoffice-draw.desktop" ];
+      probeCommands = [ "lodraw" "sdraw" ];
+    }
+    {
       name = "localsend";
       package = pkgs.localsend;
       ids = [ "LocalSend.desktop" ];      # capital L, and Exec=localsend_app
@@ -487,16 +543,38 @@ let
         ;;
     esac
 
+    ${lib.optionalString (lib.elem id (app.hideIds or [ ])) ''
+      # A launcher this package ships that we keep FUNCTIONAL but out of the
+      # app grid — see hideIds on the LibreOffice entry for the why.
+      #
+      # NoDisplay is not the same as deleting the entry: the app still opens
+      # its own file types from Files, still answers xdg-open, and still shows
+      # up under "Open With". It is only hidden from the grid and from search.
+      #
+      # Inserted INTO the [Desktop Entry] group, not appended to the file: an
+      # entry that ships [Desktop Action] groups (most of these do) would
+      # otherwise take the key onto the last action, where it means nothing.
+      sed -i '/^NoDisplay=/d' entry.desktop
+      sed -i '0,/^\[Desktop Entry\]$/s//[Desktop Entry]\nNoDisplay=true/' entry.desktop
+      grep -q '^NoDisplay=true$' entry.desktop || { echo "NoDisplay not applied to ${id}" >&2; exit 1; }
+    ''}
+
     install -Dm444 entry.desktop "$out/share/applications/${id}"
   '';
 
-  # One xdg.dataFile entry per .desktop file an app ships.
+  # One xdg.dataFile entry per .desktop file an app ships. `hideIds` are carried
+  # through here exactly like `ids` — they are real, patched entries, and the
+  # only difference is the NoDisplay=true patchDesktop writes into them. They
+  # have to be written: the point of them is to OVERRIDE the package's own copy
+  # of the same id, which XDG_DATA_HOME wins over ~/.nix-profile/share.
+  entryIds = app: app.ids ++ (app.hideIds or [ ]);
+
   entriesFor = app: map (id: {
     name = "applications/${id}";
     value.source = "${patchDesktop app id}/share/applications/${id}";
-  }) app.ids;
+  }) (entryIds app);
 
-  patched = map (app: app // { entryDirs = map (patchDesktop app) app.ids; }) selected;
+  patched = map (app: app // { entryDirs = map (patchDesktop app) (entryIds app); }) selected;
 
   browserApp = lib.findFirst (a: a.browser) null patched;
 

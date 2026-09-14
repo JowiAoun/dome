@@ -88,6 +88,7 @@ APP_PROBES=(
   "brave|brave-browser.desktop brave.desktop com.brave.Browser.desktop brave_brave.desktop|brave-browser brave"
   "discord|discord.desktop com.discordapp.Discord.desktop discord_discord.desktop|discord Discord"
   "drawio|drawio.desktop com.jgraph.drawio.desktop.desktop drawio_drawio.desktop|drawio"
+  "libreoffice|libreoffice-draw.desktop org.libreoffice.LibreOffice.desktop libreoffice_libreoffice-draw.desktop|lodraw sdraw"
   "localsend|LocalSend.desktop localsend.desktop org.localsend.localsend_app.desktop localsend_localsend.desktop|localsend localsend_app"
   "bruno|bruno.desktop com.usebruno.Bruno.desktop bruno_bruno.desktop|bruno"
   "xournalpp|com.github.xournalpp.xournalpp.desktop xournalpp.desktop xournalpp_xournalpp.desktop|xournalpp"
