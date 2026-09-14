@@ -310,10 +310,19 @@ let
 
   # VS Code is installed by home-manager's programs.vscode (home.nix), not by
   # this module — but it has exactly the same problem as the apps above: its
-  # entry has a bare `Exec=code` and a themed `Icon=vscode`, and nothing in
-  # ~/.nix-profile is visible to gnome-shell, so it never appears in the app
-  # grid at all. Give it the same patched entries. code-url-handler.desktop is
-  # what makes vscode:// links work.
+  # entry has a bare `Exec=code` and a themed `Icon=vscode`, which resolve only
+  # through a PATH and an icon theme that nothing here guarantees. Give it the
+  # same patched entries. code-url-handler.desktop is what makes vscode:// links
+  # work.
+  #
+  # This used to say the entry "never appears in the app grid at all", because
+  # nothing in ~/.nix-profile is visible to gnome-shell. That is NOT true, and
+  # the correction matters: gnome-shell's XDG_DATA_DIRS does contain
+  # ~/.nix-profile/share, so the package's own code.desktop is already in the
+  # grid and the entry written here OVERRIDES it (same id, and XDG_DATA_HOME is
+  # read first) rather than being the only copy. The practical difference is
+  # that leaving an app out of `ids` does NOT hide its launcher — which is what
+  # `hideIds` on the LibreOffice entry exists to do.
   vscodeApp = {
     name = "vscode";
     package = config.programs.vscode.package;
