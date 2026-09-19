@@ -12,6 +12,7 @@
     ./terminal.nix
     ./desktop-shell.nix
     ./gaming.nix
+    ./tinyproxy.nix
   ];
 
   options = {

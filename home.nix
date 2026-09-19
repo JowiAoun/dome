@@ -63,6 +63,12 @@ in
     # /etc/gamemode.ini, so one setting turns the whole feature on or off.
     gaming.enable = (userConfig.gameMode or false) && !isCodespaces;
 
+    # A small HTTP/HTTPS forward proxy on 127.0.0.1:8888, as a user service.
+    # `or false`: user-config.nix files written before the key existed have
+    # no such attribute. Never on Codespaces, which has no user systemd to
+    # run a service under. modules/tinyproxy.nix has what it is for.
+    tinyproxy.enable = (userConfig.modules.tinyproxy or false) && !isCodespaces;
+
     # Lock-screen half of loginPinLength. The extension itself is installed by
     # system/87-login-pin.sh — it has to be system-wide for the GDM greeter to
     # see it — so all this does is add it to the authoritative

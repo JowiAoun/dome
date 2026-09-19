@@ -18,9 +18,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-MODULES=(python node java ai cloud apps)
+MODULES=(python node java ai cloud apps tinyproxy)
 # Toggle state; reassigned dynamically via `declare "m_<name>=..."`.
-m_python=false m_node=false m_java=false m_ai=false m_cloud=false m_apps=false
+m_python=false m_node=false m_java=false m_ai=false m_cloud=false m_apps=false m_tinyproxy=false
 
 # ── detection ────────────────────────────────────────────────────────────────
 DISTRO=unknown
@@ -448,6 +448,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
     ai = $m_ai;
     cloud = $m_cloud;
     apps = $m_apps;
+    tinyproxy = $m_tinyproxy;
   };
 
   # Apps already installed outside Nix - the apps module leaves these alone
@@ -651,7 +652,7 @@ else
   [ -d "hosts/$HOST" ] || { echo "unknown host profile: $HOST" >&2; exit 1; }
   for m in "${MODULES[@]}"; do
     seed="$(module_seed "$m" "$HOST")"
-    printf 'Enable module %-7s [%s] (y/n): ' "$m" "$seed"
+    printf 'Enable module %-9s [%s] (y/n): ' "$m" "$seed"
     read -r ans
     case "${ans:-}" in
       y|Y) declare "m_$m=true" ;;

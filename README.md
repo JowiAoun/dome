@@ -153,6 +153,26 @@ input, and `system/40-zenbook-duo.sh` runs that repo's installer.
   its own defaults into `settings.json` as you use it, so the key is usually
   already there holding the value you wanted changed.
 
+#### Local proxy (`modules.tinyproxy = true`)
+[tinyproxy](https://tinyproxy.github.io/), a small HTTP/HTTPS forward proxy, as
+a user service on `127.0.0.1:8888`. Off by default, and nothing on the machine
+is pointed at it until you do so, per program:
+
+```bash
+curl -x http://127.0.0.1:8888 https://example.com
+http_proxy=http://127.0.0.1:8888 https_proxy=http://127.0.0.1:8888 <command>
+```
+
+- Only local clients are allowed. To share it with a phone or another box on
+  the LAN, set `modules.tinyproxy.listen` and add the client to
+  `modules.tinyproxy.allow` in your host file (`hosts/<name>/default.nix`)
+- The access log is the journal: `journalctl --user -u tinyproxy -f`
+- The config is generated from the module (`port`, `listen`, `allow`, and
+  `extraConfig` for an upstream proxy or a filter file); read the live one
+  with `systemctl --user cat tinyproxy`
+- HTTPS is tunnelled with CONNECT, not decrypted, so the log shows the host,
+  not the URL
+
 #### Terminal (always on, not part of `modules.apps`)
 **Ghostty**, installed on every machine with a desktop — deliberately *outside*
 the optional apps bundle, because it is what everything else here runs inside.
@@ -1413,6 +1433,7 @@ dome/
 │   ├── ai.nix             # AI tools (Claude Code, Codex, skills CLI, keybindings)
 │   ├── terminal.nix       # Ghostty + default-terminal wiring (not under apps)
 │   ├── gaming.nix         # GameMode-wrapped game launchers (see system/86-)
+│   ├── tinyproxy.nix      # Local HTTP/HTTPS proxy as a user service
 │   └── cloud.nix          # Terraform/Pulumi/cloud CLIs/k8s
 ├── system/                # Idempotent root-layer scripts (Ubuntu)
 │   └── gnome-extensions/  # Shell extensions the GDM greeter needs, so they
