@@ -6,6 +6,12 @@ source ./lib.sh
 
 require_root
 
+# The homeserver has its own setup for Docker, GRUB, the kernel, memory and
+# power. This layer would fight it over each one, so stop before anything runs.
+if [ "$(host_profile)" = homeserver ]; then
+  die "the homeserver profile is user layer only. Run ./bootstrap.sh for Nix and home-manager. The rest of that machine comes from its own setup."
+fi
+
 [ -r /etc/os-release ] || die "/etc/os-release missing — unsupported system"
 . /etc/os-release
 

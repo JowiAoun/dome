@@ -84,6 +84,16 @@ jobs:
           ./setup.sh --audit-apps
           rm user-config.nix
 
+      - name: the system layer refuses the homeserver
+        # That machine has its own setup for Docker, GRUB and the kernel, and
+        # this layer would fight it. Only the user layer runs there.
+        run: |
+          if out="$(sudo HOST=homeserver bash system/00-preflight.sh 2>&1)"; then
+            echo "00-preflight.sh let the system layer run on the homeserver" >&2
+            exit 1
+          fi
+          grep -q 'user layer only' <<<"$out"
+
   hygiene:
     runs-on: ubuntu-24.04
     steps:
@@ -113,6 +123,7 @@ jobs:
         run: |
           nix eval .#homeConfigurations.generic.activationPackage.drvPath
           nix eval .#homeConfigurations.zenbook-duo.activationPackage.drvPath
+          nix eval .#homeConfigurations.homeserver.activationPackage.drvPath
       - name: evaluate with every module enabled
         # The evals above use the template (python/node/java = false), so those
         # module bodies are never type-checked. Enable them all and evaluate via

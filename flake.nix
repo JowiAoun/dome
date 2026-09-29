@@ -78,6 +78,7 @@
       # Host-profile outputs — the modern path; add new machines as hosts/<name>.
       generic = mkHome "generic";
       zenbook-duo = mkHome "zenbook-duo";
+      homeserver = mkHome "homeserver";
 
       # Legacy username-keyed outputs (WSL/Codespaces back-compat).
       default = makeConfig (if envUser != "" then envUser else "user");

@@ -26,6 +26,7 @@ Here's my development environment that works in WSL, GitHub Codespaces, and loca
 | WSL / existing Linux that already has (or wants only) Nix | `./bootstrap.sh` (interactive) |
 | **Fresh Ubuntu LTS machine (24.04 or 26.04) — any hardware** | `./install.sh --host generic` |
 | ASUS Zenbook Duo (2024) UX8406MA | Install Ubuntu per [linux-on-zenbook-duo/docs/install](https://github.com/JowiAoun/linux-on-zenbook-duo/blob/main/docs/install/README.md), then `./install.sh --host zenbook-duo` — the system layer clones and installs the Duo support |
+| Headless home server (Ubuntu Server, reached over SSH) | `./setup.sh --defaults homeserver`, then `./bootstrap.sh`. User layer only: the system layer refuses this host. `hosts/homeserver/default.nix` has the full steps |
 
 ### GitHub Codespaces
 1. Go to [GitHub Settings → Codespaces](https://github.com/settings/codespaces)
