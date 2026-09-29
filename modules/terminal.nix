@@ -185,9 +185,7 @@ let
   '';
 in
 {
-  config = lib.mkIf cfg.enable {
-    home.packages = [ ghostty xdgTerminalExec ];
-
+  config = lib.mkMerge [
     # Ghostty sets TERM=xterm-ghostty and ships the terminfo entry to match.
     # Ubuntu's ncurses has never heard of it (`infocmp xterm-ghostty` fails on a
     # stock 24.04), and the copy in ~/.nix-profile/share/terminfo is invisible to
@@ -199,92 +197,105 @@ in
     # for every binary at once and needs no environment variable. Both names are
     # installed: `ghostty` is the entry's canonical name, `xterm-ghostty` the
     # value of TERM.
-    home.file = {
-      ".terminfo/x/xterm-ghostty".source = "${ghostty}/share/terminfo/x/xterm-ghostty";
-      ".terminfo/g/ghostty".source = "${ghostty}/share/terminfo/g/ghostty";
+    #
+    # It has its own switch (modules.terminal.terminfo): a machine you only reach
+    # over SSH from Ghostty needs these two files and nothing else here. They come
+    # from Ghostty's `terminfo` output, 5 KiB, so that machine does not pull in
+    # the 2.4 GiB of Ghostty itself.
+    (lib.mkIf cfg.terminfo {
+      home.file = {
+        ".terminfo/x/xterm-ghostty".source = "${ghostty.terminfo}/share/terminfo/x/xterm-ghostty";
+        ".terminfo/g/ghostty".source = "${ghostty.terminfo}/share/terminfo/g/ghostty";
+      };
+    })
 
-      # Ghostty's config is a plain key = value file it reads at startup and on
-      # `ghostty +reload-config`, so it is a natural fit for a managed file.
-      # Every key below was checked against `ghostty +show-config --default`
-      # rather than remembered, and only settings that differ from Ghostty's
-      # default are listed — the rest are upstream's problem, not ours.
-      ".config/ghostty/config".text = ''
-        # Managed by dome (modules/terminal.nix). Edits here are overwritten on
-        # the next `make home`; change the module instead.
+    (lib.mkIf cfg.enable {
+      home.packages = [ ghostty xdgTerminalExec ];
 
-        # Shift+Enter needs nothing configured: Ghostty speaks the Kitty
-        # keyboard protocol, so a modified Enter reaches the application as
-        # CSI 13;2u and Claude Code's shift+enter binding fires. That protocol
-        # is the entire reason this terminal is here — see the module header.
+      home.file = {
+        # Ghostty's config is a plain key = value file it reads at startup and on
+        # `ghostty +reload-config`, so it is a natural fit for a managed file.
+        # Every key below was checked against `ghostty +show-config --default`
+        # rather than remembered, and only settings that differ from Ghostty's
+        # default are listed — the rest are upstream's problem, not ours.
+        ".config/ghostty/config".text = ''
+          # Managed by dome (modules/terminal.nix). Edits here are overwritten on
+          # the next `make home`; change the module instead.
 
-        # Follow GNOME's light/dark preference instead of picking a side.
-        window-theme = system
+          # Shift+Enter needs nothing configured: Ghostty speaks the Kitty
+          # keyboard protocol, so a modified Enter reaches the application as
+          # CSI 13;2u and Claude Code's shift+enter binding fires. That protocol
+          # is the entire reason this terminal is here — see the module header.
 
-        # Ghostty's default is 2px, which puts the text right against the frame.
-        window-padding-x = 8
-        window-padding-y = 6
+          # Follow GNOME's light/dark preference instead of picking a side.
+          window-theme = system
 
-        # Ghostty copies the selection to the clipboard by default; GNOME
-        # Terminal does not, and neither does anything else on this desktop.
-        # Left on, dragging to highlight a line of output would quietly replace
-        # whatever was on the clipboard — including a screenshot on its way into
-        # Claude Code, which reads the clipboard on every paste.
-        copy-on-select = false
+          # Ghostty's default is 2px, which puts the text right against the frame.
+          window-padding-x = 8
+          window-padding-y = 6
 
-        # Familiar Ctrl+C / Ctrl+V copy-paste — without breaking Ctrl+C as the
-        # interrupt or Ctrl+V as Claude Code's image paste. The `performable:`
-        # prefix consumes the key ONLY when the action can actually run;
-        # otherwise Ghostty behaves as if the bind were absent and passes the key
-        # through to the running program.
-        #
-        #   Ctrl+C  copies only when there is a selection (Ghostty's own
-        #           documented example); with nothing selected it still sends
-        #           SIGINT, so copying output while a command runs no longer
-        #           kills it.
-        #   Ctrl+V  pastes only when the clipboard holds TEXT. When it holds an
-        #           IMAGE, GTK's synchronous clipboard check (this build has it;
-        #           macOS/AppKit does not — ghostty#11444) makes the paste "not
-        #           performable", so Ctrl+V passes through to the program — which
-        #           is exactly how Claude Code receives it and reads the
-        #           screenshot (via the wl-paste->xclip shim in modules/ai.nix).
-        #           A plain `ctrl+v=paste_from_clipboard` ate the key and image
-        #           paste silently did nothing; GNOME Terminal only "worked"
-        #           because it never binds Ctrl+V at all.
-        #
-        # The stock Ctrl+Shift+C/V binds keep working; these are additive.
-        # (copy-on-select is off above, so this explicit Ctrl+C is the only
-        # thing that writes the clipboard.)
-        keybind = performable:ctrl+c=copy_to_clipboard
-        keybind = performable:ctrl+v=paste_from_clipboard
+          # Ghostty copies the selection to the clipboard by default; GNOME
+          # Terminal does not, and neither does anything else on this desktop.
+          # Left on, dragging to highlight a line of output would quietly replace
+          # whatever was on the clipboard — including a screenshot on its way into
+          # Claude Code, which reads the clipboard on every paste.
+          copy-on-select = false
 
-        # Get the pointer out of the way while typing; it comes back on the
-        # next mouse move.
-        mouse-hide-while-typing = true
+          # Familiar Ctrl+C / Ctrl+V copy-paste — without breaking Ctrl+C as the
+          # interrupt or Ctrl+V as Claude Code's image paste. The `performable:`
+          # prefix consumes the key ONLY when the action can actually run;
+          # otherwise Ghostty behaves as if the bind were absent and passes the key
+          # through to the running program.
+          #
+          #   Ctrl+C  copies only when there is a selection (Ghostty's own
+          #           documented example); with nothing selected it still sends
+          #           SIGINT, so copying output while a command runs no longer
+          #           kills it.
+          #   Ctrl+V  pastes only when the clipboard holds TEXT. When it holds an
+          #           IMAGE, GTK's synchronous clipboard check (this build has it;
+          #           macOS/AppKit does not — ghostty#11444) makes the paste "not
+          #           performable", so Ctrl+V passes through to the program — which
+          #           is exactly how Claude Code receives it and reads the
+          #           screenshot (via the wl-paste->xclip shim in modules/ai.nix).
+          #           A plain `ctrl+v=paste_from_clipboard` ate the key and image
+          #           paste silently did nothing; GNOME Terminal only "worked"
+          #           because it never binds Ctrl+V at all.
+          #
+          # The stock Ctrl+Shift+C/V binds keep working; these are additive.
+          # (copy-on-select is off above, so this explicit Ctrl+C is the only
+          # thing that writes the clipboard.)
+          keybind = performable:ctrl+c=copy_to_clipboard
+          keybind = performable:ctrl+v=paste_from_clipboard
 
-        # No "Copied to clipboard" toast on every copy. app-notifications
-        # defaults to clipboard-copy,config-reload; no-clipboard-copy drops just
-        # that popup while keeping the config-reload one.
-        app-notifications = no-clipboard-copy
-      '';
+          # Get the pointer out of the way while typing; it comes back on the
+          # next mouse move.
+          mouse-hide-while-typing = true
 
-      ".local/bin/terminal-setup".source = terminalSetup;
-    };
+          # No "Copied to clipboard" toast on every copy. app-notifications
+          # defaults to clipboard-copy,config-reload; no-clipboard-copy drops just
+          # that popup while keeping the config-reload one.
+          app-notifications = no-clipboard-copy
+        '';
 
-    # gnome-shell only ever reads ~/.local/share/applications — the whole
-    # rationale is in modules/apps.nix's header.
-    xdg.dataFile."applications/${cfg.desktopId}".source =
-      "${desktopEntry}/share/applications/${cfg.desktopId}";
+        ".local/bin/terminal-setup".source = terminalSetup;
+      };
 
-    # AFTER linkGeneration, like the apps module's own hook: the entry has to
-    # exist on disk before anything is pointed at it.
-    home.activation.terminalDefault = lib.mkIf cfg.setDefault (
-      lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-        if [ -n "''${DRY_RUN_CMD:-}" ]; then
-          echo "(dry run) would make Ghostty the GNOME default terminal"
-        else
-          ${terminalSetup} || echo "⚠️ terminal-setup did not finish — re-run it from a desktop session" >&2
-        fi
-      ''
-    );
-  };
+      # gnome-shell only ever reads ~/.local/share/applications — the whole
+      # rationale is in modules/apps.nix's header.
+      xdg.dataFile."applications/${cfg.desktopId}".source =
+        "${desktopEntry}/share/applications/${cfg.desktopId}";
+
+      # AFTER linkGeneration, like the apps module's own hook: the entry has to
+      # exist on disk before anything is pointed at it.
+      home.activation.terminalDefault = lib.mkIf cfg.setDefault (
+        lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+          if [ -n "''${DRY_RUN_CMD:-}" ]; then
+            echo "(dry run) would make Ghostty the GNOME default terminal"
+          else
+            ${terminalSetup} || echo "⚠️ terminal-setup did not finish — re-run it from a desktop session" >&2
+          fi
+        ''
+      );
+    })
+  ];
 }

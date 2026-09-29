@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ config, lib, ... }:
 
 {
   imports = [
@@ -50,6 +50,18 @@
             than guessed. Single source of truth for the two modules that need
             it: terminal.nix installs the entry under this name, apps.nix pins
             that name to the GNOME dash.
+          '';
+        };
+        terminfo = lib.mkOption {
+          type = lib.types.bool;
+          default = config.modules.terminal.enable;
+          defaultText = lib.literalExpression "config.modules.terminal.enable";
+          example = true;
+          description = ''
+            Put Ghostty's terminfo entry in ~/.terminfo. Programs need it to
+            draw in a Ghostty window, and that includes an SSH session opened
+            from one. It comes with the terminal. Turn it on alone on a machine
+            you only reach over SSH, like hosts/homeserver.
           '';
         };
       };
