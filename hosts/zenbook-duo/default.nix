@@ -27,7 +27,13 @@
     repoPath = "${config.home.homeDirectory}/p/linux-on-zenbook-duo";
     # watchBacklight / watchRotation stay off until each passes the graduation
     # protocol (linux-on-zenbook-duo/docs/DESIGN.md); flip them here when they do.
-    batteryLimit = 80;
+
+    # This machine is on battery about 5.8 h a day and has twice run down into
+    # single digits, so the top 10% is capacity that gets used: 10 of the 13
+    # outings in the week to 2026-09-30 started at the cap (upower history in
+    # /var/lib/upower). 90 still keeps the cell off the top of the voltage
+    # curve, which is where most of the calendar aging happens.
+    batteryLimit = 90;
     # The built-in speakers have a ~65 dB range fed by a cubic volume slider, so
     # the bottom 40% of the slider is inaudible. The EasyEffects chain lifts the
     # average level so low/mid settings are usable — see that repo's nix/audio.nix.
