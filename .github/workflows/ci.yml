@@ -54,6 +54,8 @@ jobs:
           # GameMode is opt-in: it trades battery and fan noise for CPU governor
           # headroom, which is only a good deal on a machine that plays games.
           grep -q 'gameMode = false;' user-config.nix
+          # Tailscale is on by default: installing it joins nothing until `tailscale up`.
+          grep -q 'tailscale = true;' user-config.nix
           # loginPinLength is a NUMBER, and its backfill is the one that cannot
           # borrow the `= false;` default the other switches use. 0 means the
           # login screen keeps asking for Enter, which is what a machine whose

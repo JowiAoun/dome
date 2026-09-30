@@ -12,7 +12,7 @@
 #
 # Order: preflight (read-only) → Timeshift snapshot → base → kernel → GRUB,
 # then 40-zenbook-duo.sh (the linux-on-zenbook-duo installer) when the host
-# profile is zenbook-duo, then the host-independent extras (60 docker, 70 docker-desktop,
+# profile is zenbook-duo, then the host-independent extras (60 docker, 62 tailscale, 70 docker-desktop,
 # 75 claude-desktop, 76 openwhispr, 77 gecko-policy, 78 brave, 79 brave-policy, 80 nix-gpu,
 # 85 apparmor-userns, 86 gamemode, 87 login-pin, 88 faillock, 96 tpm-unlock, 95 luks).
 #
@@ -85,7 +85,7 @@ fi
 # Host-independent extras. Each one either honors a user-config.nix switch
 # (docker) or detects that it has nothing to do (GPU, AppArmor), and every one
 # of them logs why it is skipping — so they are safe to run unconditionally.
-for script in 60-docker.sh 70-docker-desktop.sh 75-claude-desktop.sh 76-openwhispr.sh 77-gecko-policy.sh 78-brave.sh 79-brave-policy.sh 80-nix-gpu.sh 85-apparmor-userns.sh 86-gamemode.sh 87-login-pin.sh 88-faillock.sh 96-tpm-unlock.sh 95-luks.sh; do
+for script in 60-docker.sh 62-tailscale.sh 70-docker-desktop.sh 75-claude-desktop.sh 76-openwhispr.sh 77-gecko-policy.sh 78-brave.sh 79-brave-policy.sh 80-nix-gpu.sh 85-apparmor-userns.sh 86-gamemode.sh 87-login-pin.sh 88-faillock.sh 96-tpm-unlock.sh 95-luks.sh; do
   log "── $script"
   bash "./$script"
 done

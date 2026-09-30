@@ -595,6 +595,7 @@ layer reads them with `sed` rather than through Nix:
 
 ```nix
 dockerEngine = true;        # Docker Engine (CE)
+tailscale = true;           # Tailscale from its apt repo; joins nothing until `tailscale up`
 dockerDesktop = false;      # Docker Desktop GUI
 claudeDesktop = true;       # Claude desktop app (beta)
 openWhispr = true;          # OpenWhispr dictation, from its GitHub release (~1 GB)

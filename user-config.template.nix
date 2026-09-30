@@ -24,6 +24,8 @@
   # (system/*.sh) reads them with sed, not Nix - they install things Nix cannot
   # provide on Ubuntu (a systemd daemon, a group, a .deb).
   dockerEngine = true;    # Docker Engine (CE) from Docker's apt repo: dockerd + docker + compose/buildx plugins
+  tailscale = true;       # Tailscale from its own apt repo: the tailscaled service, and the tailscale CLI without
+                          # sudo. Joins nothing until you run `tailscale up`. See system/62-tailscale.sh.
   dockerDesktop = false;  # Docker Desktop GUI: ~450 MB download, needs KVM
   claudeDesktop = true;   # Claude desktop app (Linux beta) from Anthropic's signed apt repo
   openWhispr = true;      # OpenWhispr voice-to-text dictation, from the vendor's GitHub
