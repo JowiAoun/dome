@@ -191,7 +191,28 @@ in
             context = "Chat";
             bindings = { "shift+enter" = "chat:newline"; };
           }
-        ];
+        ]
+        # Jump to the bottom or the top of a scrollback view. The defaults are
+        # ctrl+end and ctrl+home, and this laptop's keyboard has no End key, so
+        # the first one cannot be pressed at all. Both are rebound, because a
+        # keyboard without End rarely has Home either.
+        #
+        # Additive, not a replacement: the defaults still fire on a keyboard
+        # that has those keys, and so do g and shift+g, which Claude Code binds
+        # by default and which less and vim use for the same two jumps.
+        #
+        # ctrl+\ looks free and is not. The terminal turns it into SIGQUIT
+        # before any application sees it, so it can never reach Claude Code.
+        #
+        # Two contexts, same keys: Transcript is the ctrl+o transcript, Scroll
+        # is the scrollable view in the fullscreen layout.
+        ++ map (context: {
+          inherit context;
+          bindings = {
+            "ctrl+shift+down" = "scroll:bottom";
+            "ctrl+shift+up" = "scroll:top";
+          };
+        }) [ "Transcript" "Scroll" ];
       };
 
       # Claude Code's status line: two rows, the first mirroring the shell

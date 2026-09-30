@@ -134,7 +134,10 @@ input, and `system/40-zenbook-duo.sh` runs that repo's installer.
   so enabling both gives one Node, not two
 - **Claude Code keybindings** (`~/.claude/keybindings.json`): **Shift+Enter**
   inserts a newline. That needs a terminal that can encode a modified Enter —
-  see the terminal module below
+  see the terminal module below. **Ctrl+Shift+Down** and **Ctrl+Shift+Up** jump
+  to the bottom and top of a scrollback view, because the defaults are Ctrl+End
+  and Ctrl+Home and this keyboard has no End key. Claude Code's own `g` and
+  `shift+g` still do the same two jumps
 - **Claude Code defaults**: theme dark (so a fresh machine never opens on the
   theme picker), *Show tips* off, *Use auto mode during plan* off, and *Copy on
   select* off — in the fullscreen TUI Claude Code runs its own mouse selection,
