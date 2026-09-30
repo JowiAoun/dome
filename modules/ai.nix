@@ -466,7 +466,7 @@ in
       if [ -n "''${DRY_RUN_CMD:-}" ]; then
         echo "(dry run) would apply Claude Code defaults to ~/.claude/settings.json and ~/.claude.json"
       else
-        # All three are real settings.json keys, confirmed against the published
+        # All four are real settings.json keys, confirmed against the published
         # schema rather than guessed, and /config writes the same names:
         #
         # theme                 dark. Also what stops a fresh machine opening on
@@ -477,6 +477,15 @@ in
         # useAutoModeDuringPlan "Use auto mode during plan". Off: planning should
         #                       ask before running things rather than classify
         #                       them as safe on its own.
+        # enableArtifact        the "Artifacts" row in /config. Off, so the
+        #                       Artifact tool is gone and nothing publishes a
+        #                       page to claude.ai until it is turned back on.
+        #                       Read from user settings only: Claude Code
+        #                       ignores this key in a repo's
+        #                       .claude/settings.json, so cloning a project
+        #                       cannot switch it on. `disableArtifact` is the
+        #                       older spelling and the schema marks it
+        #                       deprecated, so set this one.
         #
         # statusLine            the two-row status line, whose script is the
         #                       home.file symlink above. Invoked through `bash`
@@ -494,6 +503,7 @@ in
           "theme": "dark",
           "spinnerTipsEnabled": false,
           "useAutoModeDuringPlan": false,
+          "enableArtifact": false,
           "attribution": { "commit": "", "pr": "" },
           "statusLine": {
             "type": "command",

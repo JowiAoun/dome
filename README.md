@@ -139,12 +139,13 @@ input, and `system/40-zenbook-duo.sh` runs that repo's installer.
   and Ctrl+Home and this keyboard has no End key. Claude Code's own `g` and
   `shift+g` still do the same two jumps
 - **Claude Code defaults**: theme dark (so a fresh machine never opens on the
-  theme picker), *Show tips* off, *Use auto mode during plan* off, and *Copy on
-  select* off — in the fullscreen TUI Claude Code runs its own mouse selection,
-  and highlighting anything replaced the clipboard. Ghostty's
-  `copy-on-select = false` covers the terminal's own version of that.
+  theme picker), *Show tips* off, *Use auto mode during plan* off, *Artifacts*
+  off (that tool publishes a page on claude.ai), and *Copy on select* off — in
+  the fullscreen TUI Claude Code runs its own mouse selection, and highlighting
+  anything replaced the clipboard. Ghostty's `copy-on-select = false` covers
+  the terminal's own version of that.
 
-  The first three are `settings.json` keys; `copyOnSelect` is not in that schema
+  The first four are `settings.json` keys; `copyOnSelect` is not in that schema
   and lives in `~/.claude.json` with the app's auth and history. Both files are
   written by Claude Code constantly, so neither can be a home-manager symlink —
   that would make the target read-only and break the app. They are merged with
