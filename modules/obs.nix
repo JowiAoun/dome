@@ -67,6 +67,25 @@ let
       command = "${obsHotkey}/bin/obs-hotkey recording toggle-pause";
       binding = "<Control><Shift>F9";
     };
+
+    # Scene switches. The key is named twice on purpose, once the way GNOME
+    # spells it and once the way OBS does, because they are two different
+    # vocabularies for the same physical key: Ctrl+Shift+1 produces "!", which
+    # OBS records as OBS_KEY_EXCLAM, and "2" gives OBS_KEY_AT.
+    #
+    # What is deliberately NOT here is the scene's name. obs-hotkey looks that
+    # up in whichever collection OBS has open, so renaming or reordering scenes
+    # cannot leave a shortcut pointing at nothing.
+    obs-scene-1 = {
+      name = "OBS: switch to the scene on Ctrl+Shift+1";
+      command = "${obsHotkey}/bin/obs-hotkey scene-key control+shift+OBS_KEY_EXCLAM";
+      binding = "<Control><Shift>1";
+    };
+    obs-scene-2 = {
+      name = "OBS: switch to the scene on Ctrl+Shift+2";
+      command = "${obsHotkey}/bin/obs-hotkey scene-key control+shift+OBS_KEY_AT";
+      binding = "<Control><Shift>2";
+    };
   };
 in
 {

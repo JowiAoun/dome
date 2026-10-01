@@ -213,13 +213,14 @@ the default browser, and the GNOME dash:
   with the pen; `modules/xournalpp.nix` configures how it looks
 - **draw.io**, **LocalSend**, **Bruno**, **OBS Studio**, **Zoom**, **Rnote** —
   installed, not pinned
-- **OBS recording hotkeys that work unfocused** (`modules/obs.nix`):
-  **Ctrl+Shift+F8** starts and stops recording and **Ctrl+Shift+F9** pauses and
-  resumes, from whatever window you are in. OBS's own global hotkeys cannot do
-  that on Wayland, which refuses to let an app grab a key it does not have focus
-  for, so these are GNOME shortcuts that talk to OBS over obs-websocket. The
-  port and password are read from OBS's own config at runtime, so neither is
-  stored here
+- **OBS hotkeys that work unfocused** (`modules/obs.nix`): **Ctrl+Shift+F8**
+  starts and stops recording, **Ctrl+Shift+F9** pauses and resumes, and
+  **Ctrl+Shift+1** and **Ctrl+Shift+2** switch scenes, from whatever window you
+  are in. OBS's own global hotkeys cannot do that on Wayland, which refuses to
+  let an app grab a key it does not have focus for, so these are GNOME shortcuts
+  that talk to OBS over obs-websocket. The port, the password and the scene each
+  key selects are all read from OBS's own files at runtime, so none of them is
+  written down here and renaming a scene cannot break a shortcut
 - **Stroke Glow Shadow** for OBS
   (`obs-studio-plugins.obs-stroke-glow-shadow`): stroke, glow and shadow filters
   for masked sources. `wrapOBS` hands it to OBS through `OBS_PLUGINS_PATH`, so
