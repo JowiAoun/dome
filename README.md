@@ -213,6 +213,13 @@ the default browser, and the GNOME dash:
   with the pen; `modules/xournalpp.nix` configures how it looks
 - **draw.io**, **LocalSend**, **Bruno**, **OBS Studio**, **Zoom**, **Rnote** —
   installed, not pinned
+- **OBS recording hotkeys that work unfocused** (`modules/obs.nix`):
+  **Ctrl+Shift+F8** starts and stops recording and **Ctrl+Shift+F9** pauses and
+  resumes, from whatever window you are in. OBS's own global hotkeys cannot do
+  that on Wayland, which refuses to let an app grab a key it does not have focus
+  for, so these are GNOME shortcuts that talk to OBS over obs-websocket. The
+  port and password are read from OBS's own config at runtime, so neither is
+  stored here
 - **Stroke Glow Shadow** for OBS
   (`obs-studio-plugins.obs-stroke-glow-shadow`): stroke, glow and shadow filters
   for masked sources. `wrapOBS` hands it to OBS through `OBS_PLUGINS_PATH`, so
@@ -1446,6 +1453,7 @@ dome/
 │   ├── terminal.nix       # Ghostty + default-terminal wiring (not under apps)
 │   ├── gaming.nix         # GameMode-wrapped game launchers (see system/86-)
 │   ├── tinyproxy.nix      # Local HTTP/HTTPS proxy as a user service
+│   ├── obs.nix            # OBS recording hotkeys that work unfocused
 │   └── cloud.nix          # Terraform/Pulumi/cloud CLIs/k8s
 ├── system/                # Idempotent root-layer scripts (Ubuntu)
 │   └── gnome-extensions/  # Shell extensions the GDM greeter needs, so they

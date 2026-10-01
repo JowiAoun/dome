@@ -9,6 +9,7 @@
     ./cloud.nix
     ./apps.nix
     ./xournalpp.nix
+    ./obs.nix
     ./terminal.nix
     ./desktop-shell.nix
     ./gaming.nix
