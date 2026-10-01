@@ -98,6 +98,13 @@ archive keyrings.tar.gz .local/share/keyrings
 archive brave.tar.gz    .config/BraveSoftware
 archive firefox.tar.gz  snap/firefox/common/.mozilla
 
+# Scene collections, profiles, stream keys and settings. OBS saves the scene
+# JSON as you edit, so a backup taken while it runs is current, but close it
+# first if you want the guarantee. logs/ and profiler_data/ are left out: they
+# are 640K of the 848K this directory holds and restore nothing.
+archive obs.tar.gz      .config/obs-studio/basic .config/obs-studio/global.ini \
+                        .config/obs-studio/user.ini .config/obs-studio/plugin_config
+
 # ── WiFi ─────────────────────────────────────────────────────────────────────
 # /etc/NetworkManager/system-connections is root-owned and holds the PSKs. It is
 # the one thing you need before you can do anything else on the new install, and

@@ -1091,8 +1091,9 @@ destination on the disk being erased); warnings merely cost time. What it cannot
 know — whether your only TOTP seed lives here — it names instead of pretending
 to check.
 
-`backup.sh` captures five things git cannot: `~/.ssh` and `~/.gnupg`, the
-gitignored `user-config.nix`, the login keyring, the browser profiles, and
+`backup.sh` captures six things git cannot: `~/.ssh` and `~/.gnupg`, the
+gitignored `user-config.nix`, the login keyring, the browser profiles, the OBS
+scene collections and profiles, and
 **`/etc/NetworkManager/system-connections`**. That last one is easy to forget
 and the most annoying to lose: it is root-owned, so a `$HOME` backup misses it,
 and without it you cannot get online on the fresh install to fetch anything
