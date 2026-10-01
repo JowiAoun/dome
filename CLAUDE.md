@@ -74,10 +74,55 @@ dconf read /org/gnome/mutter/check-alive-timeout      # what we wrote
 gsettings get org.gnome.mutter check-alive-timeout    # what the app sees
 ```
 
+That second command does not work from an agent shell, where it reports the
+default for every key. Read the next section before taking a mismatch as proof
+of anything.
+
 The sibling trap, documented at the Tracker setting in `modules/desktop-shell.nix`:
 the dconf **path** is not the schema id lowercased with slashes. `dconf.settings`
 writes wherever it is told and never validates against a schema, so a wrong path
 stores a value that simply nothing reads — and it looks identical to this one.
+
+## `gsettings get` returns the schema default in an agent shell
+
+The check just above is the right test, and here it misfires in the direction
+that costs the most time: **every** `gsettings get` in these sessions reports
+the schema default, so every key looks like the typing bug.
+
+Measured on two keys this repo sets and that visibly work on the desktop:
+
+```bash
+dconf read    /org/gnome/desktop/interface/color-scheme   # 'prefer-dark'
+gsettings get org.gnome.desktop.interface color-scheme    # 'default'     WRONG
+dconf read    /org/gnome/mutter/check-alive-timeout       # uint32 30000
+gsettings get org.gnome.mutter check-alive-timeout        # uint32 5000   WRONG
+```
+
+`LD_LIBRARY_PATH` is why. These shells fill it with Nix store paths including
+`glib-2.86.1/lib`, so even `/usr/bin/gsettings` loads **Nix's** libgio instead
+of Ubuntu's (2.80.0-6ubuntu3.9), and Nix's libgio searches its own store path
+for GIO modules. It therefore never finds
+`/usr/lib/x86_64-linux-gnu/gio/modules/libdconfsettings.so`, and with no dconf
+module GSettings falls back to its in-memory backend: every read is the schema
+default, exit code 0, no warning. `GSETTINGS_BACKEND=dconf` does not help,
+because naming a backend does not make its module findable.
+
+Two invocations do work. Prefer the first, which keeps Ubuntu's glib with
+Ubuntu's module rather than loading a 2.80 module into 2.86:
+
+```bash
+env -u LD_LIBRARY_PATH /usr/bin/gsettings get org.gnome.mutter check-alive-timeout
+GIO_EXTRA_MODULES=/usr/lib/x86_64-linux-gnu/gio/modules gsettings get org.gnome.mutter check-alive-timeout
+```
+
+`dconf read` is unaffected, and `gnome-shell`, `gsd-media-keys` and the rest of
+the session load Ubuntu's glib normally. So a value `dconf read` shows is a
+value the desktop sees, and the type check above only means something once you
+have confirmed `gsettings` can read a key you already know is applied.
+
+This has burned one investigation already: two correctly written GNOME custom
+keybindings in `modules/obs.nix` looked ignored because `gsettings` reported an
+empty string for both.
 
 Instructions for AI agents (Claude Code and the like) working in this dotfiles
 repository. This file is loaded into agent context automatically, so keep it
