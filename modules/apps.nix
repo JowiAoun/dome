@@ -258,8 +258,22 @@ let
       probeCommands = [ "rnote" ];
     }
     {
+      # Plugins arrive through wrapOBS, which symlink-joins them with OBS and
+      # points OBS_PLUGINS_PATH / OBS_PLUGINS_DATA_PATH at the result. Nothing
+      # is written under ~/.config/obs-studio, so scene collections, profiles
+      # and settings are left alone. The plugin is a store path the launcher
+      # knows about, and dropping it from this list drops it again.
+      #
+      # obs-stroke-glow-shadow (FiniteSingularity, GPL-2.0) adds stroke, glow
+      # and shadow filters for masked sources. Its README still claims OBS 28
+      # to 30, which is stale. nixpkgs builds the plugin against the obs-studio
+      # in this flake's pin, so the two share a libobs by construction: on
+      # 32.0.1 the built .so resolves libobs.so.30 to the same store path the
+      # unwrapped obs-studio ships.
       name = "obs-studio";
-      package = pkgs.obs-studio;
+      package = pkgs.wrapOBS {
+        plugins = with pkgs.obs-studio-plugins; [ obs-stroke-glow-shadow ];
+      };
       ids = [ "com.obsproject.Studio.desktop" ];
       pin = false;
       browser = false;

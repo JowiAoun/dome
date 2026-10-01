@@ -213,6 +213,11 @@ the default browser, and the GNOME dash:
   with the pen; `modules/xournalpp.nix` configures how it looks
 - **draw.io**, **LocalSend**, **Bruno**, **OBS Studio**, **Zoom**, **Rnote** —
   installed, not pinned
+- **Stroke Glow Shadow** for OBS
+  (`obs-studio-plugins.obs-stroke-glow-shadow`): stroke, glow and shadow filters
+  for masked sources. `wrapOBS` hands it to OBS through `OBS_PLUGINS_PATH`, so
+  nothing is written under `~/.config/obs-studio` and your scene collections are
+  left alone
 - **LibreOffice Draw** — installed, not pinned; the vector and page editor, and
   the one app here that opens a PDF and lets you edit the text inside it.
   nixpkgs has no Draw-only package, so the whole suite comes along (~1.6 GiB,
