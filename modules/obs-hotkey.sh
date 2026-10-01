@@ -44,11 +44,10 @@ if ! (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
   die "OBS is not running"
 fi
 
+# Silence is success. There is deliberately no notification on the happy path:
+# all obs-cmd has to say is "Result: Ok(true)", which tells you nothing and
+# arrives once per keypress. A notification therefore always means something
+# went wrong.
 if ! out="$(obs-cmd --websocket "obsws://localhost:$port/$pass" "$@" 2>&1)"; then
   die "$(printf '%s' "$out" | tail -n1)"
 fi
-
-# obs-cmd prints what it did. Fall back to the arguments when it says nothing,
-# so the notification is never blank.
-msg="$(printf '%s' "$out" | tail -n1)"
-note OBS "${msg:-$*}"
