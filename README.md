@@ -213,6 +213,11 @@ the default browser, and the GNOME dash:
   with the pen; `modules/xournalpp.nix` configures how it looks
 - **draw.io**, **LocalSend**, **Bruno**, **OBS Studio**, **Zoom**, **Rnote** —
   installed, not pinned
+- **Audacity 4** — installed, not pinned. On 4.0.0, the Qt rewrite. The main
+  nixpkgs pin still carries 3.7.7, so it comes from its own `nixpkgs-audacity`
+  flake input, the same separate-pin trick Ghostty uses: `nix flake update
+  nixpkgs-audacity` moves the editor and nothing else. Drop the overlay in
+  `flake.nix` to fall back to the 3.7.x line
 - **OBS hotkeys that work unfocused** (`modules/obs.nix`): **Ctrl+Shift+F8**
   starts and stops recording, **Ctrl+Shift+F9** pauses and resumes, and
   **Ctrl+Shift+1** and **Ctrl+Shift+2** switch scenes, from whatever window you

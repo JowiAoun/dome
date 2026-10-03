@@ -11,6 +11,12 @@
     # performable-paste passthrough in 1.3.0 that makes Ctrl+V image paste reach
     # Claude Code), so it is kept deliberately current.
     nixpkgs-ghostty.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # Same trick for Audacity, and for the same reason: the main pin carries
+    # 3.7.7 while upstream is on 4.0.0, the Qt rewrite. Locked on its own so
+    # `nix flake update nixpkgs-audacity` moves the editor without dragging
+    # every other package along. To go back to the conservative 3.7.x line,
+    # drop the overlay entry below rather than editing this URL.
+    nixpkgs-audacity.url = "github:NixOS/nixpkgs/nixos-unstable";
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -28,14 +34,21 @@
     };
   };
 
-  outputs = inputs@{ self, nixpkgs, nixpkgs-ghostty, home-manager, ... }:
+  outputs = inputs@{ self, nixpkgs, nixpkgs-ghostty, nixpkgs-audacity, home-manager, ... }:
   let
     system = "x86_64-linux";
     # Take Ghostty from the newer pin; everything else stays on the main one.
     ghosttyOverlay = final: prev: {
       ghostty = (import nixpkgs-ghostty { inherit system; config.allowUnfree = true; }).ghostty;
     };
-    pkgs = import nixpkgs { inherit system; config.allowUnfree = true; overlays = [ ghosttyOverlay ]; };
+    audacityOverlay = final: prev: {
+      audacity = (import nixpkgs-audacity { inherit system; }).audacity;
+    };
+    pkgs = import nixpkgs {
+      inherit system;
+      config.allowUnfree = true;
+      overlays = [ ghosttyOverlay audacityOverlay ];
+    };
 
     # Legacy path only: username from the environment. Empty under pure
     # evaluation; kept until the username-keyed outputs below are retired.

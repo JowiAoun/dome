@@ -281,6 +281,26 @@ let
       probeCommands = [ "obs" "obs-studio" ];
     }
     {
+      # 4.0.0, the Qt rewrite. The main nixpkgs pin is still on 3.7.7, so this
+      # comes from the nixpkgs-audacity input instead: the same separate-pin
+      # trick flake.nix already uses for Ghostty, which bumps one package with
+      # `nix flake update nixpkgs-audacity` and churns nothing else. Remove the
+      # audacityOverlay entry in flake.nix to fall back to the main pin's 3.7.x,
+      # which is upstream's conservative line.
+      #
+      # The id is org.audacityteam.Audacity.desktop, read off the built package
+      # rather than guessed: `audacity.desktop` is the obvious guess and it is
+      # wrong. Its Name is "Audacity 4 Portable", which is upstream's wording,
+      # so that is what the app grid shows.
+      name = "audacity";
+      package = pkgs.audacity;
+      ids = [ "org.audacityteam.Audacity.desktop" ];
+      pin = false;
+      browser = false;
+      probeDesktop = [ "org.audacityteam.Audacity.desktop" "audacity.desktop" "audacity_audacity.desktop" ];
+      probeCommands = [ "audacity" ];
+    }
+    {
       # The official Mozilla build. Ubuntu ships Thunderbird as a snap on
       # installs that include it, so thunderbird_thunderbird.desktop is in the
       # probe list: if the machine already has it, this copy is not installed
