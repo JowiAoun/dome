@@ -118,6 +118,83 @@ let
       PATH="${clipboardShims}/bin:$PATH" command claude "$@"
     }
   '';
+
+  # The ElevenLabs CLI: voices, text-to-speech (`elevenlabs say "hi"`) and the
+  # Conversational AI agents. It is not in nixpkgs under any name, so it comes
+  # from the project's own release rather than from a channel.
+  #
+  # The musl build is the one taken because it is fully static. `file` reports
+  # "static-pie linked" and `ldd` "statically linked", so there is no
+  # interpreter to rewrite and no autoPatchelf step; the gnu build would need
+  # both.
+  #
+  # Pinned, unlike Claude Code and Codex below. Those are installed by their own
+  # installers so they can follow a model line, while this one is an API client,
+  # so a frozen version keeps doing its job. To move it, change `version` and
+  # replace the hash with the one the build error prints. Upstream is MIT and
+  # builds with cargo, so rustPlatform.buildRustPackage is there if a source
+  # build is ever wanted, at the price of compiling the dependency tree on
+  # every bump.
+  elevenlabsCli =
+    let
+      version = "1.4.0";
+
+      # Keyed by Nix system, because upstream ships one tarball per target. A
+      # system with no upstream build fails here and names itself, instead of
+      # fetching the wrong architecture.
+      builds = {
+        x86_64-linux = {
+          triple = "x86_64-unknown-linux-musl";
+          hash = "sha256-YD1yPl0m5fU481nKPG33mXq4i1Qni6knYUpuLbWivKw=";
+        };
+        aarch64-linux = {
+          triple = "aarch64-unknown-linux-musl";
+          hash = "sha256-y30QqbFTcnDtCwfQVcjj6GhmC77K2bmP5kfW/qvUoOY=";
+        };
+      };
+
+      system = pkgs.stdenv.hostPlatform.system;
+      build = builds.${system}
+        or (throw "elevenlabs-cli ${version} has no upstream build for ${system}");
+    in
+    pkgs.stdenvNoCC.mkDerivation {
+      pname = "elevenlabs-cli";
+      inherit version;
+
+      src = pkgs.fetchurl {
+        url = "https://github.com/elevenlabs/cli/releases/download/v${version}/elevenlabs-cli-${build.triple}.tar.gz";
+        inherit (build) hash;
+      };
+
+      nativeBuildInputs = [ pkgs.installShellFiles ];
+
+      installPhase = ''
+        runHook preInstall
+        install -Dm755 elevenlabs "$out/bin/elevenlabs"
+        install -Dm644 LICENSE "$out/share/licenses/elevenlabs-cli/LICENSE"
+        runHook postInstall
+      '';
+
+      # The binary writes its own completions, so they stay in step with the
+      # subcommands. zsh needs nothing further: ~/.zshrc already puts the
+      # profile's share/zsh/site-functions on fpath. Skipped when the build
+      # machine cannot run what it just unpacked, which is what a cross build is.
+      postInstall = lib.optionalString (pkgs.stdenv.buildPlatform.canExecute pkgs.stdenv.hostPlatform) ''
+        installShellCompletion --cmd elevenlabs \
+          --bash <("$out/bin/elevenlabs" completion bash) \
+          --zsh <("$out/bin/elevenlabs" completion zsh) \
+          --fish <("$out/bin/elevenlabs" completion fish)
+      '';
+
+      meta = {
+        description = "Command-line interface for the ElevenLabs platform";
+        homepage = "https://github.com/elevenlabs/cli";
+        license = lib.licenses.mit;
+        sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
+        platforms = lib.attrNames builds;
+        mainProgram = "elevenlabs";
+      };
+    };
 in
 {
   config = lib.mkIf cfg.enable {
@@ -149,7 +226,12 @@ in
     # modules are on this is the identical store path — one Node in the profile,
     # no file collision (which is exactly what an explicitly different version
     # caused before; see the note in node.nix).
-    home.packages = [ pkgs.xclip ]
+    #
+    # The ElevenLabs CLI needs an API key before it can do anything, and that key
+    # is not in this repo and must not be. Export ELEVENLABS_API_KEY in your
+    # shell, or drop it in a .env file beside whatever project you are calling it
+    # from, which the CLI reads on its own.
+    home.packages = [ pkgs.xclip elevenlabsCli ]
       ++ lib.optional (!config.modules.node.enable) pkgs.nodejs_22;
 
     # Keep wl-clipboard's throwaway toplevel out of the dash — Claude Code only.

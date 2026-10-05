@@ -132,6 +132,16 @@ input, and `system/40-zenbook-duo.sh` runs that repo's installer.
   `skills update`. It is an npm package needing Node ≥ 22.20, so this module
   installs `nodejs_22` itself when `modules.node` is off — the same derivation,
   so enabling both gives one Node, not two
+- **ElevenLabs CLI** (`elevenlabs`): voices, text-to-speech and the
+  Conversational AI agents from the terminal. `elevenlabs say "it worked"`
+  speaks a line and plays it through whichever player is on the box (`ffplay`
+  here), `elevenlabs voices search` lists your voices, and every API endpoint is
+  a subcommand. Not in nixpkgs under any name, so it is the project's own static
+  musl release, pinned by hash in `modules/ai.nix` (1.4.0, MIT). The binary
+  writes its own shell completions at build time, so `elevenlabs <tab>` works in
+  zsh. It needs an API key, which is not stored here: export
+  `ELEVENLABS_API_KEY`, or put it in a `.env` file in the directory you run it
+  from, which the CLI loads by itself
 - **Claude Code keybindings** (`~/.claude/keybindings.json`): **Shift+Enter**
   inserts a newline. That needs a terminal that can encode a modified Enter —
   see the terminal module below. **Ctrl+Shift+Down** and **Ctrl+Shift+Up** jump
