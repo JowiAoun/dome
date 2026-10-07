@@ -105,6 +105,11 @@ archive firefox.tar.gz  snap/firefox/common/.mozilla
 archive obs.tar.gz      .config/obs-studio/basic .config/obs-studio/global.ini \
                         .config/obs-studio/user.ini .config/obs-studio/plugin_config
 
+# The vault, still encrypted, whether it is open or locked. gocryptfs.conf in
+# it holds the master key wrapped in your password, so this archive restores
+# the vault, and is no use to anyone without that password.
+archive vault.tar.gz    .vault
+
 # ── WiFi ─────────────────────────────────────────────────────────────────────
 # /etc/NetworkManager/system-connections is root-owned and holds the PSKs. It is
 # the one thing you need before you can do anything else on the new install, and

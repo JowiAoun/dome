@@ -188,6 +188,37 @@ http_proxy=http://127.0.0.1:8888 https_proxy=http://127.0.0.1:8888 <command>
 - HTTPS is tunnelled with CONNECT, not decrypted, so the log shows the host,
   not the URL
 
+#### Vault (`modules.vault`, on with the GNOME desktop)
+An encrypted folder at `~/Vault` that locks itself and leaves no trace of its
+files outside itself. [gocryptfs](https://nuetzlich.net/gocryptfs/) keeps the
+files encrypted in `~/.vault`, and `~/Vault` shows them only while it is open.
+
+```bash
+vault open      # unlock it (the first run creates it) and show it in Files
+vault close     # close everything using it, then lock it
+vault status    # whether it is open, and what is using it
+```
+
+- **Locks itself** after 15 minutes without keyboard or mouse
+  (`modules.vault.idleMinutes`), when the screen locks, before the laptop
+  sleeps and at logout. Locking closes every program using a vault file first,
+  so unsaved changes in a vault file are lost. Image Viewer and Text Editor
+  close as a whole, because each keeps one process for all its windows
+- **Hidden**: `~/Vault` is listed in `~/.hidden`, and every file in the vault
+  is listed in its folder's `.hidden` as it arrives, so Files shows the vault
+  as empty until you press **Ctrl+H**
+- **No traces**: thumbnails are switched off while it is open, zsh and bash
+  keep lines that name the vault out of history, and GNOME stores no file
+  metadata for it. Vault entries in Recent files (GNOME's and Text Editor's
+  own) are removed the moment they are written, because GNOME's history switch
+  wipes the whole list. History an app keeps by itself, like VLC's recent
+  media, is not covered
+- **The password** is the one thing the dotfiles cannot hold. The first
+  `vault open` prints a master key once: keep it in a password manager. Lose
+  both and the files are gone
+- `make backup` saves `~/.vault`, still encrypted. Change the password with
+  `gocryptfs -passwd ~/.vault`
+
 #### Terminal (always on, not part of `modules.apps`)
 **Ghostty**, installed on every machine with a desktop — deliberately *outside*
 the optional apps bundle, because it is what everything else here runs inside.
@@ -1114,9 +1145,9 @@ destination on the disk being erased); warnings merely cost time. What it cannot
 know — whether your only TOTP seed lives here — it names instead of pretending
 to check.
 
-`backup.sh` captures six things git cannot: `~/.ssh` and `~/.gnupg`, the
+`backup.sh` captures seven things git cannot: `~/.ssh` and `~/.gnupg`, the
 gitignored `user-config.nix`, the login keyring, the browser profiles, the OBS
-scene collections and profiles, and
+scene collections and profiles, the vault (still encrypted), and
 **`/etc/NetworkManager/system-connections`**. That last one is easy to forget
 and the most annoying to lose: it is root-owned, so a `$HOME` backup misses it,
 and without it you cannot get online on the fresh install to fetch anything
@@ -1470,6 +1501,7 @@ dome/
 │   ├── gaming.nix         # GameMode-wrapped game launchers (see system/86-)
 │   ├── tinyproxy.nix      # Local HTTP/HTTPS proxy as a user service
 │   ├── obs.nix            # OBS recording hotkeys that work unfocused
+│   ├── vault.nix          # Encrypted ~/Vault that locks itself (+ vault.py)
 │   └── cloud.nix          # Terraform/Pulumi/cloud CLIs/k8s
 ├── system/                # Idempotent root-layer scripts (Ubuntu)
 │   └── gnome-extensions/  # Shell extensions the GDM greeter needs, so they
