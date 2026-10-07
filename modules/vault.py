@@ -1531,7 +1531,11 @@ def review(report, restarted, reason, lock_error, previous):
                  "the laptop wakes.", fixed="The vault locks before sleep again.")
         else:
             resolve("guard-sleep")
-        if time.time() - health.get("beat", 0) > 120:
+        # CLOCK_MONOTONIC on both sides: it stops while the laptop sleeps, as
+        # the guard does, so a sleep does not read as a hang. Wall time did,
+        # and warned one second after every wake.
+        beat = health.get("beat_monotonic")
+        if beat is not None and time.monotonic() - beat > 120:
             warn("guard-hung", "Vault: the guard is not responding",
                  "vault-guard has not checked in for over 2 minutes, and systemd should have restarted it.",
                  fixed="vault-guard is responding again.")
@@ -1977,7 +1981,7 @@ class Guard:
         watch and, while the vault is open, the sleep delay are in place, and
         when it last ran."""
         write_atomic(HEALTH, json.dumps({
-            "pid": os.getpid(), "beat": time.time(), "idle_watch": self.idle_id is not None,
+            "pid": os.getpid(), "beat_monotonic": time.monotonic(), "idle_watch": self.idle_id is not None,
             "inhibitor": (self.inhibitor is not None) if self.armed else None,
         }))
 

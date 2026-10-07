@@ -404,6 +404,19 @@ rm -rf "$VAULT_CIPHER"
 expect "Ctrl+C while choosing a password leaves no half-made vault" '[ ! -e "$VAULT_CIPHER" ] && out | grep -q Cancelled && ! out | grep -q Traceback'
 export VAULT_CIPHER="$HOME/.vault"
 
+echo "test-vault: the guard's heartbeat across a sleep"
+sleep 300 & stand_in=$!
+beat() { py -c "import json, time; json.dump({'pid': $stand_in, 'beat_monotonic': time.monotonic() - $1, 'idle_watch': True, 'inhibitor': None}, open('$VAULT_STATE/guard.json', 'w'))"; }
+# A heartbeat 30 seconds old on the monotonic clock, after hours on the wall
+# clock: what the first check after a long sleep sees. Not a hang.
+beat 30; v check --quiet
+expect "a guard that was asleep with the laptop is not reported as hung" '! grep -q guard-hung "$W/warnings.json" 2>/dev/null'
+beat 300; v check --quiet
+expect "a guard silent for 5 minutes while awake is reported" 'grep -q guard-hung "$W/warnings.json"'
+beat 0; v check --quiet
+expect "and the warning clears once it beats again" '! grep -q guard-hung "$W/warnings.json"'
+kill $stand_in
+
 echo "test-vault: when the check itself cannot run"
 PATH="$T/bin:$PATH" bash "$repo/modules/vault-alarm.sh" vault-check.service
 expect "the shell alarm raises a critical notification" 'grep -q -- "-u critical.*2-minute check failed to run" "$T/notified"'
