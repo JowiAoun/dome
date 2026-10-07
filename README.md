@@ -197,6 +197,7 @@ files encrypted in `~/.vault`, and `~/Vault` shows them only while it is open.
 vault open      # unlock it (the first run creates it) and show it in Files
 vault close     # close everything using it, then lock it
 vault status    # whether it is open, and what is using it
+vault check     # test every part, repair what it can, clear leftovers
 ```
 
 - **Locks itself** after 15 minutes without keyboard or mouse
@@ -208,11 +209,22 @@ vault status    # whether it is open, and what is using it
   is listed in its folder's `.hidden` as it arrives, so Files shows the vault
   as empty until you press **Ctrl+H**
 - **No traces**: thumbnails are switched off while it is open, zsh and bash
-  keep lines that name the vault out of history, and GNOME stores no file
+  keep lines that name the vault out of history, vim writes no history for a
+  vault file, VS Code keeps no local history of one, and GNOME stores no file
   metadata for it. Vault entries in Recent files (GNOME's and Text Editor's
   own) are removed the moment they are written, because GNOME's history switch
-  wipes the whole list. History an app keeps by itself, like VLC's recent
-  media, is not covered
+  wipes the whole list. Text Editor's drafts, LibreOffice's crash-recovery
+  copies, the file chooser's last folder, and Audacity's and Xournal++'s own
+  history are cleared at every lock and check. Not covered: browser history
+  and VS Code's Open Recent list
+- **App history off**: VLC's recent media and "continue where you left off",
+  and LibreOffice's recent documents, are switched off for every file and
+  their lists emptied, because neither app can leave one folder out
+- **Checks itself**: `vault check` runs every two minutes on a timer of its
+  own. If the guard died or missed a screen lock, an idle spell or a sleep,
+  the check locks the vault and restarts the guard. Every part of a lock or a
+  clean-up runs on its own, so one failing leaves the rest working, and the
+  next check retries it. systemd restarts the guard if it crashes or hangs
 - **The password** is the one thing the dotfiles cannot hold. The first
   `vault open` prints a master key once: keep it in a password manager. Lose
   both and the files are gone
@@ -1421,7 +1433,7 @@ home-manager switch --flake path:.#generic -b backup   # or your host profile
 nix flake update
 
 # Tests and housekeeping
-make test               # unit-test system/lib.sh (sudo make test covers the root paths)
+make test               # unit-test system/lib.sh and the vault (sudo make test covers the root paths)
 make gc                 # delete Nix generations older than 30 days
 ```
 
@@ -1434,6 +1446,12 @@ exists because `shellcheck` and `nix eval` both pass happily on a script whose
 *detection* helper returns the wrong answer, which is how a `| grep -q` pipeline
 under `pipefail` came to silently disable a whole section of
 `system/25-memory.sh`. See the note at the top of `CLAUDE.md`.
+
+It then runs `tests/test-vault.sh`, which breaks each part of the vault on
+purpose (a dead guard, a dead gocryptfs, a missed sleep, a corrupt settings
+file) and checks the rest still holds. It uses a throwaway vault in a
+throwaway home with its own D-Bus session, so your vault and settings are never
+touched, and it skips on a machine without FUSE or the vault installed.
 
 Nothing runs `nix-collect-garbage` automatically: every `make home` leaves the
 previous generation behind and each one pins its whole closure, but deleting the
@@ -1506,7 +1524,7 @@ dome/
 ├── system/                # Idempotent root-layer scripts (Ubuntu)
 │   └── gnome-extensions/  # Shell extensions the GDM greeter needs, so they
 │                          # install to /usr/share, not to ~/.local/share
-├── tests/                 # Unit tests for system/lib.sh (`make test`)
+├── tests/                 # Tests for system/lib.sh and the vault (`make test`)
 └── docs/                  # research archive
 ```
 

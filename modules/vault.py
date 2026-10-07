@@ -6,23 +6,32 @@ modules/vault.nix has the design. In short: gocryptfs keeps the files
 encrypted in ~/.vault and shows them decrypted at a mount point under
 /run/user, which ~/Vault links to. `vault guard` runs as a user service and
 locks the vault when you go idle, lock the screen, suspend or log out.
+`vault check` runs on a timer of its own, so if the guard misses something or
+stops, the vault still locks and what it left behind still goes.
 
 This program never writes a vault file name outside the vault: not to the
 journal, not to a state file, not to a notification. Its messages carry
-counts and program names only.
+counts and program names only, and errors are logged by type alone, because
+an error message can carry a file name.
 """
 
 import contextlib
+import ctypes
 import fcntl
+import functools
 import json
 import os
 import re
+import resource
 import shlex
 import signal
+import socket
 import struct
 import subprocess
 import sys
 import time
+import traceback
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import gi
@@ -33,13 +42,15 @@ from gi.repository import Gio, GLib  # noqa: E402
 USAGE = """\
 usage: vault open [--no-window]   unlock it (creating it the first time) and show it in Files
        vault close                close everything using it, then lock it
-       vault status               say whether it is open and what is using it"""
+       vault status               say whether it is open and what is using it
+       vault check                test every part, repair what it can, clear leftovers"""
 
 HOME = Path.home()
 UID = os.getuid()
 RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{UID}")
 DATA = Path(os.environ.get("XDG_DATA_HOME") or HOME / ".local/share")
 CACHE = Path(os.environ.get("XDG_CACHE_HOME") or HOME / ".cache")
+CONFIG = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config")
 
 # Every path can be moved with an environment variable. That is how this was
 # tested against a throwaway vault without going near the real one.
@@ -50,9 +61,16 @@ STATE = Path(os.environ.get("VAULT_STATE") or RUNTIME / "vault-state")
 SAVED = Path(os.environ.get("VAULT_SAVED") or HOME / ".local/state/vault/paused-settings.json")
 IDLE_SECONDS = int(os.environ.get("VAULT_IDLE_SECONDS") or 15 * 60)
 
+GUARD = os.environ.get("VAULT_GUARD_UNIT") or "vault-guard.service"
+
 ROOTS = (str(MOUNT), str(LINK))
+# Either root, as long as what follows ends the name: /run/user/1000/vault-state
+# is not the vault.
+VAULT_TEXT = re.compile("(?:%s)(?=$|[/\\s,;\"'<>&)\\]])" % "|".join(re.escape(r) for r in ROOTS))
 SELF = os.path.realpath(__file__)
 APPS = STATE / "apps.json"
+OPENED = STATE / "opened.json"
+NOTIFIED = STATE / "notified.json"
 
 RECENT = DATA / "recently-used.xbel"
 TEXT_EDITOR = DATA / "org.gnome.TextEditor"
@@ -63,6 +81,24 @@ DOCS = f"{RUNTIME}/doc/"
 # means read the program off the entry. Text Editor keeps a list of its own
 # that GNOME's file history switch does not reach.
 RECENT_LISTS = ((RECENT, None), (TEXT_EDITOR / "recently-used.xbel", "gnome-text-editor"))
+
+# Where other apps keep a history of their own.
+VLC = HOME / ".var/app/org.videolan.VLC/config/vlc"
+LIBREOFFICE = CONFIG / "libreoffice/4/user"
+AUDACITY = DATA / "Audacity/Audacity4"
+AUDACITY_INI = CONFIG / "Audacity/Audacity4.ini"
+XOURNALPP = CONFIG / "xournalpp/settings.xml"
+XOURNALPP_NOTES = (CACHE / "xournalpp/metadata", DATA / "xournalpp/metadata")
+# The file chooser's last folder, GTK 3 and 4 (the portal's chooser included),
+# and Text Editor's last save folder.
+FOLDER_KEYS = (
+    "/org/gtk/gtk4/settings/file-chooser/last-folder-uri",
+    "/org/gtk/settings/file-chooser/last-folder-uri",
+    "/org/gnome/TextEditor/last-save-directory",
+)
+OOR = "http://openoffice.org/2001/registry"
+XS = "http://www.w3.org/2001/XMLSchema"
+XSI = "http://www.w3.org/2001/XMLSchema-instance"
 
 # Switched off while the vault is open and put back when it locks, so no
 # thumbnail of a vault file is ever made. GNOME's file history switch cannot
@@ -100,6 +136,28 @@ def die(message):
     sys.exit(1)
 
 
+def failure(error):
+    """An error by type and line only. A traceback would print its message,
+    and that can be a vault path."""
+    frame = traceback.extract_tb(error.__traceback__)[-1]
+    return f"{type(error).__name__} at line {frame.lineno}"
+
+
+def quietly(keep=False):
+    """For guard callbacks: an error is logged and the guard carries on. keep
+    is what a periodic GLib timer must return to stay scheduled."""
+    def wrap(action):
+        @functools.wraps(action)
+        def run(*args):
+            try:
+                return action(*args)
+            except Exception as error:
+                log(f"{action.__name__} failed: {failure(error)}")
+                return keep or None
+        return run
+    return wrap
+
+
 def notify(title, body):
     with contextlib.suppress(OSError):
         subprocess.run(["notify-send", "-a", "Vault", "-i", "changes-prevent-symbolic", title, body],
@@ -107,10 +165,18 @@ def notify(title, body):
 
 
 def write_atomic(path, data):
+    """Swap in a new copy, keeping the old one's permissions: several of the
+    files this edits are private (0600) to their app."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_bytes(data if isinstance(data, bytes) else data.encode())
+    tmp.write_bytes(data if isinstance(data, bytes) else data.encode("utf-8", "surrogateescape"))
+    with contextlib.suppress(OSError):
+        os.chmod(tmp, path.stat().st_mode & 0o777)
     os.replace(tmp, path)
+
+
+def read_text(path):
+    return path.read_text(encoding="utf-8", errors="surrogateescape")
 
 
 def wait_for(condition, seconds):
@@ -120,6 +186,73 @@ def wait_for(condition, seconds):
             return False
         time.sleep(0.05)
     return True
+
+
+class AppRunning(Exception):
+    """A clean-up that has to wait for its app to close. An app writes its
+    settings back out on exit, so editing them under it is undone."""
+
+
+def attempt(report, label, action, *args):
+    """Run one part of a lock, a check or a sweep on its own, so one failing
+    leaves the others running. Adds (label, status, detail) to report:
+    ok with a count of what it changed, later when its app is open, failed."""
+    try:
+        result = action(*args)
+    except AppRunning as busy:
+        report.append((label, "later", str(busy)))
+        return None
+    except Exception as error:
+        log(f"{label}: failed ({type(error).__name__})")
+        report.append((label, "failed", type(error).__name__))
+        return None
+    report.append((label, "ok", result))
+    return result
+
+
+def problems(report):
+    return [label for label, status, _ in report if status == "failed"]
+
+
+def counted(result):
+    """A part that changed something returns how many things; True and False
+    are answers, not counts."""
+    return isinstance(result, int) and not isinstance(result, bool) and result > 0
+
+
+def notify_once(key, title, body, hours=1):
+    """A notification for something that keeps being true, at most once an hour,
+    so a timer that finds it every two minutes does not repeat it every time."""
+    try:
+        sent = json.loads(NOTIFIED.read_text())
+    except (OSError, ValueError):
+        sent = {}
+    if time.time() - sent.get(key, 0) < hours * 3600:
+        return
+    notify(title, body)
+    sent[key] = time.time()
+    with contextlib.suppress(OSError):
+        write_atomic(NOTIFIED, json.dumps(sent))
+
+
+def sd_notify(state):
+    """Tell systemd how the guard is doing: READY=1 once it is listening, then
+    WATCHDOG=1 regularly. If those stop, systemd restarts it."""
+    address = os.environ.get("NOTIFY_SOCKET")
+    if not address:
+        return
+    if address.startswith("@"):
+        address = "\0" + address[1:]
+    with contextlib.suppress(OSError), socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
+        sock.connect(address)
+        sock.sendall(state.encode())
+
+
+def sleep_offset():
+    """How long this machine has been suspended since boot. CLOCK_BOOTTIME
+    counts suspend and CLOCK_MONOTONIC does not, so their gap grows by exactly
+    the time spent asleep."""
+    return time.clock_gettime(time.CLOCK_BOOTTIME) - time.clock_gettime(time.CLOCK_MONOTONIC)
 
 
 # Paths
@@ -135,6 +268,15 @@ def uri_path(uri):
 
 def uri_in_vault(uri):
     return in_vault(uri_path(uri) or "")
+
+
+def mentions_vault(text):
+    """For settings files, where a vault path can sit anywhere in a line."""
+    return bool(text) and bool(VAULT_TEXT.search(text))
+
+
+def in_tree(path, top):
+    return path == top or path.startswith(top + "/")
 
 
 def mounted():
@@ -206,6 +348,17 @@ def ancestors():
 def gocryptfs_pids():
     cipher = str(CIPHER)
     return [p for p in own_pids() if name_of(p) == "gocryptfs" and cipher in argv_of(p)]
+
+
+def is_open():
+    """Mounted and served. A mount whose gocryptfs died counts as locked: it
+    can no longer show anything, and lock() is what clears it away."""
+    return mounted() and bool(gocryptfs_pids())
+
+
+def unless_running(label, *names):
+    if any(name_of(p) in names for p in own_pids()):
+        raise AppRunning(f"{label} is open")
 
 
 def flatpak_documents():
@@ -356,10 +509,11 @@ def program_of(command):
     return None if not program or program in LAUNCHERS else program
 
 
-def strip_recent():
-    """Remove vault files from the recent lists. Returns program to label for
-    whatever added them, so a lock knows what to close."""
-    apps = {}
+def strip_recent(remember=False):
+    """Remove vault files from the recent lists, and return how many went.
+    With remember, which is for while the vault is open, also note the
+    programs that added them, so the lock knows what to close."""
+    apps, removed = {}, 0
     for path, owner in RECENT_LISTS:
         bookmarks = GLib.BookmarkFile()
         try:
@@ -379,7 +533,10 @@ def strip_recent():
             bookmarks.remove_item(uri)
         if hits:
             bookmarks.to_file(str(path))
-    return apps
+            removed += len(hits)
+    if remember:
+        remember_apps(apps)
+    return removed
 
 
 def recall_apps():
@@ -447,12 +604,10 @@ def scrub_text_editor():
     no switch for that which does not also throw away its session. Skipped
     while it runs, because it writes its session back out when it exits."""
     session = TEXT_EDITOR / "session.gvariant"
-    if not session.exists() or any(name_of(p) == "gnome-text-editor" for p in own_pids()):
+    if not session.exists():
         return 0
-    try:
-        state = GLib.Variant.new_from_bytes(GLib.VariantType("a{sv}"), GLib.Bytes.new(session.read_bytes()), False)
-    except (OSError, GLib.Error):
-        return 0
+    unless_running("Text Editor", "gnome-text-editor")
+    state = GLib.Variant.new_from_bytes(GLib.VariantType("a{sv}"), GLib.Bytes.new(session.read_bytes()), False)
     dropped, drafts = 0, []
 
     def without_vault(items):
@@ -495,12 +650,219 @@ def scrub_text_editor():
     return dropped
 
 
-def unexport_documents(docs):
+def unexport_documents(docs=None):
     """The document portal remembers every file it ever handed to a Flatpak
     app, by name, until told to forget it."""
+    docs = flatpak_documents() if docs is None else docs
+    gone = 0
     for doc_id, origin in docs.items():
         if in_vault(origin):
             subprocess.run(["flatpak", "document-unexport", "--doc-id", doc_id], capture_output=True)
+            gone += 1
+    return gone
+
+
+def forget_folders():
+    """The last folder a file chooser or Text Editor used is kept in dconf.
+    One pointing into the vault is reset."""
+    reset = 0
+    for key in FOLDER_KEYS:
+        if mentions_vault(dconf("read", key)):
+            dconf("reset", key)
+            reset += 1
+    return reset
+
+
+def drop_lines(path):
+    """Remove every line of a settings file that names the vault."""
+    if not path.exists():
+        return 0
+    lines = read_text(path).splitlines(keepends=True)
+    kept = [line for line in lines if not mentions_vault(line)]
+    if len(kept) != len(lines):
+        write_atomic(path, "".join(kept))
+    return len(lines) - len(kept)
+
+
+def scrub_json(path):
+    """Remove every value in a JSON file that names the vault, at any depth."""
+    if not path.exists():
+        return 0
+    removed = 0
+
+    def clean(value):
+        nonlocal removed
+        if isinstance(value, list):
+            kept = [v for v in value if not (isinstance(v, str) and mentions_vault(v))]
+            removed += len(value) - len(kept)
+            return [clean(v) for v in kept]
+        if isinstance(value, dict):
+            kept = {k: v for k, v in value.items()
+                    if not mentions_vault(k) and not (isinstance(v, str) and mentions_vault(v))}
+            removed += len(value) - len(kept)
+            return {k: clean(v) for k, v in kept.items()}
+        return value
+
+    data = clean(json.loads(read_text(path)))
+    if removed:
+        write_atomic(path, json.dumps(data, indent=2))
+    return removed
+
+
+def delete_mentioning(directory):
+    """Delete the files in a folder of logs or notes that name the vault."""
+    gone = 0
+    if directory.is_dir():
+        for file in directory.iterdir():
+            if file.is_file() and mentions_vault(read_text(file)):
+                file.unlink(missing_ok=True)
+                gone += 1
+    return gone
+
+
+def scrub_vlc():
+    """VLC's recent media and its resume points: switched off, and the list it
+    already has emptied. The open dialog's last folder goes too if it is in
+    the vault."""
+    if not VLC.exists():
+        return 0
+    unless_running("VLC", "vlc")
+    changed = 0
+    rc = VLC / "vlcrc"
+    if rc.exists():
+        text = new = read_text(rc)
+        for key in ("qt-recentplay", "qt-continue"):
+            new, found = re.subn(rf"^#?{key}=.*$", f"{key}=0", new, flags=re.M)
+            if not found:
+                new, found = re.subn(r"^\[qt\].*$", lambda m, k=key: f"{m.group(0)}\n{k}=0", new, count=1, flags=re.M)
+            if not found:
+                new += f"\n[qt]\n{key}=0\n"
+        if new != text:
+            write_atomic(rc, new)
+            changed += 1
+    conf = VLC / "vlc-qt-interface.conf"
+    if conf.exists():
+        lines = read_text(conf).splitlines(keepends=True)
+        kept, section = [], None
+        for line in lines:
+            if line.startswith("["):
+                section = line.strip()
+            if section == "[RecentsMRL]" or mentions_vault(line):
+                continue
+            kept.append(line)
+        if kept != lines:
+            write_atomic(conf, "".join(kept))
+            changed += len(lines) - len(kept)
+    return changed
+
+
+def scrub_libreoffice():
+    """LibreOffice's recent documents, thumbnails included: switched off, and
+    the list emptied. Its crash-recovery copies of vault files are deleted:
+    it keeps a plain copy of a document open long enough, and a lock closing
+    it is exactly the kind of exit that leaves one behind. Anything else in
+    its settings that names the vault, such as a dialog's last folder, goes.
+
+    Edited a line at a time, never parsed and written back whole: LibreOffice
+    writes one setting per line, and an XML library rewriting the file drops
+    the xs namespace that its oor:type="xs:string" values depend on."""
+    xcu = LIBREOFFICE / "registrymodifications.xcu"
+    if not xcu.exists():
+        return 0
+    unless_running("LibreOffice", "soffice.bin")
+    # A file that is not a whole LibreOffice registry is left alone, and the
+    # error says so.
+    if ET.parse(xcu).getroot().tag != f"{{{OOR}}}items":
+        raise ValueError("not a LibreOffice registry")
+    lines = read_text(xcu).splitlines(keepends=True)
+    kept, changed, size_set = [], 0, False
+    for line in lines:
+        item = libreoffice_item(line)
+        if item is None:
+            kept.append(line)
+            continue
+        path = item.get(f"{{{OOR}}}path", "")
+        if "HistoryInfo['PickList']" in path:
+            changed += 1
+            continue
+        if path == "/org.openoffice.Office.Common/History" and 'oor:name="PickListSize"' in line:
+            size_set = True
+            new = re.sub(r'(oor:name="PickListSize"[^>]*><value>)[^<]*(</value>)', r"\g<1>0\g<2>", line)
+            changed += new != line
+            kept.append(new)
+            continue
+        if mentions_vault(line):
+            if path.startswith("/org.openoffice.Office.Recovery/RecoveryList"):
+                for temp in item.iterfind(f".//prop[@{{{OOR}}}name='TempURL']/value"):
+                    copy = uri_path(temp.text or "")
+                    if copy and in_tree(copy, str(LIBREOFFICE / "backup")):
+                        Path(copy).unlink(missing_ok=True)
+            changed += 1
+            continue
+        kept.append(line)
+    if not size_set:
+        setting = ('<item oor:path="/org.openoffice.Office.Common/History"><prop oor:name="PickListSize" '
+                   'oor:op="fuse"><value>0</value></prop></item>\n')
+        end = next((i for i in range(len(kept) - 1, -1, -1) if "</oor:items>" in kept[i]), len(kept))
+        kept.insert(end, setting)
+        changed += 1
+    if changed:
+        write_atomic(xcu, "".join(kept))
+    return changed
+
+
+def libreoffice_item(line):
+    """One <item> line of registrymodifications.xcu, parsed on its own, or None."""
+    if not line.lstrip().startswith("<item "):
+        return None
+    try:
+        wrapper = ET.fromstring(f'<r xmlns:oor="{OOR}" xmlns:xs="{XS}" xmlns:xsi="{XSI}">{line.strip()}</r>')
+    except ET.ParseError:
+        return None
+    return wrapper[0] if len(wrapper) else None
+
+
+def scrub_audacity():
+    """Audacity's recent files, open projects, saved session and logs. It has
+    no switch for any of them, and its logs name every file it opens."""
+    if not (AUDACITY.exists() or AUDACITY_INI.exists()):
+        return 0
+    unless_running("Audacity", "audacity")
+    return (scrub_json(AUDACITY / "recent_files.json") + scrub_json(AUDACITY / "session/session.json")
+            + drop_lines(AUDACITY_INI) + delete_mentioning(AUDACITY / "logs"))
+
+
+def scrub_xournalpp():
+    """Xournal++'s last-used folders, and the notes it files by document path
+    (last page, zoom). Its recent list is GTK's, which strip_recent covers."""
+    if not (XOURNALPP.exists() or any(d.is_dir() for d in XOURNALPP_NOTES)):
+        return 0
+    unless_running("Xournal++", "xournalpp")
+    changed = sum(delete_mentioning(d) for d in XOURNALPP_NOTES)
+    if XOURNALPP.exists():
+        text = read_text(XOURNALPP)
+        new = re.sub(r'(<property name="last\w*Path" value=")([^"]*)(")',
+                     lambda m: m.group(1) + ("" if mentions_vault(m.group(2)) else m.group(2)) + m.group(3), text)
+        if new != text:
+            write_atomic(XOURNALPP, new)
+            changed += 1
+    return changed
+
+
+def sweep(report, vault_open, docs=None):
+    """Clear every trace this can reach. Each part runs on its own, and one
+    whose app is open is left for the next check, every two minutes."""
+    attempt(report, "Recent files", strip_recent, vault_open)
+    attempt(report, "thumbnails", sweep_thumbnails)
+    attempt(report, "last-used folders", forget_folders)
+    attempt(report, "Text Editor", scrub_text_editor)
+    attempt(report, "VLC", scrub_vlc)
+    attempt(report, "LibreOffice", scrub_libreoffice)
+    attempt(report, "Audacity", scrub_audacity)
+    attempt(report, "Xournal++", scrub_xournalpp)
+    # Not while open: a Flatpak app may be reading one of them right now.
+    if not vault_open:
+        attempt(report, "Flatpak documents", unexport_documents, docs)
 
 
 def hide_in(directory, names=None):
@@ -548,30 +910,182 @@ def held(wait=True):
 
 def lock(wait=True):
     """Close everything using the vault, lock it, and clear what it left
-    behind. Returns the names of the programs closed, or None when another
-    vault command is busy. Safe to run on a locked vault: it then only does
-    the clearing, which is also how a crash or a reboot gets cleaned up."""
+    behind. Returns (programs closed, report), or None when another vault
+    command holds the lock. Safe on a locked vault: it then only clears, which
+    is also how a crash, a reboot or a dead guard gets cleaned up.
+
+    Every part runs on its own. Only the unmount may not fail quietly: if
+    finding or closing programs breaks, the vault still locks."""
     try:
         with held(wait):
-            closed, docs = [], None
+            report, closed, docs = [], [], None
             if mounted() or gocryptfs_pids():
-                apps = {**recall_apps(), **strip_recent()}
-                docs = flatpak_documents()
-                users = vault_users(apps, docs)
-                close_all(users)
+                attempt(report, "reading Recent files", strip_recent, True)
+                docs = attempt(report, "reading Flatpak documents", flatpak_documents)
+                users = attempt(report, "finding programs", vault_users, recall_apps(), docs or {}) or {}
+                attempt(report, "closing programs", close_all, users)
                 closed = sorted(set(users.values()))
-                if not unmount():
+                if not attempt(report, "unmounting", unmount):
                     raise RuntimeError("it is still mounted")
-            harden()
-            strip_recent()
-            sweep_thumbnails()
-            scrub_text_editor()
-            unexport_documents(flatpak_documents() if docs is None else docs)
-            resume_history()
-            APPS.unlink(missing_ok=True)
-            return closed
+            attempt(report, "mount point", harden)
+            sweep(report, vault_open=False, docs=docs)
+            attempt(report, "thumbnail switch", resume_history)
+            for state in (APPS, OPENED):
+                state.unlink(missing_ok=True)
+            return closed, report
     except BlockingIOError:
         return None
+
+
+# The check
+
+def ensure_setup():
+    """~/Vault links to the mount point and ~/.hidden lists it. make home sets
+    both; this puts them back if something undid them."""
+    fixed = 0
+    if LINK.is_symlink():
+        if os.readlink(LINK) != str(MOUNT):
+            LINK.unlink()
+            LINK.symlink_to(MOUNT)
+            fixed += 1
+    elif LINK.exists():
+        raise FileExistsError("~/Vault is not the vault's link")
+    else:
+        LINK.symlink_to(MOUNT)
+        fixed += 1
+    hidden = LINK.parent / ".hidden"
+    names = read_text(hidden).splitlines() if hidden.exists() else []
+    if LINK.name not in names:
+        text = read_text(hidden) if hidden.exists() else ""
+        write_atomic(hidden, text + ("" if not text or text.endswith("\n") else "\n") + LINK.name + "\n")
+        fixed += 1
+    # Not over a mount: a dead one cannot even be looked at, and lock() is
+    # what clears that.
+    if not mounted():
+        MOUNT.mkdir(parents=True, exist_ok=True)
+    return fixed
+
+
+def guard_running():
+    # Only stopped or failed is dead. One starting or stopping is in hand
+    # already, and restarting it then would only start it over; the next
+    # check sees how it ended up.
+    state = subprocess.run(["systemctl", "--user", "is-active", GUARD], capture_output=True, text=True).stdout.strip()
+    return state not in ("inactive", "failed", "")
+
+
+def ensure_guard():
+    if guard_running():
+        return 0
+    if subprocess.run(["systemctl", "--user", "cat", GUARD], capture_output=True).returncode != 0:
+        raise FileNotFoundError("there is no vault-guard unit to start")
+    subprocess.run(["systemctl", "--user", "restart", GUARD], capture_output=True)
+    if wait_for(guard_running, 5):
+        return 1
+    raise ChildProcessError("vault-guard will not start")
+
+
+def ensure_paused():
+    """Thumbnails stay off for as long as the vault is open, whoever flipped
+    them back."""
+    if not SAVED.exists():
+        pause_history()
+        return 1
+    fixed = 0
+    for key, value in PAUSED.items():
+        if dconf("read", key) != value:
+            dconf("write", key, value)
+            fixed += 1
+    return fixed
+
+
+def session_call(name, path, interface, method, args=None):
+    """One GNOME session call, or None when there is no answer (no desktop)."""
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+        # NO_AUTO_START: ask whoever is there, never start a service just to ask.
+        return bus.call_sync(name, path, interface, method, args, None,
+                             Gio.DBusCallFlags.NO_AUTO_START, 2000, None).unpack()[0]
+    except GLib.Error:
+        return None
+
+
+def missed_lock():
+    """Why the vault should already be locked, if it should: the guard may
+    have missed the signal, or not be running at all."""
+    if session_call("org.gnome.ScreenSaver", "/org/gnome/ScreenSaver", "org.gnome.ScreenSaver", "GetActive"):
+        return "the screen is locked"
+    idle = session_call("org.gnome.Mutter.IdleMonitor", "/org/gnome/Mutter/IdleMonitor/Core",
+                        "org.gnome.Mutter.IdleMonitor", "GetIdletime")
+    # 8 is GNOME's idle inhibit: a video playing, which also keeps the screen on.
+    inhibited = session_call("org.gnome.SessionManager", "/org/gnome/SessionManager",
+                             "org.gnome.SessionManager", "IsInhibited", GLib.Variant("(u)", (8,)))
+    if idle is not None and idle >= IDLE_SECONDS * 1000 and not inhibited:
+        return f"you were idle for {IDLE_SECONDS // 60} minutes"
+    try:
+        opened = json.loads(OPENED.read_text())["sleep"]
+    except (OSError, ValueError, KeyError):
+        opened = None
+    if opened is not None and sleep_offset() - opened > 5:
+        return "the laptop slept while it was open"
+    return None
+
+
+def check(quiet):
+    """Test every part and repair what can be repaired. Run by vault-check.timer
+    every two minutes, separately from the guard, so a guard that died or
+    missed a signal is covered: this locks the vault itself when the screen
+    is locked, you have been idle long enough, or the laptop slept while it
+    was open."""
+    report, reason, closed = [], None, []
+    attempt(report, "~/Vault link and ~/.hidden", ensure_setup)
+    attempt(report, "vault-guard", ensure_guard)
+    if is_open():
+        reason = attempt(report, "missed locks", missed_lock)
+    if reason or not is_open():
+        try:
+            result = lock(wait=False)
+        except RuntimeError as error:
+            report.append(("locking", "failed", str(error)))
+            result = ([], [])
+        if result is None:
+            return 0  # another vault command is busy; the next run picks this up
+        closed, more = result
+        report += more
+    else:
+        try:
+            with held(wait=False):
+                attempt(report, "thumbnail switch", ensure_paused)
+                attempt(report, "hiding files", hide_everything)
+                sweep(report, vault_open=True)
+        except BlockingIOError:
+            return 0
+    failed = problems(report)
+    cleaned = [(label, n) for label, status, n in report if status == "ok" and counted(n)]
+    if quiet:
+        if reason:
+            log(f"locked because {reason}, which the guard missed; closed {len(closed)} program(s)")
+            notify("Vault locked", f"Locked because {reason}." + (f" Closed: {', '.join(closed)}." if closed else ""))
+        if cleaned:
+            log("cleared: " + ", ".join(f"{label} ({n})" for label, n in cleaned))
+        if failed:
+            log("still failing: " + ", ".join(failed))
+            notify_once("failed:" + ",".join(failed), "The vault check found a problem",
+                        "Run `vault check` in a terminal to see it: " + ", ".join(failed) + ".")
+    else:
+        print("The vault is open." if is_open() else "The vault is locked.")
+        if reason:
+            print(f"It locked now because {reason}, which the guard missed.")
+        for label, status, detail in report:
+            if status == "failed":
+                print(f"  FAILED   {label} ({detail})")
+            elif status == "later":
+                print(f"  later    {label}: {detail}, so it is checked again once it closes")
+            elif counted(detail):
+                print(f"  fixed    {label} ({detail})")
+            else:
+                print(f"  ok       {label}")
+    return 1 if failed else 0
 
 
 def create_vault():
@@ -615,8 +1129,11 @@ def open_vault(show):
                 harden()
                 resume_history()
                 die("the vault is still locked")
+            # So `vault check` can tell later that the laptop slept while it
+            # was open, even if the guard was not running to see it.
+            write_atomic(OPENED, json.dumps({"sleep": sleep_offset()}))
             hide_everything()
-    subprocess.run(["systemctl", "--user", "kill", "--signal=SIGUSR1", "vault-guard.service"], capture_output=True)
+    subprocess.run(["systemctl", "--user", "kill", "--signal=SIGUSR1", GUARD], capture_output=True)
     if not guard_running():
         log("vault-guard is not running, so nothing will lock the vault for you. Run `vault close` when done")
     if show and (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
@@ -624,10 +1141,6 @@ def open_vault(show):
             Gio.AppInfo.launch_default_for_uri(LINK.as_uri(), None)
         except GLib.Error:
             subprocess.run(["xdg-open", str(LINK)], capture_output=True)
-
-
-def guard_running():
-    return subprocess.run(["systemctl", "--user", "is-active", "--quiet", "vault-guard.service"]).returncode == 0
 
 
 def close_command(session_ending):
@@ -640,13 +1153,15 @@ def close_command(session_ending):
             return
     was_open = mounted()
     try:
-        closed = lock()
+        closed, report = lock()
     except RuntimeError as error:
         die(f"could not lock the vault: {error}")
     if not was_open:
         print("The vault is already locked.")
     else:
         print("Locked." + (f" Closed: {', '.join(closed)}." if closed else ""))
+    if problems(report):
+        print("Some clean-up failed: " + ", ".join(problems(report)) + ". `vault check` retries it.")
     if in_vault(os.environ.get("PWD", "")):
         print("This shell was inside the vault. Run `cd` to leave it.")
 
@@ -690,8 +1205,12 @@ class Guard:
         self.strip_id = None
 
     def run(self):
+        # Clear what a crash or a reboot left. Never wait for the lock here: a
+        # `vault open` at its password prompt holds it, and the timer's check
+        # picks up anything skipped.
         if not mounted():
-            lock()
+            with contextlib.suppress(Exception):
+                lock(wait=False)
         self.session.signal_subscribe(None, "org.gnome.ScreenSaver", "ActiveChanged", "/org/gnome/ScreenSaver",
                                       None, Gio.DBusSignalFlags.NONE, self.on_screensaver)
         self.session.signal_subscribe(None, "org.gnome.Mutter.IdleMonitor", "WatchFired",
@@ -704,8 +1223,27 @@ class Guard:
         # Polled, and poked with SIGUSR1 by `vault open` so it does not wait.
         GLib.timeout_add_seconds(2, self.refresh)
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, self.refresh)
+        # A second pass over what the event handlers keep up to date, in case
+        # one of their events was lost.
+        GLib.timeout_add_seconds(30, self.tick)
+        GLib.timeout_add_seconds(20, self.heartbeat)
         self.refresh()
+        sd_notify("READY=1")
         GLib.MainLoop().run()
+
+    @quietly(keep=True)
+    def heartbeat(self):
+        # From the main loop itself, so a guard stuck anywhere stops sending
+        # it and systemd restarts it (WatchdogSec in modules/vault.nix).
+        sd_notify("WATCHDOG=1")
+        return GLib.SOURCE_CONTINUE
+
+    @quietly(keep=True)
+    def tick(self):
+        if self.armed:
+            strip_recent(True)
+            hide_everything()
+        return GLib.SOURCE_CONTINUE
 
     def add_idle_watch(self):
         # Idle as GNOME counts it: no keyboard or mouse. A video playing holds
@@ -719,6 +1257,7 @@ class Guard:
         except GLib.Error as error:
             log(f"no idle watch, so the idle lock is off: {error.message}")
 
+    @quietly(keep=True)
     def refresh(self, *_):
         now = mounted()
         if now and not self.armed:
@@ -739,6 +1278,8 @@ class Guard:
             self.recent.append(monitor)
         self.strip_now()
         self.watch_tree(str(MOUNT))
+        if not OPENED.exists():
+            write_atomic(OPENED, json.dumps({"sleep": sleep_offset()}))
         log("the vault is open; guarding it")
 
     def disarm(self):
@@ -787,6 +1328,7 @@ class Guard:
         for directory in [d for d in self.dirs if in_tree(d, path)]:
             self.dirs.pop(directory).cancel()
 
+    @quietly()
     def on_dir_changed(self, _monitor, file, other, event, directory):
         if event not in self.MOVES:
             return
@@ -812,6 +1354,7 @@ class Guard:
         if self.flush_id is None:
             self.flush_id = GLib.timeout_add(100, self.flush)
 
+    @quietly()
     def flush(self):
         self.flush_id = None
         for directory in sorted(self.pending):
@@ -819,26 +1362,35 @@ class Guard:
         self.pending.clear()
         return GLib.SOURCE_REMOVE
 
+    @quietly()
     def on_recent_changed(self, *_):
         if self.strip_id is None:
             self.strip_id = GLib.timeout_add(50, self.strip_now)
 
+    @quietly()
     def strip_now(self):
         self.strip_id = None
-        remember_apps(strip_recent())
+        strip_recent(True)
         return GLib.SOURCE_REMOVE
 
+    @quietly()
     def on_screensaver(self, _conn, _sender, _path, _iface, _signal, params):
         if params.unpack()[0]:
             self.lock_now("the screen locked")
 
+    @quietly()
     def on_idle(self, _conn, _sender, _path, _iface, _signal, params):
         if params.unpack()[0] == self.idle_id:
             self.lock_now(f"you were idle for {IDLE_SECONDS // 60} minutes")
 
+    @quietly()
     def on_sleep(self, _conn, _sender, _path, _iface, _signal, params):
         if params.unpack()[0]:
             self.lock_now("the laptop went to sleep")
+        elif mounted():
+            # Awake again and still open: the lock before sleep did not
+            # happen or did not finish. Do it now.
+            self.lock_now("the laptop slept while it was open")
 
     def lock_now(self, why):
         if not self.armed and not mounted():
@@ -847,23 +1399,35 @@ class Guard:
             # Never wait here: a `vault open` sitting at its password prompt
             # holds the lock, and queueing behind it would shut the vault the
             # moment it opened.
-            closed = lock(wait=False)
-        except RuntimeError as error:
-            notify("The vault could not lock", str(error))
-            log(f"could not lock the vault: {error}")
+            result = lock(wait=False)
+        except Exception as error:
+            reason = str(error) if isinstance(error, RuntimeError) else failure(error)
+            notify("The vault could not lock", f"{reason}. `vault check` tries again within two minutes.")
+            log(f"could not lock the vault: {reason}")
             return
         finally:
             self.refresh()
-        if closed is not None:
-            log(f"locked because {why}; closed {len(closed)} program(s)")
+        if result is not None:
+            closed, report = result
+            log(f"locked because {why}; closed {len(closed)} program(s)"
+                + (f"; failed: {', '.join(problems(report))}" if problems(report) else ""))
             notify("Vault locked", f"Locked because {why}." + (f" Closed: {', '.join(closed)}." if closed else ""))
 
 
-def in_tree(path, top):
-    return path == top or path.startswith(top + "/")
+def no_core_dumps():
+    """A crash dump is a copy of memory on disk, and memory here can hold a
+    vault file name, or in gocryptfs the key. Non-dumpable stops the kernel
+    writing one for this process whatever catches crashes; the zero core
+    limit carries over to gocryptfs, which `vault open` starts. Non-dumpable
+    also keeps other programs running as you out of this one's memory."""
+    with contextlib.suppress(Exception):
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    with contextlib.suppress(Exception):
+        ctypes.CDLL(None, use_errno=True).prctl(4, 0, 0, 0, 0)  # PR_SET_DUMPABLE, 0
 
 
 def main(argv):
+    no_core_dumps()
     # Out of the vault, so this command never holds it open itself.
     os.chdir("/")
     command = argv[1] if len(argv) > 1 else "help"
@@ -873,6 +1437,8 @@ def main(argv):
         close_command(session_ending="--session-ending" in argv)
     elif command == "status":
         status()
+    elif command == "check":
+        return check(quiet="--quiet" in argv)
     elif command == "guard":
         Guard().run()
     else:
@@ -882,4 +1448,8 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    try:
+        sys.exit(main(sys.argv))
+    except Exception as error:  # noqa: BLE001  printed by type, never by message
+        log(f"failed: {failure(error)}")
+        sys.exit(1)

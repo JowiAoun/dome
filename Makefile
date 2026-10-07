@@ -60,6 +60,7 @@ doctor:
 # writes root-owned files) report as skipped rather than failing.
 test:
 	bash tests/test-lib.sh
+	bash tests/test-vault.sh
 
 # Read-only: which apps are installed from where, and which .desktop ids clash.
 audit-apps:

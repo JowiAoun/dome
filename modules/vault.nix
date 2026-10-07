@@ -27,6 +27,16 @@
 #   - the laptop is about to sleep. While the vault is open the guard holds a
 #     logind delay lock, so the key is out of memory before the suspend.
 #   - you log out.
+# vault-check, on a timer of its own, backs all of that up every two minutes:
+# if the guard died or missed a signal, the check restarts it and locks the
+# vault itself. It also re-checks after waking from sleep, using
+# CLOCK_BOOTTIME against CLOCK_MONOTONIC (the gap between them is exactly the
+# time spent asleep), so a sleep is noticed even with no guard running.
+#
+# Every part of a lock runs on its own. If finding or closing programs fails,
+# or one clean-up step does, the vault still locks and the rest still runs;
+# the check retries what failed. Errors are logged by type and line only,
+# because an error message can carry a file name.
 #
 # Locking closes every program using a vault file first: anything with one
 # open, mapped or on its command line, any shell sitting inside the vault,
@@ -51,14 +61,27 @@
 #   - file metadata such as Evince's last page: GNOME refuses to store any for
 #     a mount under /run/user (measured).
 #   - search: nothing under /run/user is indexed.
-# Not preventable, so removed instead:
-#   - Recent files, GNOME's list and Text Editor's own: vault entries are
-#     taken out the moment they are written. GNOME's file history switch is no
-#     use here. Turning it off makes every running GTK app empty the whole
-#     list, which on this machine was 1,002 entries gone in under four seconds.
-#   - Text Editor's drafts and session entries for vault files: at lock.
-#   - Flatpak document portal entries (VLC opens files through it): at lock.
-# Not covered: history an app keeps by itself, such as VLC's recent media.
+#   - vim: a session that opens a vault file writes no ~/.viminfo.
+#   - VS Code's local history skips vault files.
+# Switched off for every file, because these apps have no way to leave one
+# folder out (vault-check keeps them off):
+#   - VLC: recent media and "continue where you left off", list emptied.
+#   - LibreOffice: recent documents and their thumbnails, list emptied.
+# Not preventable, so removed instead, at every lock and every check:
+#   - Recent files, GNOME's list and Text Editor's own. The guard also removes
+#     these the moment an entry is written. GNOME's file history
+#     switch is no use here. Turning it off makes every running GTK app empty
+#     the whole list, which on this machine was 1,002 entries gone in under
+#     four seconds.
+#   - the last folder a file chooser or Text Editor used, if it is in the vault.
+#   - Text Editor's drafts and session entries for vault files.
+#   - LibreOffice's crash-recovery copies of vault files.
+#   - Audacity's recent files, open projects, session and logs (they name
+#     every file it opens), and Xournal++'s last folders and per-document notes.
+#   - Flatpak document portal entries (VLC opens files through it), at lock.
+# An app's settings are only edited while it is closed, because it writes its
+# own copy back when it exits; the check gets to it after it closes.
+# Not covered: the browsers' history, and VS Code's Open Recent list.
 #
 # THE PASSWORD is the one thing this cannot hold. The first `vault open`
 # creates the vault, and gocryptfs prints a master key once. Keep it in a
@@ -116,17 +139,78 @@ in
         Description = "Lock the vault when idle, on screen lock, before sleep and at logout";
         PartOf = [ "graphical-session.target" ];
         After = [ "graphical-session.target" ];
+        # Never stop retrying. The default gives up after five quick failures.
+        StartLimitIntervalSec = 0;
       };
       Service = {
+        # notify plus a watchdog: the guard says when it is listening, then
+        # checks in every 20 seconds from its main loop. A guard that hangs
+        # stops checking in and is restarted, the same as one that crashes.
+        Type = "notify";
+        NotifyAccess = "main";
+        WatchdogSec = 60;
         ExecStart = "${vault}/bin/vault guard";
         # Locks at logout. A plain restart runs this too, such as the one
         # `make home` does when this unit changes, and it does nothing then:
         # it only locks while graphical-session.target is going down.
         ExecStop = "${vault}/bin/vault close --session-ending";
-        Restart = "on-failure";
+        Restart = "always";
         RestartSec = 2;
+        # The watchdog kills with SIGABRT, which asks for a crash dump, and a
+        # dump of this process can hold vault file names. vault.py also marks
+        # itself non-dumpable; this is the same rule said twice.
+        LimitCORE = 0;
       };
       Install.WantedBy = [ "graphical-session.target" ];
+    };
+
+    # The backup for everything above, on a timer of its own so it does not
+    # share the guard's fate. Every two minutes, and a minute after startup:
+    # restarts a dead guard; locks the vault itself if the screen is locked,
+    # you have been idle long enough, or the laptop slept while it was open;
+    # puts a flipped thumbnail switch back; and clears any vault entry left in
+    # a recent list, a thumbnail or an app's own history. A clean run writes
+    # nothing and logs nothing. `vault check` runs the same thing in a
+    # terminal and prints each part.
+    systemd.user.services.vault-check = {
+      Unit.Description = "Check the vault and clear anything it left behind";
+      Service = {
+        Type = "oneshot";
+        ExecStart = "${vault}/bin/vault check --quiet";
+        LimitCORE = 0;
+      };
+    };
+    systemd.user.timers.vault-check = {
+      Unit.Description = "Check the vault every two minutes";
+      Timer = {
+        OnStartupSec = "1min";
+        OnUnitActiveSec = "2min";
+        AccuracySec = "15s";
+      };
+      Install.WantedBy = [ "timers.target" ];
+    };
+
+    # vim writes one ~/.viminfo for everything it did, so once a vault file is
+    # open, that session writes none. Its swap and backup files already go
+    # next to the file, inside the vault; noundofile keeps an undo file from
+    # going anywhere else.
+    home.file.".vimrc".text = lib.mkAfter ''
+
+      " modules/vault.nix: a vault file leaves no viminfo and no undo file behind.
+      augroup vault_no_history
+        autocmd!
+        autocmd BufReadPre,BufNewFile ~/Vault/*,/run/user/*/vault/* set viminfo= | setlocal noundofile
+      augroup END
+    '';
+
+    # VS Code keeps a copy of every version of a file you save in it, under
+    # ~/.config/Code/User/History. This keeps vault files out of that. Its
+    # Open Recent list has no such setting.
+    programs.vscode.profiles.default.userSettings = lib.mkIf config.programs.vscode.enable {
+      "workbench.localHistory.exclude" = {
+        "${config.home.homeDirectory}/Vault/**" = true;
+        "/run/user/*/vault/**" = true;
+      };
     };
 
     programs.zsh.initContent = lib.mkIf config.programs.zsh.enable ''
