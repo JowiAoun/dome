@@ -19,16 +19,20 @@ import contextlib
 import ctypes
 import fcntl
 import functools
+import getpass
 import json
 import os
 import re
 import resource
 import shlex
+import shutil
 import signal
 import socket
+import sqlite3
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 import traceback
 import xml.etree.ElementTree as ET
@@ -41,9 +45,11 @@ from gi.repository import Gio, GLib  # noqa: E402
 
 USAGE = """\
 usage: vault open [--no-window]   unlock it (creating it the first time) and show it in Files
+       vault add <file>...        move files and folders in, leaving nothing behind outside
        vault close                close everything using it, then lock it
        vault status               say whether it is open and what is using it
-       vault check                test every part, repair what it can, clear leftovers"""
+       vault check                test every part, repair what it can, clear leftovers
+       vault key                  show the master key again (asks the password)"""
 
 HOME = Path.home()
 UID = os.getuid()
@@ -103,6 +109,11 @@ AUDACITY = DATA / "Audacity/Audacity4"
 AUDACITY_INI = CONFIG / "Audacity/Audacity4.ini"
 XOURNALPP = CONFIG / "xournalpp/settings.xml"
 XOURNALPP_NOTES = (CACHE / "xournalpp/metadata", DATA / "xournalpp/metadata")
+BRAVE = CONFIG / "BraveSoftware/Brave-Browser"
+# Brave's databases that keep a URL or a path as text: history and downloads,
+# what the address bar learned from typing, and the most visited pages.
+BRAVE_DATABASES = ("History", "Shortcuts", "Network Action Predictor", "Top Sites")
+VSCODE = CONFIG / "Code"
 # The file chooser's last folder, GTK 3 and 4 (the portal's chooser included),
 # and Text Editor's last save folder.
 FOLDER_KEYS = (
@@ -396,6 +407,12 @@ PARTS = {
                          "While the vault is open, previews of its files may be saved."),
     "hiding files": ("vault files could not be hidden",
                      "Files in the vault may show in Files without Ctrl+H."),
+    "clipboard": ("the clipboard could not be cleared",
+                  "Text copied from a vault file may still paste after the lock."),
+    "Brave": ("Brave's history could not be cleaned",
+              "Brave may keep vault file names in its history, downloads or address bar."),
+    "VS Code": ("VS Code's history could not be cleaned",
+                "VS Code may keep vault file names in Open Recent, or backups of vault files."),
 }
 
 
@@ -438,6 +455,19 @@ def uri_path(uri):
 
 def uri_in_vault(uri):
     return in_vault(uri_path(uri) or "")
+
+
+def departed(uri):
+    """A local file under your home or the temp folder that is not there any
+    more. That is what a file moved into the vault leaves: a Recent entry and
+    a preview, both under its old name, pointing at nothing. A file you
+    deleted, or one on a drive that is not mounted, looks the same, and
+    losing its dead entry costs nothing."""
+    path = uri_path(uri)
+    if not path or in_vault(path):
+        return False
+    homes = (str(HOME), tempfile.gettempdir())
+    return any(in_tree(path, top) for top in homes) and not os.path.lexists(path)
 
 
 def mentions_vault(text):
@@ -699,8 +729,11 @@ def strip_recent(remember=False):
             bookmarks.load_from_file(str(path))
         except GLib.Error:
             continue
-        hits = [uri for uri in bookmarks.get_uris() if uri_in_vault(uri)]
+        hits = [uri for uri in bookmarks.get_uris() if uri_in_vault(uri) or departed(uri)]
         for uri in hits:
+            if not uri_in_vault(uri):
+                bookmarks.remove_item(uri)
+                continue
             if owner:
                 apps[owner] = "Text Editor"
             with contextlib.suppress(GLib.Error):
@@ -758,12 +791,13 @@ def thumbnail_uri(path):
 
 
 def sweep_thumbnails():
-    """A backstop. Thumbnails are off while the vault is open, so this should
-    find nothing, unless an app ignores GNOME's switch."""
+    """Previews of vault files, which should never exist because thumbnails
+    are off while the vault is open, and previews of files that are gone,
+    which is what moving a picture into the vault leaves at its old name."""
     removed = 0
     for png in THUMBNAILS.rglob("*.png"):
         uri = thumbnail_uri(png)
-        if uri and uri_in_vault(uri):
+        if uri and (uri_in_vault(uri) or departed(uri)):
             png.unlink(missing_ok=True)
             removed += 1
     return removed
@@ -863,16 +897,16 @@ def drop_lines(path):
     return len(lines) - len(kept)
 
 
-def scrub_json(path):
-    """Remove every value in a JSON file that names the vault, at any depth."""
-    if not path.exists():
-        return 0
+def clean_json(data):
+    """Data without anything that names the vault, and how much was taken.
+    A list loses whole entries, so a recent list keeps no entry with its path
+    cut out; an object loses the keys that name it."""
     removed = 0
 
     def clean(value):
         nonlocal removed
         if isinstance(value, list):
-            kept = [v for v in value if not (isinstance(v, str) and mentions_vault(v))]
+            kept = [v for v in value if not mentions_vault(json.dumps(v))]
             removed += len(value) - len(kept)
             return [clean(v) for v in kept]
         if isinstance(value, dict):
@@ -882,10 +916,47 @@ def scrub_json(path):
             return {k: clean(v) for k, v in kept.items()}
         return value
 
-    data = clean(json.loads(read_text(path)))
+    return clean(data), removed
+
+
+def scrub_json(path):
+    """Remove every value in a JSON file that names the vault, at any depth."""
+    if not path.exists():
+        return 0
+    data, removed = clean_json(json.loads(read_text(path)))
     if removed:
         write_atomic(path, json.dumps(data, indent=2))
     return removed
+
+
+def scrub_item_table(path):
+    """VS Code's state database: one key per setting, and a value that is
+    usually JSON. A value that names the vault is cleaned like a JSON file,
+    so Open Recent loses only its vault entries; one that is not JSON goes."""
+    if not path.exists():
+        return 0
+    changed = 0
+    con = sqlite3.connect(f"file:{path}?mode=rw", uri=True, timeout=10)
+    try:
+        for key, value in con.execute("SELECT key, value FROM ItemTable").fetchall():
+            text = value.decode(errors="replace") if isinstance(value, bytes) else str(value)
+            if not mentions_vault(text) and not mentions_vault(str(key)):
+                continue
+            try:
+                data, _ = clean_json(json.loads(text))
+            except ValueError:
+                con.execute("DELETE FROM ItemTable WHERE key = ?", (key,))
+            else:
+                new = json.dumps(data)
+                con.execute("UPDATE ItemTable SET value = ? WHERE key = ?",
+                            (new.encode() if isinstance(value, bytes) else new, key))
+            changed += 1
+        con.commit()
+        if changed:
+            con.execute("VACUUM")
+    finally:
+        con.close()
+    return changed
 
 
 def delete_mentioning(directory):
@@ -946,15 +1017,24 @@ def scrub_libreoffice():
     writes one setting per line, and an XML library rewriting the file drops
     the xs namespace that its oor:type="xs:string" values depend on."""
     xcu = LIBREOFFICE / "registrymodifications.xcu"
-    if not xcu.exists():
+    # Its temp folders hold copies of open documents. It removes them when it
+    # quits, but not when the lock closes it, and they are useless once it
+    # is gone.
+    scratch = [d for d in Path(tempfile.gettempdir()).glob("lu*.tmp")
+               if d.is_dir() and not d.is_symlink() and d.stat().st_uid == UID]
+    if not xcu.exists() and not scratch:
         return 0
     unless_running("LibreOffice", "soffice.bin")
+    for folder in scratch:
+        shutil.rmtree(folder, ignore_errors=True)
+    if not xcu.exists():
+        return len(scratch)
     # A file that is not a whole LibreOffice registry is left alone, and the
     # error says so.
     if ET.parse(xcu).getroot().tag != f"{{{OOR}}}items":
         raise ValueError("not a LibreOffice registry")
     lines = read_text(xcu).splitlines(keepends=True)
-    kept, changed, size_set = [], 0, False
+    kept, changed, size_set = [], len(scratch), False
     for line in lines:
         item = libreoffice_item(line)
         if item is None:
@@ -985,7 +1065,7 @@ def scrub_libreoffice():
         end = next((i for i in range(len(kept) - 1, -1, -1) if "</oor:items>" in kept[i]), len(kept))
         kept.insert(end, setting)
         changed += 1
-    if changed:
+    if changed > len(scratch):
         write_atomic(xcu, "".join(kept))
     return changed
 
@@ -999,6 +1079,93 @@ def libreoffice_item(line):
     except ET.ParseError:
         return None
     return wrapper[0] if len(wrapper) else None
+
+
+def clear_clipboard():
+    """GNOME keeps what was copied even after the app that copied it closes,
+    so text copied out of a vault file would still paste after the lock.
+    Both selections: Ctrl+C's and the one a middle click pastes. Through
+    xclip, because the Wayland tools flash a window to do it."""
+    if not os.environ.get("DISPLAY"):
+        return 0
+    for selection in ("clipboard", "primary"):
+        # xclip stays behind to serve the empty selection, so no pipes for it to hold.
+        subprocess.run(["xclip", "-selection", selection, "-i", "/dev/null"],
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+    return 2
+
+
+def scrub_database(path):
+    """Delete every row of an SQLite database whose text names the vault, in
+    any table, then VACUUM: SQLite leaves deleted rows readable in the file
+    until it is rewritten."""
+    if not path.exists():
+        return 0
+    gone = 0
+    con = sqlite3.connect(f"file:{path}?mode=rw", uri=True, timeout=10)
+    try:
+        tables = [row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+        for table in tables:
+            quoted = '"' + table.replace('"', '""') + '"'
+            columns = [row[1] for row in con.execute(f"PRAGMA table_info({quoted})")]
+            for column in columns:
+                col = '"' + column.replace('"', '""') + '"'
+                for root in ROOTS:
+                    literal = root.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                    for pattern in (f"%{literal}/%", f"%{literal}"):
+                        gone += con.execute(f"DELETE FROM {quoted} WHERE CAST({col} AS TEXT) LIKE ? ESCAPE '\\'",
+                                            (pattern,)).rowcount
+        con.commit()
+        if gone:
+            con.execute("VACUUM")
+    finally:
+        con.close()
+    return gone
+
+
+def scrub_brave():
+    """Brave's history, downloads, address-bar suggestions and last folders,
+    for any vault file opened or saved in it, in every profile. Only while it
+    is closed: it keeps these files open and would write them back."""
+    profiles = [p for p in BRAVE.iterdir() if (p / "Preferences").exists()] if BRAVE.is_dir() else []
+    if not profiles:
+        return 0
+    unless_running("Brave", "brave")
+    changed = 0
+    for profile in profiles:
+        for name in BRAVE_DATABASES:
+            changed += scrub_database(profile / name)
+        changed += scrub_json(profile / "Preferences")
+    return changed
+
+
+def scrub_vscode():
+    """VS Code's Open Recent list and window state, the saved state of any
+    workspace in the vault, unsaved changes it backed up from vault files, and
+    old file versions from before localHistory.exclude. Only while it is
+    closed, for the same reason as Brave."""
+    if not VSCODE.is_dir():
+        return 0
+    unless_running("VS Code", "code")
+    changed = scrub_item_table(VSCODE / "User/globalStorage/state.vscdb")
+    changed += scrub_json(VSCODE / "User/globalStorage/storage.json")
+    changed += scrub_json(VSCODE / "Backups/workspaces.json")
+    for marker in ("User/workspaceStorage/*/workspace.json", "User/History/*/entries.json"):
+        for found in VSCODE.glob(marker):
+            if mentions_vault(read_text(found)):
+                shutil.rmtree(found.parent, ignore_errors=True)
+                changed += 1
+    backups = VSCODE / "Backups"
+    if backups.is_dir():
+        for file in backups.rglob("*"):
+            # A backup starts with the path of the file it was taken from.
+            if file.is_file() and file.name != "workspaces.json":
+                with open(file, "rb") as f:
+                    head = f.readline(4096).decode(errors="replace")
+                if mentions_vault(head):
+                    file.unlink(missing_ok=True)
+                    changed += 1
+    return changed
 
 
 def scrub_audacity():
@@ -1039,6 +1206,8 @@ def sweep(report, vault_open, docs=None):
     attempt(report, "LibreOffice", scrub_libreoffice)
     attempt(report, "Audacity", scrub_audacity)
     attempt(report, "Xournal++", scrub_xournalpp)
+    attempt(report, "Brave", scrub_brave)
+    attempt(report, "VS Code", scrub_vscode)
     # Not while open: a Flatpak app may be reading one of them right now.
     if not vault_open:
         attempt(report, "Flatpak documents", unexport_documents, docs)
@@ -1073,6 +1242,11 @@ def hide_in(directory, names=None):
 def hide_everything():
     for directory, dirs, files in os.walk(MOUNT):
         hide_in(directory, dirs + files)
+    # GNOME's search indexer skips any folder holding this file. It does not
+    # index /run/user anyway; this holds even if it is pointed here later.
+    marker = MOUNT / ".trackerignore"
+    if mounted() and not marker.exists():
+        marker.touch()
 
 
 # Open and lock
@@ -1096,7 +1270,7 @@ def lock(wait=True):
     Every part runs on its own. Only the unmount may not fail quietly: if
     finding or closing programs breaks, the vault still locks."""
     try:
-        with held(wait):
+        with held(wait), shielded():
             report, closed, docs = [], [], None
             if mounted() or gocryptfs_pids():
                 attempt(report, "reading Recent files", strip_recent, True)
@@ -1106,6 +1280,7 @@ def lock(wait=True):
                 closed = sorted(set(users.values()))
                 if not attempt(report, "unmounting", unmount):
                     raise RuntimeError("it is still mounted")
+                attempt(report, "clipboard", clear_clipboard)
             attempt(report, "mount point", harden)
             sweep(report, vault_open=False, docs=docs)
             attempt(report, "thumbnail switch", resume_history)
@@ -1285,6 +1460,19 @@ def load_json(path):
         return {}
 
 
+def journal_mentions(since):
+    """How many log lines since then name a file inside the vault. Only
+    counted: the lines are never printed, logged or kept."""
+    pattern = "(?:%s)/[^\\s]" % "|".join(re.escape(r) for r in ROOTS)
+    try:
+        out = subprocess.run(["journalctl", "--no-pager", "-q", "-o", "cat", f"--since=@{int(since)}",
+                              "--case-sensitive=yes", "-g", pattern],
+                             capture_output=True, text=True, timeout=60).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return 0
+    return sum(1 for line in out.splitlines() if line.strip())
+
+
 def guard_restarts():
     out = subprocess.run(["systemctl", "--user", "show", GUARD, "-p", "NRestarts", "--value"],
                          capture_output=True, text=True).stdout.strip()
@@ -1350,6 +1538,15 @@ def review(report, restarted, reason, lock_error, previous):
         else:
             resolve("guard-hung")
 
+    since = previous.get("time") or time.time() - 86400
+    named = journal_mentions(since)
+    if named:
+        warn("journal", "Vault: vault file names reached the system log",
+             f"{named} log line{'s' if named > 1 else ''} since "
+             f"{time.strftime('%a %H:%M', time.localtime(since))} name files in the vault. An app printed "
+             "them; the vault cannot take single lines out of the log. To wipe the whole log: "
+             "`sudo journalctl --rotate && sudo journalctl --vacuum-time=1s`", incident=True)
+
     if reason:
         warn("missed-lock", "Vault: the guard missed a lock",
              f"The vault was still open although {reason}, so this check locked it.", incident=True)
@@ -1367,56 +1564,194 @@ def review(report, restarted, reason, lock_error, previous):
     write_atomic(CHECKED, json.dumps({"time": time.time(), "guard_restarts": restarts}))
 
 
+# Commands
+
+MIN_PASSWORD = 12
+
+# What gocryptfs's exit codes mean, for the ones a person can act on.
+GOCRYPTFS_ERRORS = {
+    6: "~/.vault could not be used",
+    8: "~/.vault/gocryptfs.conf could not be read; the master key can still open it",
+    9: "no password was given",
+    10: "the folder it opens into could not be used",
+    17: "~/.vault/gocryptfs.conf could not be opened",
+}
+
+
+class Cancelled(Exception):
+    """Stopped by you (Ctrl+C, Ctrl+D or a closed terminal) where stopping is
+    safe. The message, if any, says what was left as it was."""
+
+
+def ask(prompt):
+    """A password, read with the terminal's echo off and put back after,
+    however it ends. Ctrl+D cancels the same as Ctrl+C."""
+    try:
+        return getpass.getpass(prompt)
+    except EOFError:
+        print()
+        raise Cancelled() from None
+
+
+@contextlib.contextmanager
+def shielded():
+    """Hold off Ctrl+C, a closed terminal and SIGTERM until the block is done:
+    a lock stopped halfway would leave programs closed and the vault open.
+    Ignored rather than caught, because an ignored signal stays ignored in
+    the programs started meanwhile, so none of them is killed halfway either."""
+    signals = (signal.SIGINT, signal.SIGHUP, signal.SIGTERM)
+    before = {s: signal.getsignal(s) for s in signals}
+    for s in signals:
+        signal.signal(s, signal.SIG_IGN)
+    try:
+        yield
+    finally:
+        for s, handler in before.items():
+            signal.signal(s, handler if handler is not None else signal.SIG_DFL)
+
+
+def gocryptfs(args, password):
+    """Run gocryptfs with the password on its stdin: never on its command line,
+    where any program could read it, nor in its environment. Output goes to a
+    file, not a pipe, because the mount leaves a daemon behind that would hold
+    a pipe open. Returns the exit code and the last thing it printed."""
+    with tempfile.TemporaryFile() as out:
+        code = subprocess.run(args, input=password + "\n", text=True, stdout=out, stderr=out).returncode
+        out.seek(0)
+        lines = [line for line in out.read().decode(errors="replace").splitlines() if line.strip()]
+    return code, re.sub(r"\x1b\[[0-9;]*m", "", lines[-1]) if lines else ""
+
+
+def master_key(password):
+    """The vault's master key, written the way gocryptfs writes it, or None
+    for a wrong password."""
+    result = subprocess.run(["gocryptfs-xray", "-dumpmasterkey", str(CIPHER / "gocryptfs.conf")],
+                            input=password + "\n", text=True, capture_output=True)
+    found = re.findall(r"\b[0-9a-f]{64}\b", result.stdout)
+    if result.returncode != 0 or not found:
+        return None
+    groups = [found[-1][i:i + 8] for i in range(0, 64, 8)]
+    return "-".join(groups[:4]) + "-\n    " + "-".join(groups[4:])
+
+
+def show_master_key(key):
+    print("\nThis is your vault's master key. It opens the vault even if you forget the password:\n")
+    print(f"    {key}\n")
+    print("Save it in your password manager now. If you lose both, nothing in the vault can be recovered.")
+    try:
+        input("Press Enter once it is saved, and it is wiped from this screen. ")
+    except EOFError:
+        pass
+    finally:
+        # The screen and the scrollback both, so the key is not left above.
+        sys.stdout.write("\033[H\033[2J\033[3J")
+        sys.stdout.flush()
+
+
 def create_vault():
-    print("Creating your vault. Choose a password: you type it twice now, then once more to open it.")
-    CIPHER.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if any(CIPHER.iterdir()):
-        die(f"{CIPHER} has files in it but no gocryptfs.conf, so it is not a vault. Move them out first")
-    if subprocess.run(["gocryptfs", "-init", str(CIPHER)]).returncode != 0:
-        die("the vault was not created")
-    print("\nSave the master key above in your password manager. If you lose both it and your\n"
-          "password, nothing in the vault can be recovered.\n")
+    """Make a new, empty vault and return its password, so that opening it
+    right after does not ask a third time."""
+    if CIPHER.exists() and any(CIPHER.iterdir()):
+        die("~/.vault has files in it but is not a vault. Move them out first")
+    print("Creating your vault.")
+    print(f"Choose a password of at least {MIN_PASSWORD} characters. Four or five random words work well.")
+    while True:
+        password = ask("New vault password: ")
+        if len(password) < MIN_PASSWORD:
+            print(f"That is {len(password)} characters. Use at least {MIN_PASSWORD}.")
+            continue
+        if ask("Type it again: ") != password:
+            print("Those did not match. Try again.")
+            continue
+        break
+    try:
+        CIPHER.mkdir(mode=0o700, parents=True, exist_ok=True)
+        # -scryptn 18: four times gocryptfs's default work for each password
+        # guess, which costs about half a second at each unlock.
+        code, said = gocryptfs(["gocryptfs", "-init", "-q", "-scryptn", "18", "-passfile", "/dev/stdin",
+                                str(CIPHER)], password)
+        if code != 0:
+            die(f"the vault was not created: {said}")
+        key = master_key(password)
+        if key is None:
+            print("The master key could not be read. Run `vault key` to see it.")
+        else:
+            show_master_key(key)
+    except BaseException:
+        # A half-made vault is only in the way. A finished one stays, even if
+        # you stopped while its key was on screen: `vault key` shows it again.
+        if not (CIPHER / "gocryptfs.conf").exists():
+            shutil.rmtree(CIPHER, ignore_errors=True)
+        raise
+    return password
+
+
+def unlock():
+    if mounted():
+        # gocryptfs died and left its mount behind.
+        subprocess.run(["fusermount3", "-u", "-z", str(MOUNT)], capture_output=True)
+    password = None if (CIPHER / "gocryptfs.conf").exists() else create_vault()
+    try:
+        # Before the mount, so no vault file is ever visible with thumbnails on.
+        try:
+            pause_history()
+        except RuntimeError:
+            warn_part("thumbnail switch")
+            print("⚠ Thumbnails could not be switched off, so previews of vault files may be saved.")
+        MOUNT.mkdir(parents=True, exist_ok=True)
+        if any(MOUNT.iterdir()):
+            die(f"{MOUNT} should be empty while the vault is locked. Move what is in it out first")
+        # fusermount3 refuses a mount point it cannot write to.
+        os.chmod(MOUNT, 0o700)
+        for _ in range(3):
+            if password is None:
+                password = ask("Vault password: ")
+            if not password:
+                print("No password typed.")
+                password = None
+                continue
+            # A scope of its own, so closing this terminal leaves the vault open.
+            code, said = gocryptfs(["systemd-run", "--user", "--scope", "--quiet", "--collect",
+                                    "--description=Vault (gocryptfs)", "--", "gocryptfs", "-q",
+                                    "-passfile", "/dev/stdin", str(CIPHER), str(MOUNT)], password)
+            password = None
+            if code == 0 and mounted():
+                break
+            if code == 12:
+                print("Wrong password.")
+                continue
+            die(f"the vault did not open: {GOCRYPTFS_ERRORS.get(code, said or f'gocryptfs stopped with code {code}')}")
+        else:
+            die("wrong password three times. The vault is still locked")
+        # So `vault check` can tell later that the laptop slept while it
+        # was open, even if the guard was not running to see it.
+        write_atomic(OPENED, json.dumps({"sleep": sleep_offset()}))
+        hide_everything()
+    finally:
+        # However it ended short of open: cancelled, wrong password, an
+        # error. The locked folder goes back to read-only, thumbnails back on.
+        if not mounted():
+            with contextlib.suppress(Exception):
+                harden()
+            try:
+                resume_history()
+            except Exception:
+                warn_part("thumbnail switch")
 
 
 def open_vault(show):
     if not sys.stdin.isatty():
         die("vault open asks for your password, so run it in a terminal")
-    with held():
-        if mounted() and gocryptfs_pids():
-            print("The vault is already open at ~/Vault.")
-        else:
-            if mounted():
-                # gocryptfs died and left its mount behind.
-                subprocess.run(["fusermount3", "-u", "-z", str(MOUNT)], capture_output=True)
-            if not (CIPHER / "gocryptfs.conf").exists():
-                create_vault()
-            # Before the mount, so there is no moment when a vault file is
-            # visible and thumbnails are still on.
-            try:
-                pause_history()
-            except RuntimeError:
-                warn_part("thumbnail switch")
-                print("⚠ Thumbnails could not be switched off, so previews of vault files may be saved.")
-            MOUNT.mkdir(parents=True, exist_ok=True)
-            if any(MOUNT.iterdir()):
-                resume_history()
-                die(f"{MOUNT} should be empty while the vault is locked. Move what is in it out first")
-            # fusermount3 refuses a mount point it cannot write to.
-            os.chmod(MOUNT, 0o700)
-            # A scope of its own, so closing this terminal does not take the
-            # vault with it.
-            subprocess.run(["systemd-run", "--user", "--scope", "--quiet", "--collect",
-                            "--description=Vault (gocryptfs)", "--",
-                            "gocryptfs", str(CIPHER), str(MOUNT)])
-            if not mounted():
-                harden()
-                resume_history()
-                die("the vault is still locked")
-            # So `vault check` can tell later that the laptop slept while it
-            # was open, even if the guard was not running to see it.
-            write_atomic(OPENED, json.dumps({"sleep": sleep_offset()}))
-            hide_everything()
+    try:
+        with held(wait=False):
+            if is_open():
+                print("The vault is already open at ~/Vault.")
+            else:
+                unlock()
+    except BlockingIOError:
+        die("another vault command is running. Try again in a moment")
     subprocess.run(["systemctl", "--user", "kill", "--signal=SIGUSR1", GUARD], capture_output=True)
+    print("The vault is open at ~/Vault. Its files are hidden: press Ctrl+H in Files to see them.")
     if not guard_running():
         log("vault-guard is not running, so the vault does not lock the moment the screen does. "
             "The 2-minute check still locks it")
@@ -1429,6 +1764,21 @@ def open_vault(show):
             subprocess.run(["xdg-open", str(LINK)], capture_output=True)
 
 
+def key_command():
+    """Show the master key again, for when it was not saved the first time."""
+    if not sys.stdin.isatty():
+        die("vault key asks for your password, so run it in a terminal")
+    if not (CIPHER / "gocryptfs.conf").exists():
+        die("there is no vault yet. Run `vault open` to create one")
+    for _ in range(3):
+        key = master_key(ask("Vault password: "))
+        if key is not None:
+            show_master_key(key)
+            return
+        print("Wrong password.")
+    die("wrong password three times")
+
+
 def close_command(session_ending):
     if session_ending:
         # ExecStop of the guard. A restart (make home) runs it too, and must
@@ -1438,8 +1788,14 @@ def close_command(session_ending):
         if state == "active":
             return
     was_open = mounted()
+    if was_open and not session_ending:
+        print("Locking the vault.")
     try:
-        closed, report = lock()
+        result = lock(wait=False)
+        if result is None:
+            print("Waiting for another vault command to finish.")
+            result = lock()
+        closed, report = result
     except RuntimeError as error:
         # At logout this notification may not be seen; the warning stays and
         # is shown again after the next login.
@@ -1449,7 +1805,7 @@ def close_command(session_ending):
         die(f"could not lock the vault: {error}")
     resolve("lock-failed")
     if not was_open:
-        print("The vault is already locked.")
+        print("The vault is already locked." if (CIPHER / "gocryptfs.conf").exists() else "There is no vault yet.")
     else:
         print("Locked." + (f" Closed: {', '.join(closed)}." if closed else ""))
     if problems(report):
@@ -1458,12 +1814,79 @@ def close_command(session_ending):
         print("This shell was inside the vault. Run `cd` to leave it.")
 
 
+def move_in(source, dest):
+    """Copy into the vault, then delete the original. Stopped during the copy,
+    the partial copy goes and the original stays; once copied, deleting the
+    original is not stopped halfway."""
+    is_dir = source.is_dir() and not source.is_symlink()
+    try:
+        if is_dir:
+            shutil.copytree(source, dest, symlinks=True)
+        else:
+            shutil.copy2(source, dest, follow_symlinks=False)
+    except BaseException:
+        if dest.is_dir() and not dest.is_symlink():
+            shutil.rmtree(dest, ignore_errors=True)
+        else:
+            dest.unlink(missing_ok=True)
+        raise
+    with shielded():
+        if is_dir:
+            shutil.rmtree(source)
+        else:
+            source.unlink()
+
+
+def add_command(paths):
+    """Move files and folders into the vault, and clear what they leave
+    behind where they were: their previews and their Recent entries. Unlike
+    a drag in Files, which copies across drives, nothing stays outside."""
+    if not paths:
+        die("usage: vault add <file or folder>...")
+    if not is_open():
+        die("the vault is locked. Run `vault open` first")
+    moved = 0
+    try:
+        for raw in paths:
+            source = Path(os.path.abspath(Path(raw).expanduser()))
+            real = os.path.realpath(source)
+            name = source.name
+            if not source.exists() and not source.is_symlink():
+                print(f"Skipped {raw}: it does not exist.")
+            elif in_vault(str(source)) or in_vault(real):
+                print(f"Skipped {raw}: it is already in the vault.")
+            elif in_tree(str(CIPHER), real) or in_tree(str(LINK), str(source)) or in_tree(str(CIPHER), str(source)):
+                print(f"Skipped {raw}: it holds the vault itself.")
+            elif (MOUNT / name).exists() or (MOUNT / name).is_symlink():
+                print(f"Skipped {raw}: the vault already has something called {name}.")
+            else:
+                move_in(source, MOUNT / name)
+                moved += 1
+                print(f"Moved {name} into the vault." + (" It is a link; what it points to stays where it is."
+                                                          if source.is_symlink() else ""))
+    except KeyboardInterrupt:
+        raise Cancelled(f"Cancelled. {moved} of {len(paths)} moved in; the rest are where they were.") from None
+    finally:
+        hide_in(str(MOUNT))
+        if moved:
+            # Their previews and Recent entries now point at nothing.
+            report = []
+            attempt(report, "Recent files", strip_recent, True)
+            attempt(report, "thumbnails", sweep_thumbnails)
+            for label in problems(report):
+                warn_part(label)
+
+
 def status():
-    if mounted():
+    if not (CIPHER / "gocryptfs.conf").exists():
+        print("There is no vault yet. Run `vault open` to create one.")
+    elif is_open():
         users = vault_users(recall_apps(), flatpak_documents())
         print("Open at ~/Vault.")
         if users:
             print("In use by: " + ", ".join(sorted(set(users.values()))) + ".")
+    elif mounted():
+        print("Half open: its gocryptfs stopped. Run `vault close` to clear it.")
     else:
         print("Locked.")
     if guard_running():
@@ -1762,18 +2185,29 @@ def no_core_dumps():
 
 
 def main(argv):
+    command = argv[1] if len(argv) > 1 else "help"
+    if os.geteuid() == 0:
+        die("run vault as yourself, not as root or with sudo")
     no_core_dumps()
     # Out of the vault, so this command never holds it open itself.
     os.chdir("/")
-    command = argv[1] if len(argv) > 1 else "help"
+    if command != "guard":
+        # A closed terminal or a kill ends the way Ctrl+C does, so anything
+        # half done is put back first. (The guard is systemd's to stop.)
+        for sig in (signal.SIGHUP, signal.SIGTERM):
+            signal.signal(sig, interrupted)
     if command == "open":
         open_vault(show="--no-window" not in argv)
+    elif command == "add":
+        add_command(argv[2:])
     elif command == "close":
         close_command(session_ending="--session-ending" in argv)
     elif command == "status":
         status()
     elif command == "check":
         return check(quiet="--quiet" in argv)
+    elif command == "key":
+        key_command()
     elif command == "guard":
         Guard().run()
     else:
@@ -1782,9 +2216,35 @@ def main(argv):
     return 0
 
 
-if __name__ == "__main__":
+def interrupted(_signum, _frame):
+    raise KeyboardInterrupt
+
+
+def finish(code):
+    """Every way out ends here, with a sentence and never a traceback."""
     try:
-        sys.exit(main(sys.argv))
-    except Exception as error:  # noqa: BLE001  printed by type, never by message
+        sys.exit(code())
+    except SystemExit:
+        raise
+    except (Cancelled, KeyboardInterrupt) as stop:
+        with contextlib.suppress(Exception):
+            said = str(stop) if isinstance(stop, Cancelled) and str(stop) else "Cancelled."
+            where = "open" if is_open() else "locked"
+            print(f"\n{said} The vault is {where}.", file=sys.stderr)
+        sys.exit(130)
+    except BrokenPipeError:
+        # Output piped into something that stopped reading, such as `head`.
+        with contextlib.suppress(OSError):
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        sys.exit(0)
+    except OSError as error:
+        # The system's own wording, never the file name the error carries.
+        log(f"failed: {os.strerror(error.errno) if error.errno else type(error).__name__}")
+        sys.exit(1)
+    except Exception as error:  # noqa: BLE001  logged by type and line, never by message
         log(f"failed: {failure(error)}")
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    finish(lambda: main(sys.argv))

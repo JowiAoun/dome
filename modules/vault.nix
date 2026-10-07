@@ -92,11 +92,36 @@
 #   - Flatpak document portal entries (VLC opens files through it), at lock.
 # An app's settings are only edited while it is closed, because it writes its
 # own copy back when it exits; the check gets to it after it closes.
-# Not covered: the browsers' history, and VS Code's Open Recent list.
+#   - Brave's history, downloads and address-bar suggestions, and VS Code's
+#     Open Recent list, workspace state and backups of unsaved vault files.
+#   - the previews and Recent entries a file leaves at its old place when it
+#     is moved in: `vault add` clears them at once, the check later for a
+#     file moved some other way.
+#   - the clipboard, at every lock: GNOME keeps a copy after the app is gone.
+# Kept out entirely: Claude Code (deny rules for its file tools and the shell
+# commands it recognises), and less's search history.
+# If an app prints a vault file name into the system log anyway, the check
+# counts such lines (never reads them out) and warns, with how to wipe the log.
+#
+# Not covered, because it happens on purpose or outside this machine: copying
+# a file out, screenshots and recordings, printing, uploading or sharing, a
+# script an AI tool writes that opens files by itself, and history Brave Sync
+# already sent to your other devices. Pages of an open file can also be
+# swapped to /swap.img, which is inside the LUKS disk encryption.
 #
 # THE PASSWORD is the one thing this cannot hold. The first `vault open`
-# creates the vault, and gocryptfs prints a master key once. Keep it in a
-# password manager: lose it and the password, and the files are gone.
+# creates the vault: a password of at least 12 characters, typed twice, with
+# gocryptfs's key stretching at four times its default (-scryptn 18, about
+# half a second per unlock). It then shows the master key and wipes it from
+# the screen and the scrollback once you press Enter; `vault key` shows it
+# again. Keep it in a password manager: lose it and the password, and the
+# files are gone. The password reaches gocryptfs on its stdin, never on a
+# command line or in an environment another program could read.
+#
+# EVERY EXIT IS CLEAN. Ctrl+C, Ctrl+D, a closed terminal or a wrong password
+# ends with one sentence and puts back whatever was half done: the locked
+# folder read-only again, thumbnails back on. A lock that has started is not
+# stopped halfway: Ctrl+C waits for it to finish.
 
 let
   cfg = config.modules.vault;
@@ -110,10 +135,24 @@ let
   vault = pkgs.writeShellScriptBin "vault" ''
     unset LD_LIBRARY_PATH
     export GI_TYPELIB_PATH="${pkgs.glib.out}/lib/girepository-1.0"
-    export PATH="${lib.makeBinPath [ pkgs.gocryptfs pkgs.dconf pkgs.libnotify ]}:$PATH"
+    export PATH="${lib.makeBinPath [ pkgs.gocryptfs pkgs.dconf pkgs.libnotify pkgs.xclip ]}:$PATH"
     export VAULT_IDLE_SECONDS=${toString (cfg.idleMinutes * 60)}
     exec ${python}/bin/python3 ${./vault.py} "$@"
   '';
+
+  # Claude Code can read anything you can, and what it reads goes to Anthropic
+  # and into its transcripts under ~/.claude. These deny rules keep its file
+  # tools, and the shell commands it recognises (cat, head, tail, sed, tee,
+  # redirects), out of the open vault in every mode, bypass included. They
+  # cannot stop a script it writes from opening a file by itself. Edit on
+  # ~/.vault keeps it from changing or deleting the encrypted files.
+  claudeDeny = [
+    "Read(~/Vault/**)"
+    "Edit(~/Vault/**)"
+    "Read(//run/user/*/vault/**)"
+    "Edit(//run/user/*/vault/**)"
+    "Edit(~/.vault/**)"
+  ];
 
   # Plain shell with its own PATH, so it still runs when vault.py cannot.
   alarm = pkgs.writeShellScript "vault-alarm" ''
@@ -266,6 +305,42 @@ in
     '';
 
     programs.bash.historyIgnore = lib.mkIf config.programs.bash.enable [ "*Vault*" "*/run/user/*/vault*" ];
+
+    # less keeps what you searched for, and a search inside a vault file is a
+    # piece of that file. "-" means it keeps nothing.
+    home.sessionVariables.LESSHISTFILE = "-";
+
+    # Added to whatever deny list is there, in order, and only what is
+    # missing; the rest of settings.json is left alone, as modules/ai.nix
+    # does for its own keys.
+    home.activation.vaultClaudeDeny = lib.mkIf config.modules.ai.enable (
+      lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+        f="$HOME/.claude/settings.json"
+        rules='${builtins.toJSON claudeDeny}'
+        jq=${pkgs.jq}/bin/jq
+        missing='(.permissions.deny // []) as $d | [$r[] | select(. as $x | $d | index($x) | not)]'
+        if [ -e "$f" ] && ! $jq -e . "$f" >/dev/null 2>&1; then
+          echo "⚠️ $f is not readable JSON, so Claude Code is not kept out of the vault" >&2
+        elif [ ! -e "$f" ] || [ "$($jq --argjson r "$rules" "$missing | length" "$f")" != 0 ]; then
+          if [ -n "''${DRY_RUN_CMD:-}" ]; then
+            echo "(dry run) would add the vault's deny rules to $f"
+          else
+            mkdir -p "$(dirname "$f")"
+            [ -e "$f" ] || { echo '{}' > "$f"; chmod 600 "$f"; }
+            mode="$(stat -c '%a' "$f")"
+            tmp="$(mktemp "$f.XXXXXX")"
+            if $jq --argjson r "$rules" ".permissions.deny = ((.permissions.deny // []) + ($missing))" "$f" > "$tmp" \
+               && [ -s "$tmp" ]; then
+              mv "$tmp" "$f" && chmod "$mode" "$f"
+              echo "✅ Claude Code is kept out of the vault (deny rules in $f)"
+            else
+              rm -f "$tmp"
+              echo "⚠️ could not add the vault's deny rules to $f" >&2
+            fi
+          fi
+        fi
+      ''
+    );
 
     home.activation.vault = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       link="$HOME/Vault"

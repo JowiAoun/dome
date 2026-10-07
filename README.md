@@ -194,11 +194,17 @@ files outside itself. [gocryptfs](https://nuetzlich.net/gocryptfs/) keeps the
 files encrypted in `~/.vault`, and `~/Vault` shows them only while it is open.
 
 ```bash
-vault open      # unlock it (the first run creates it) and show it in Files
-vault close     # close everything using it, then lock it
-vault status    # whether it is open, and what is using it
-vault check     # test every part, repair what it can, clear leftovers
+vault open          # unlock it (the first run creates it) and show it in Files
+vault add <file>... # move files and folders in, leaving nothing behind outside
+vault close         # close everything using it, then lock it
+vault status        # whether it is open, and what is using it
+vault check         # test every part, repair what it can, clear leftovers
+vault key           # show the master key again (asks the password)
 ```
+
+Put things in with `vault add`, or in Files with **Ctrl+X** then **Ctrl+V**.
+A plain drag into the vault copies, because it is another drive, and leaves
+the original outside.
 
 - **Locks itself** after 15 minutes without keyboard or mouse
   (`modules.vault.idleMinutes`), when the screen locks, before the laptop
@@ -215,8 +221,20 @@ vault check     # test every part, repair what it can, clear leftovers
   own) are removed the moment they are written, because GNOME's history switch
   wipes the whole list. Text Editor's drafts, LibreOffice's crash-recovery
   copies, the file chooser's last folder, and Audacity's and Xournal++'s own
-  history are cleared at every lock and check. Not covered: browser history
-  and VS Code's Open Recent list
+  history are cleared at every lock and check. So are Brave's history and
+  downloads, VS Code's Open Recent list and backups, and the clipboard. A file
+  moved in leaves its preview and Recent entry under its old name; `vault add`
+  removes them at once, and the check removes any left another way. If an app
+  prints a vault file name into the system log, the check counts the lines
+  (it never reads them out) and warns, with how to wipe the log
+- **Kept out**: Claude Code cannot read or change the vault, through deny
+  rules in `~/.claude/settings.json` that hold even in bypass mode. They cover
+  its file tools and the shell commands it recognises, not a script it writes
+  that opens files by itself
+- **Not covered**, because it is done on purpose or happens elsewhere: copying
+  a file out, screenshots and recordings, printing, uploading or sharing, and
+  history Brave Sync already sent to your other devices. Pages of an open
+  file can be swapped to `/swap.img`, which is inside the disk encryption
 - **App history off**: VLC's recent media and "continue where you left off",
   and LibreOffice's recent documents, are switched off for every file and
   their lists emptied, because neither app can leave one folder out
@@ -234,8 +252,14 @@ vault check     # test every part, repair what it can, clear leftovers
   stays until you have seen it in `vault check`. If the check cannot run at
   all, systemd runs a plain-shell alarm instead
 - **The password** is the one thing the dotfiles cannot hold. The first
-  `vault open` prints a master key once: keep it in a password manager. Lose
-  both and the files are gone
+  `vault open` asks for one of at least 12 characters, twice, and creates the
+  vault with four times gocryptfs's default key stretching. It then shows the
+  master key and wipes it from the screen and the scrollback once you press
+  Enter; `vault key` shows it again. Keep it in a password manager. Lose both
+  and the files are gone
+- **Clean exits**: Ctrl+C, Ctrl+D, a closed terminal or a wrong password ends
+  with one sentence and puts back whatever was half done. A lock that has
+  started is never stopped halfway
 - `make backup` saves `~/.vault`, still encrypted. Change the password with
   `gocryptfs -passwd ~/.vault`
 
