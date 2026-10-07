@@ -225,6 +225,14 @@ vault check     # test every part, repair what it can, clear leftovers
   the check locks the vault and restarts the guard. Every part of a lock or a
   clean-up runs on its own, so one failing leaves the rest working, and the
   next check retries it. systemd restarts the guard if it crashes or hangs
+- **Warnings**: anything that fails shows up three ways until it is fixed: a
+  critical notification, which stays on screen until you dismiss it, a red
+  line at the top of every new terminal, and the list in `vault check` and
+  `vault status`. It comes back every four hours while it lasts, and after a
+  logout, a reboot or a wake, and a "fixed" notification replaces it once it
+  works again. Something that went wrong and recovered, like a guard crash,
+  stays until you have seen it in `vault check`. If the check cannot run at
+  all, systemd runs a plain-shell alarm instead
 - **The password** is the one thing the dotfiles cannot hold. The first
   `vault open` prints a master key once: keep it in a password manager. Lose
   both and the files are gone
@@ -1519,7 +1527,7 @@ dome/
 │   ├── gaming.nix         # GameMode-wrapped game launchers (see system/86-)
 │   ├── tinyproxy.nix      # Local HTTP/HTTPS proxy as a user service
 │   ├── obs.nix            # OBS recording hotkeys that work unfocused
-│   ├── vault.nix          # Encrypted ~/Vault that locks itself (+ vault.py)
+│   ├── vault.nix          # Encrypted ~/Vault that locks itself (+ vault.py, vault-*.sh)
 │   └── cloud.nix          # Terraform/Pulumi/cloud CLIs/k8s
 ├── system/                # Idempotent root-layer scripts (Ubuntu)
 │   └── gnome-extensions/  # Shell extensions the GDM greeter needs, so they

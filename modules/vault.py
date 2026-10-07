@@ -58,10 +58,15 @@ CIPHER = Path(os.environ.get("VAULT_CIPHER") or HOME / ".vault")
 LINK = Path(os.environ.get("VAULT_LINK") or HOME / "Vault")
 MOUNT = Path(os.environ.get("VAULT_MOUNT") or RUNTIME / "vault")
 STATE = Path(os.environ.get("VAULT_STATE") or RUNTIME / "vault-state")
-SAVED = Path(os.environ.get("VAULT_SAVED") or HOME / ".local/state/vault/paused-settings.json")
+# Kept across reboots, unlike STATE: the paused settings to put back, and the
+# warnings, which must still be on screen after a crash or a logout.
+PERSIST = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local/state") / "vault"
+SAVED = Path(os.environ.get("VAULT_SAVED") or PERSIST / "paused-settings.json")
 IDLE_SECONDS = int(os.environ.get("VAULT_IDLE_SECONDS") or 15 * 60)
 
 GUARD = os.environ.get("VAULT_GUARD_UNIT") or "vault-guard.service"
+CHECK = "vault-check.service"
+TIMER = os.environ.get("VAULT_TIMER_UNIT") or "vault-check.timer"
 
 ROOTS = (str(MOUNT), str(LINK))
 # Either root, as long as what follows ends the name: /run/user/1000/vault-state
@@ -70,7 +75,16 @@ VAULT_TEXT = re.compile("(?:%s)(?=$|[/\\s,;\"'<>&)\\]])" % "|".join(re.escape(r)
 SELF = os.path.realpath(__file__)
 APPS = STATE / "apps.json"
 OPENED = STATE / "opened.json"
-NOTIFIED = STATE / "notified.json"
+HEALTH = STATE / "guard.json"
+WARNINGS = PERSIST / "warnings.json"
+# One line per warning, read by vault-banner.sh at the top of every new
+# terminal. alarms.txt is written by vault-alarm.sh, which runs when this
+# program could not.
+WARNINGS_TXT = PERSIST / "warnings.txt"
+ALARMS_TXT = PERSIST / "alarms.txt"
+CHECKED = PERSIST / "check.json"
+# A warning that stays true is shown again after this long.
+REMIND = 4 * 3600
 
 RECENT = DATA / "recently-used.xbel"
 TEXT_EDITOR = DATA / "org.gnome.TextEditor"
@@ -153,15 +167,32 @@ def quietly(keep=False):
                 return action(*args)
             except Exception as error:
                 log(f"{action.__name__} failed: {failure(error)}")
+                with contextlib.suppress(Exception):
+                    warn(f"guard-error:{action.__name__}", "Vault: part of the guard failed",
+                         f"Its {action.__name__.replace('_', ' ')} step failed ({failure(error)}). "
+                         "The 2-minute check covers for it.", incident=True)
                 return keep or None
         return run
     return wrap
 
 
+def send(title, body, critical=False, replace=None):
+    """One desktop notification. Returns its id, so a later one can replace
+    it, or None when none could be shown. A critical one stays on screen
+    until it is dismissed."""
+    args = ["notify-send", "-a", "Vault", "-p", "-u", "critical" if critical else "normal",
+            "-i", "dialog-warning" if critical else "changes-prevent-symbolic"]
+    if replace:
+        args += ["-r", str(replace)]
+    try:
+        out = subprocess.run([*args, title, body], capture_output=True, text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return int(out) if out.isdigit() else None
+
+
 def notify(title, body):
-    with contextlib.suppress(OSError):
-        subprocess.run(["notify-send", "-a", "Vault", "-i", "changes-prevent-symbolic", title, body],
-                       capture_output=True)
+    send(title, body)
 
 
 def write_atomic(path, data):
@@ -220,19 +251,158 @@ def counted(result):
     return isinstance(result, int) and not isinstance(result, bool) and result > 0
 
 
-def notify_once(key, title, body, hours=1):
-    """A notification for something that keeps being true, at most once an hour,
-    so a timer that finds it every two minutes does not repeat it every time."""
+# Warnings. Two kinds, both shown the same way:
+#   a condition is something still wrong, such as a guard that will not start;
+#     it clears itself when a check finds it working, and says so.
+#   an incident is something that went wrong and was dealt with, such as a
+#     crash the guard restarted from; it stays until you have seen it in
+#     `vault check`.
+# Each one is a critical notification, a line at the top of every new
+# terminal (vault-banner.sh), and an entry in `vault check` and `vault status`.
+
+@contextlib.contextmanager
+def warnings_held():
+    PERSIST.mkdir(parents=True, exist_ok=True)
+    with open(PERSIST / ".warnings.lock", "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
+
+
+def active_warnings():
     try:
-        sent = json.loads(NOTIFIED.read_text())
+        return json.loads(WARNINGS.read_text())
     except (OSError, ValueError):
-        sent = {}
-    if time.time() - sent.get(key, 0) < hours * 3600:
+        return {}
+
+
+def save_warnings(warnings):
+    if not warnings:
+        WARNINGS.unlink(missing_ok=True)
+        WARNINGS_TXT.unlink(missing_ok=True)
         return
-    notify(title, body)
-    sent[key] = time.time()
-    with contextlib.suppress(OSError):
-        write_atomic(NOTIFIED, json.dumps(sent))
+    write_atomic(WARNINGS, json.dumps(warnings, indent=1))
+    lines = sorted(warnings.values(), key=lambda w: w["since"])
+    write_atomic(WARNINGS_TXT, "".join(
+        f"{w['title']} (since {time.strftime('%a %H:%M', time.localtime(w['since']))})\n" for w in lines))
+
+
+def warn(key, title, body, fixed=None, incident=False):
+    """Raise a warning: notified at once, again every four hours while it
+    lasts, and after any gap of ten minutes or more between checks, which is
+    how one raised before a logout or a reboot reaches you after it."""
+    log(f"WARNING {title}")
+    with warnings_held():
+        warnings = active_warnings()
+        entry = warnings.get(key) or {"since": time.time(), "notified": 0, "id": None}
+        entry.update(title=title, body=body, fixed=fixed or f"Fixed: {title.removeprefix('Vault: ')}.",
+                     incident=incident)
+        if time.time() - entry["notified"] >= REMIND:
+            entry["id"] = shout(entry) or entry["id"]
+            entry["notified"] = time.time()
+        warnings[key] = entry
+        save_warnings(warnings)
+
+
+def shout(entry):
+    return send(entry["title"], entry["body"] + "\n\nRun `vault check` in a terminal for details.",
+                critical=True, replace=entry.get("id"))
+
+
+def resolve(key):
+    """A condition that works again: its warning goes, and the notification
+    on screen is replaced with one saying it is fixed."""
+    with warnings_held():
+        warnings = active_warnings()
+        entry = warnings.pop(key, None)
+        if entry is None or entry.get("incident"):
+            return
+        save_warnings(warnings)
+    log(f"fixed: {entry['title']}")
+    send("Vault: fixed", entry["fixed"], replace=entry.get("id"))
+
+
+def remind_all():
+    with warnings_held():
+        warnings = active_warnings()
+        for entry in warnings.values():
+            entry["id"] = shout(entry) or entry.get("id")
+            entry["notified"] = time.time()
+        save_warnings(warnings)
+
+
+def take_incidents():
+    """Hand back the incidents and clear them: `vault check` prints them, and
+    seeing them there is what acknowledges them."""
+    with warnings_held():
+        warnings = active_warnings()
+        seen = {k: w for k, w in warnings.items() if w.get("incident")}
+        save_warnings({k: w for k, w in warnings.items() if not w.get("incident")})
+    return seen
+
+
+def alarms():
+    """unit to message, from vault-alarm.sh."""
+    try:
+        lines = read_text(ALARMS_TXT).splitlines()
+    except OSError:
+        return {}
+    return dict(line.split("\t", 1) for line in lines if "\t" in line)
+
+
+def clear_alarm(unit):
+    remaining = {u: m for u, m in alarms().items() if u != unit}
+    if remaining:
+        write_atomic(ALARMS_TXT, "".join(f"{u}\t{m}\n" for u, m in remaining.items()))
+    else:
+        ALARMS_TXT.unlink(missing_ok=True)
+
+
+# What each part failing means, for its warning: the trouble, then what it
+# can leave you with.
+PARTS = {
+    "~/Vault link and ~/.hidden": ("~/Vault could not be set up",
+                                   "~/Vault may be missing, or show in your home folder."),
+    "missed locks": ("the lock check failed",
+                     "The vault may stay open after the screen locks or you go idle."),
+    "reading Recent files": ("Recent files could not be read at lock",
+                             "Apps that showed vault files may have stayed open."),
+    "reading Flatpak documents": ("Flatpak documents could not be read at lock",
+                                  "Flatpak apps such as VLC may have stayed open on a vault file."),
+    "finding programs": ("programs using the vault could not be found",
+                         "Windows showing vault files may have stayed open after the lock."),
+    "closing programs": ("programs using the vault could not be closed",
+                         "Windows showing vault files may have stayed open after the lock."),
+    "mount point": ("the locked vault folder could not be made read-only",
+                    "An app saving into ~/Vault while it is locked could leave a plain copy on disk."),
+    "Recent files": ("Recent files could not be cleaned",
+                     "Vault file names may be left in Recent files and in search."),
+    "thumbnails": ("thumbnails could not be cleaned",
+                   "Previews of vault files may be left in ~/.cache/thumbnails."),
+    "last-used folders": ("last-used folders could not be cleaned",
+                          "A vault folder may be left as a file chooser's last folder."),
+    "Text Editor": ("Text Editor's history could not be cleaned",
+                    "Vault file names or drafts may be left in Text Editor."),
+    "VLC": ("VLC's history could not be switched off or cleaned",
+            "VLC may keep vault files in its recent media."),
+    "LibreOffice": ("LibreOffice's history could not be switched off or cleaned",
+                    "LibreOffice may keep vault documents in its recent list or recovery copies."),
+    "Audacity": ("Audacity's history could not be cleaned",
+                 "Audacity may keep vault file names in its recent files or logs."),
+    "Xournal++": ("Xournal++'s history could not be cleaned",
+                  "Xournal++ may keep vault folders, or notes about vault files."),
+    "Flatpak documents": ("Flatpak documents could not be cleaned",
+                          "The document portal may still list vault file names."),
+    "thumbnail switch": ("thumbnails could not be switched",
+                         "While the vault is open, previews of its files may be saved."),
+    "hiding files": ("vault files could not be hidden",
+                     "Files in the vault may show in Files without Ctrl+H."),
+}
+
+
+def warn_part(label):
+    trouble, consequence = PARTS.get(label, (f"{label} failed", "Part of the vault is not working."))
+    warn(f"part:{label}", f"Vault: {trouble}", f"{consequence} It is retried every 2 minutes.",
+         fixed=f"{label} is working again.")
 
 
 def sd_notify(state):
@@ -477,6 +647,17 @@ def dconf(*args):
     return subprocess.run(["dconf", *args], capture_output=True, text=True).stdout.strip()
 
 
+def set_setting(key, value):
+    """Write one dconf key, or reset it when value is empty, then read it
+    back: dconf says nothing when a write goes nowhere."""
+    if value:
+        dconf("write", key, value)
+    else:
+        dconf("reset", key)
+    if dconf("read", key) != value:
+        raise RuntimeError("a setting would not change")
+
+
 def pause_history():
     # Already paused means the file holds the real originals. Overwriting it
     # would save our own "off" as the value to restore.
@@ -484,7 +665,7 @@ def pause_history():
         return
     write_atomic(SAVED, json.dumps({key: dconf("read", key) for key in PAUSED}))
     for key, value in PAUSED.items():
-        dconf("write", key, value)
+        set_setting(key, value)
 
 
 def resume_history():
@@ -493,10 +674,8 @@ def resume_history():
     except (OSError, ValueError):
         return
     for key, old in saved.items():
-        if old:
-            dconf("write", key, old)
-        else:
-            dconf("reset", key)
+        set_setting(key, old)
+    # Only once every one took, so a failure is retried by the next check.
     SAVED.unlink(missing_ok=True)
 
 
@@ -994,7 +1173,7 @@ def ensure_paused():
     fixed = 0
     for key, value in PAUSED.items():
         if dconf("read", key) != value:
-            dconf("write", key, value)
+            set_setting(key, value)
             fixed += 1
     return fixed
 
@@ -1037,21 +1216,20 @@ def check(quiet):
     missed a signal is covered: this locks the vault itself when the screen
     is locked, you have been idle long enough, or the laptop slept while it
     was open."""
-    report, reason, closed = [], None, []
+    previous = load_json(CHECKED)
+    report, reason, lock_error = [], None, None
     attempt(report, "~/Vault link and ~/.hidden", ensure_setup)
-    attempt(report, "vault-guard", ensure_guard)
+    restarted = attempt(report, "vault-guard", ensure_guard)
     if is_open():
         reason = attempt(report, "missed locks", missed_lock)
     if reason or not is_open():
         try:
             result = lock(wait=False)
         except RuntimeError as error:
-            report.append(("locking", "failed", str(error)))
-            result = ([], [])
+            lock_error, result = str(error), ([], [])
         if result is None:
             return 0  # another vault command is busy; the next run picks this up
-        closed, more = result
-        report += more
+        report += result[1]
     else:
         try:
             with held(wait=False):
@@ -1060,32 +1238,133 @@ def check(quiet):
                 sweep(report, vault_open=True)
         except BlockingIOError:
             return 0
-    failed = problems(report)
+    review(report, restarted, reason, lock_error, previous)
+    # A quiet run that got this far proves the timer's check runs again.
+    if quiet:
+        clear_alarm(CHECK)
+    if guard_running():
+        clear_alarm(GUARD)
     cleaned = [(label, n) for label, status, n in report if status == "ok" and counted(n)]
     if quiet:
-        if reason:
-            log(f"locked because {reason}, which the guard missed; closed {len(closed)} program(s)")
-            notify("Vault locked", f"Locked because {reason}." + (f" Closed: {', '.join(closed)}." if closed else ""))
         if cleaned:
             log("cleared: " + ", ".join(f"{label} ({n})" for label, n in cleaned))
-        if failed:
-            log("still failing: " + ", ".join(failed))
-            notify_once("failed:" + ",".join(failed), "The vault check found a problem",
-                        "Run `vault check` in a terminal to see it: " + ", ".join(failed) + ".")
-    else:
-        print("The vault is open." if is_open() else "The vault is locked.")
-        if reason:
-            print(f"It locked now because {reason}, which the guard missed.")
-        for label, status, detail in report:
-            if status == "failed":
-                print(f"  FAILED   {label} ({detail})")
-            elif status == "later":
-                print(f"  later    {label}: {detail}, so it is checked again once it closes")
-            elif counted(detail):
-                print(f"  fixed    {label} ({detail})")
-            else:
-                print(f"  ok       {label}")
-    return 1 if failed else 0
+        return 0
+    print("The vault is open." if is_open() else "The vault is locked.")
+    if reason:
+        print(f"It locked now because {reason}, which the guard missed.")
+    for label, status, detail in report:
+        if status == "failed":
+            print(f"  FAILED   {label} ({detail})")
+        elif status == "later":
+            print(f"  later    {label}: {detail}, so it is checked again once it closes")
+        elif counted(detail):
+            print(f"  fixed    {label} ({detail})")
+        else:
+            print(f"  ok       {label}")
+    incidents = take_incidents()
+    conditions = active_warnings()
+    for unit, message in alarms().items():
+        print(f"\n⚠ {message.removeprefix('Vault: ')}: systemd could not run it. See "
+              f"`journalctl --user -u {unit}`. This clears once the 2-minute check runs again.")
+    if conditions:
+        print("\nStill wrong:")
+        for w in sorted(conditions.values(), key=lambda w: w["since"]):
+            print(f"  ⚠ {w['title'].removeprefix('Vault: ')}. {w['body']}")
+    if incidents:
+        print("\nWhat happened since you last looked (cleared now that you have seen it):")
+        for w in sorted(incidents.values(), key=lambda w: w["since"]):
+            when = time.strftime("%a %H:%M", time.localtime(w["since"]))
+            print(f"  ⚠ {when}  {w['title'].removeprefix('Vault: ')}. {w['body']}")
+    return 1 if conditions or alarms() or problems(report) else 0
+
+
+def load_json(path):
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def guard_restarts():
+    out = subprocess.run(["systemctl", "--user", "show", GUARD, "-p", "NRestarts", "--value"],
+                         capture_output=True, text=True).stdout.strip()
+    return int(out) if out.isdigit() else 0
+
+
+def guard_health():
+    """What the guard last said about itself, if it is alive to have said it."""
+    health = load_json(HEALTH)
+    return health if health and alive(health.get("pid", 0)) else None
+
+
+def review(report, restarted, reason, lock_error, previous):
+    """Turn what a check found into warnings, and clear the ones it found
+    working again."""
+    for label, status, _ in report:
+        if label == "vault-guard":
+            continue
+        if status == "failed":
+            warn_part(label)
+        elif status == "ok":
+            resolve(f"part:{label}")
+
+    guard = next((status for label, status, _ in report if label == "vault-guard"), None)
+    if guard == "failed":
+        warn("guard-down", "Vault: auto-lock is not working",
+             "vault-guard is not running and would not start, so the vault does not lock the moment "
+             "the screen locks or the laptop sleeps. This check still locks it, within 2 minutes.",
+             fixed="Auto-lock is working again: vault-guard is running.")
+    elif guard == "ok":
+        resolve("guard-down")
+        if restarted:
+            warn("guard-stopped", "Vault: the guard had stopped",
+                 "vault-guard was not running, so this check started it again. Until then, only this "
+                 "check could lock the vault.", incident=True)
+
+    restarts, base = guard_restarts(), previous.get("guard_restarts")
+    if base is not None and restarts > base:
+        times = restarts - base
+        warn("guard-crashed", "Vault: the guard crashed",
+             f"vault-guard stopped {times} time{'s' if times > 1 else ''} and restarted itself. "
+             "See `journalctl --user -u vault-guard` for why.", incident=True)
+
+    health = guard_health()
+    if health is not None:
+        if health.get("idle_watch") is False:
+            warn("guard-idle", "Vault: the idle lock is not working",
+                 "GNOME's idle monitor did not answer the guard, so going idle does not lock the vault "
+                 "right away. This check still locks it, within 2 minutes of the idle time passing.",
+                 fixed="The idle lock is working again.")
+        else:
+            resolve("guard-idle")
+        if is_open() and health.get("inhibitor") is False:
+            warn("guard-sleep", "Vault: the vault may not lock before sleep",
+                 "The system would not let the guard hold off sleep, so the vault may only lock once "
+                 "the laptop wakes.", fixed="The vault locks before sleep again.")
+        else:
+            resolve("guard-sleep")
+        if time.time() - health.get("beat", 0) > 120:
+            warn("guard-hung", "Vault: the guard is not responding",
+                 "vault-guard has not checked in for over 2 minutes, and systemd should have restarted it.",
+                 fixed="vault-guard is responding again.")
+        else:
+            resolve("guard-hung")
+
+    if reason:
+        warn("missed-lock", "Vault: the guard missed a lock",
+             f"The vault was still open although {reason}, so this check locked it.", incident=True)
+    if lock_error:
+        warn("lock-failed", "Vault: the vault could not lock",
+             f"It is still open ({lock_error}). Close the programs using it, then run `vault close`.",
+             fixed="The vault is locked now.")
+    elif not is_open():
+        resolve("lock-failed")
+
+    # A long gap since the last check means a login, a wake or a reboot in
+    # between, and a warning raised before it may never have been seen.
+    if previous.get("time") and time.time() - previous["time"] > 600:
+        remind_all()
+    write_atomic(CHECKED, json.dumps({"time": time.time(), "guard_restarts": restarts}))
 
 
 def create_vault():
@@ -1113,7 +1392,11 @@ def open_vault(show):
                 create_vault()
             # Before the mount, so there is no moment when a vault file is
             # visible and thumbnails are still on.
-            pause_history()
+            try:
+                pause_history()
+            except RuntimeError:
+                warn_part("thumbnail switch")
+                print("⚠ Thumbnails could not be switched off, so previews of vault files may be saved.")
             MOUNT.mkdir(parents=True, exist_ok=True)
             if any(MOUNT.iterdir()):
                 resume_history()
@@ -1135,7 +1418,10 @@ def open_vault(show):
             hide_everything()
     subprocess.run(["systemctl", "--user", "kill", "--signal=SIGUSR1", GUARD], capture_output=True)
     if not guard_running():
-        log("vault-guard is not running, so nothing will lock the vault for you. Run `vault close` when done")
+        log("vault-guard is not running, so the vault does not lock the moment the screen does. "
+            "The 2-minute check still locks it")
+    if active_warnings() or alarms():
+        print("⚠ The vault has warnings. Run `vault check` to see them.")
     if show and (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
         try:
             Gio.AppInfo.launch_default_for_uri(LINK.as_uri(), None)
@@ -1155,7 +1441,13 @@ def close_command(session_ending):
     try:
         closed, report = lock()
     except RuntimeError as error:
+        # At logout this notification may not be seen; the warning stays and
+        # is shown again after the next login.
+        warn("lock-failed", "Vault: the vault could not lock",
+             f"It is still open ({error}). Close the programs using it, then run `vault close`.",
+             fixed="The vault is locked now.")
         die(f"could not lock the vault: {error}")
+    resolve("lock-failed")
     if not was_open:
         print("The vault is already locked.")
     else:
@@ -1179,6 +1471,12 @@ def status():
               "before sleep and at logout.")
     else:
         print("Auto-lock is off: vault-guard is not running. See `systemctl --user status vault-guard`.")
+    for w in sorted(active_warnings().values(), key=lambda w: w["since"]):
+        print(f"⚠ {w['title']}")
+    for message in alarms().values():
+        print(f"⚠ {message}")
+    if active_warnings() or alarms():
+        print("Run `vault check` for details.")
 
 
 # The guard
@@ -1203,6 +1501,7 @@ class Guard:
         self.pending = set()
         self.flush_id = None
         self.strip_id = None
+        self.ticks = 0
 
     def run(self):
         # Clear what a crash or a reboot left. Never wait for the lock here: a
@@ -1220,6 +1519,7 @@ class Guard:
                                      "PrepareForSleep", "/org/freedesktop/login1", None,
                                      Gio.DBusSignalFlags.NONE, self.on_sleep)
         self.add_idle_watch()
+        self.report_health()
         # Polled, and poked with SIGUSR1 by `vault open` so it does not wait.
         GLib.timeout_add_seconds(2, self.refresh)
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, self.refresh)
@@ -1243,7 +1543,38 @@ class Guard:
         if self.armed:
             strip_recent(True)
             hide_everything()
+        self.report_health()
+        self.ticks += 1
+        if self.ticks % 10 == 0:
+            self.supervise_timer()
         return GLib.SOURCE_CONTINUE
+
+    def report_health(self):
+        """What the check reads to know the guard is whole: whether the idle
+        watch and, while the vault is open, the sleep delay are in place, and
+        when it last ran."""
+        write_atomic(HEALTH, json.dumps({
+            "pid": os.getpid(), "beat": time.time(), "idle_watch": self.idle_id is not None,
+            "inhibitor": (self.inhibitor is not None) if self.armed else None,
+        }))
+
+    def supervise_timer(self):
+        # The check watches the guard; this is the guard watching the check,
+        # every five minutes, so neither can stop without the other noticing.
+        def active():
+            return subprocess.run(["systemctl", "--user", "is-active", "--quiet", TIMER]).returncode == 0
+        if active():
+            resolve("timer-down")
+            return
+        subprocess.run(["systemctl", "--user", "start", TIMER], capture_output=True)
+        if active():
+            warn("timer-off", "Vault: the 2-minute check was off",
+                 "vault-check.timer was not running, so nothing covered for the guard or cleared "
+                 "traces. The guard has started it again.", incident=True)
+        else:
+            warn("timer-down", "Vault: the 2-minute check is not running",
+                 "vault-check.timer would not start, so nothing covers for the guard or clears traces.",
+                 fixed="The 2-minute check is running again.")
 
     def add_idle_watch(self):
         # Idle as GNOME counts it: no keyboard or mouse. A video playing holds
@@ -1278,6 +1609,7 @@ class Guard:
             self.recent.append(monitor)
         self.strip_now()
         self.watch_tree(str(MOUNT))
+        self.report_health()
         if not OPENED.exists():
             write_atomic(OPENED, json.dumps({"sleep": sleep_offset()}))
         log("the vault is open; guarding it")
@@ -1290,6 +1622,7 @@ class Guard:
         self.recent.clear()
         self.pending.clear()
         self.uninhibit()
+        self.report_health()
         log("the vault is locked")
 
     def inhibit(self):
@@ -1402,12 +1735,14 @@ class Guard:
             result = lock(wait=False)
         except Exception as error:
             reason = str(error) if isinstance(error, RuntimeError) else failure(error)
-            notify("The vault could not lock", f"{reason}. `vault check` tries again within two minutes.")
-            log(f"could not lock the vault: {reason}")
+            warn("lock-failed", "Vault: the vault could not lock",
+                 f"It is still open ({reason}). Close the programs using it, then run `vault close`. "
+                 "The 2-minute check also keeps trying.", fixed="The vault is locked now.")
             return
         finally:
             self.refresh()
         if result is not None:
+            resolve("lock-failed")
             closed, report = result
             log(f"locked because {why}; closed {len(closed)} program(s)"
                 + (f"; failed: {', '.join(problems(report))}" if problems(report) else ""))

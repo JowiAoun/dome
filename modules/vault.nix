@@ -33,6 +33,17 @@
 # CLOCK_BOOTTIME against CLOCK_MONOTONIC (the gap between them is exactly the
 # time spent asleep), so a sleep is noticed even with no guard running.
 #
+# WARNINGS. Anything that fails is shown three ways until it is fixed: a
+# critical notification, which GNOME keeps on screen until it is dismissed;
+# a red line at the top of every new terminal (vault-banner.sh); and the list
+# in `vault check` and `vault status`. Repeated every four hours, and after a
+# logout, a reboot or a wake, while it lasts. When it is fixed, the
+# notification is replaced with one that says so. Something that went wrong
+# and recovered, such as a guard crash, is shown the same way and stays until
+# you have seen it in `vault check`. The check reports what it finds; if the
+# check cannot run at all, systemd runs vault-alarm.sh, plain shell, instead.
+# The guard and the check watch each other, so either one stopping is noticed.
+#
 # Every part of a lock runs on its own. If finding or closing programs fails,
 # or one clean-up step does, the vault still locks and the rest still runs;
 # the check retries what failed. Errors are logged by type and line only,
@@ -102,6 +113,12 @@ let
     export PATH="${lib.makeBinPath [ pkgs.gocryptfs pkgs.dconf pkgs.libnotify ]}:$PATH"
     export VAULT_IDLE_SECONDS=${toString (cfg.idleMinutes * 60)}
     exec ${python}/bin/python3 ${./vault.py} "$@"
+  '';
+
+  # Plain shell with its own PATH, so it still runs when vault.py cannot.
+  alarm = pkgs.writeShellScript "vault-alarm" ''
+    export PATH="${lib.makeBinPath [ pkgs.libnotify pkgs.coreutils pkgs.gnugrep pkgs.findutils ]}:$PATH"
+    exec ${pkgs.runtimeShell} ${./vault-alarm.sh} "$@"
   '';
 in
 {
@@ -173,11 +190,27 @@ in
     # nothing and logs nothing. `vault check` runs the same thing in a
     # terminal and prints each part.
     systemd.user.services.vault-check = {
-      Unit.Description = "Check the vault and clear anything it left behind";
+      Unit = {
+        Description = "Check the vault and clear anything it left behind";
+        # The check reports every failure it finds itself. This is for the
+        # one it cannot: failing to run at all.
+        OnFailure = [ "vault-alarm@%n.service" ];
+      };
       Service = {
         Type = "oneshot";
         ExecStart = "${vault}/bin/vault check --quiet";
+        # A oneshot waits forever by default, and a hung check would hold
+        # off every later one without a sound. This turns a hang into a
+        # failure, and so into the alarm.
+        TimeoutStartSec = 90;
         LimitCORE = 0;
+      };
+    };
+    systemd.user.services."vault-alarm@" = {
+      Unit.Description = "Warn that %i failed";
+      Service = {
+        Type = "oneshot";
+        ExecStart = "${alarm} %i";
       };
     };
     systemd.user.timers.vault-check = {
@@ -225,6 +258,11 @@ in
       }
       autoload -Uz add-zsh-hook
       add-zsh-hook zshaddhistory _vault_no_history
+
+      . ${./vault-banner.sh}
+    '';
+    programs.bash.initExtra = lib.mkIf config.programs.bash.enable ''
+      . ${./vault-banner.sh}
     '';
 
     programs.bash.historyIgnore = lib.mkIf config.programs.bash.enable [ "*Vault*" "*/run/user/*/vault*" ];

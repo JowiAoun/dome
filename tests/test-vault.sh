@@ -52,7 +52,7 @@ sed -e "s#/nix/store/[^ ]*-vault.py#$repo/modules/vault.py#" -e '/VAULT_IDLE_SEC
     -e "s#^export PATH=\"#export PATH=\"$T/bin:#" "$VAULT_TEST_INNER" > "$T/bin/vault-test"
 sed -e 's#^exec \([^ ]*\) .*#exec \1 "$@"#' "$T/bin/vault-test" > "$T/bin/py"
 printf '#!/bin/sh\nexit 1\n' > "$T/bin/flatpak"
-printf '#!/bin/sh\necho "$*" >> %s/notified\n' "$T" > "$T/bin/notify-send"
+printf '#!/bin/sh\necho "$*" >> %s/notified\necho 42\n' "$T" > "$T/bin/notify-send"
 chmod +x "$T/bin/"*
 v()  { "$T/bin/vault-test" "$@"; }
 dconf_bin="$(grep -o '/nix/store/[^:"]*-dconf-[^:"/]*/bin' "$T/bin/vault-test" | head -1)/dconf"
@@ -133,6 +133,9 @@ expect "a file in a new folder is hidden" 'grep -qx return.pdf "$M/Taxes/.hidden
 recent "$XDG_DATA_HOME/recently-used.xbel" "file://$HOME/Vault/photo.jpg" dummyviewer; sleep 1
 expect "a Recent entry for a vault file is removed as it is written" '! grep -q "Vault/photo.jpg" "$XDG_DATA_HOME/recently-used.xbel"'
 expect "the program that added it is remembered for the lock" 'grep -q dummyviewer "$VAULT_STATE/apps.json"'
+W="$HOME/.local/state/vault"
+v check --quiet
+expect "a guard without GNOME's idle monitor (none on this test bus) raises a warning" 'grep -q guard-idle "$W/warnings.json"'
 
 echo "test-vault: with the guard dead, vault check covers for it"
 kill -9 "$guard"; wait "$guard" 2>/dev/null
@@ -172,6 +175,10 @@ printf '%s/Taxes/notes.xopp\n3\n' "$M" > "$XDG_CACHE_HOME/xournalpp/metadata/1.m
 v check > "$T/check1.txt"; status=$?
 expect "the check reports the dead guard (no test unit to restart) and fails" '[ $status -eq 1 ] && grep -q "FAILED   vault-guard" "$T/check1.txt"'
 expect "a file added while the guard was dead is hidden" 'grep -qx later.txt "$M/.hidden"'
+expect "a failure raises a critical notification" 'grep -q -- "-u critical.*Vault: auto-lock is not working" "$T/notified"'
+expect "and is listed for new terminals" 'grep -q "auto-lock is not working" "$W/warnings.txt"'
+expect "a new terminal shows it" 'bash "$repo/modules/vault-banner.sh" | grep -q "⚠ Vault: auto-lock is not working"'
+expect "a warning is not repeated on every check" '[ "$(grep -c "auto-lock is not working" "$T/notified")" -eq 1 ]'
 expect "a missing ~/Vault link is put back" '[ "$(readlink "$HOME/Vault")" = "$M" ]'
 expect "Vault is added to ~/.hidden" 'grep -qx Vault "$HOME/.hidden"'
 expect "Recent: vault entries removed, others kept" '! grep -q "Vault/later.txt" "$XDG_DATA_HOME/recently-used.xbel" && grep -q elsewhere.txt "$XDG_DATA_HOME/recently-used.xbel"'
@@ -200,6 +207,7 @@ printf '[General]\nfiledialog-path=%s\n' "$M" > "$vlc/vlc-qt-interface.conf"
 v check > "$T/check2.txt"
 expect "a broken LibreOffice file is reported as failed" 'grep -q "FAILED   LibreOffice" "$T/check2.txt"'
 expect "and VLC is still cleaned in the same run" '! grep -q filedialog-path "$vlc/vlc-qt-interface.conf"'
+expect "the broken part raises its own warning" 'grep -q "LibreOffice.s history could not be switched off or cleaned" "$W/warnings.txt"'
 rm "$lo/registrymodifications.xcu"
 
 echo "test-vault: an app's files wait until it closes"
@@ -207,6 +215,8 @@ cp /usr/bin/sleep "$T/bin/vlc"; "$T/bin/vlc" 300 & fakevlc=$!
 printf '[General]\nfiledialog-path=%s\n' "$M" > "$vlc/vlc-qt-interface.conf"
 v check > "$T/check3.txt"
 expect "VLC open: its files are left alone and it says so" 'grep -q "later    VLC" "$T/check3.txt" && grep -q filedialog-path "$vlc/vlc-qt-interface.conf"'
+expect "once LibreOffice works again its warning goes" '! grep -q LibreOffice "$W/warnings.txt"'
+expect "and the notification is replaced with one saying it is fixed" 'grep -q -- "-r 42 Vault: fixed LibreOffice is working again" "$T/notified"'
 kill "$fakevlc"; wait "$fakevlc" 2>/dev/null
 v check > /dev/null
 expect "VLC closed: the next check cleans it" '! grep -q filedialog-path "$vlc/vlc-qt-interface.conf"'
@@ -240,7 +250,11 @@ open_vault
 py -c "import json; p='$VAULT_STATE/opened.json'; d=json.load(open(p)); d['sleep'] -= 600; json.dump(d, open(p, 'w'))"
 v check --quiet
 expect "the check locks a vault that slept while open" '! mounted'
-expect "and says so in a notification" 'grep -q "slept while it was open" "$T/notified"'
+expect "and raises a critical warning about it" 'grep -q -- "-u critical.*the guard missed a lock.*slept while it was open" "$T/notified"'
+expect "which waits until it has been seen" 'grep -q missed-lock "$W/warnings.json"'
+v check > "$T/check4.txt"
+expect "vault check shows it" 'grep -q "the guard missed a lock" "$T/check4.txt"'
+expect "and then clears it" '! grep -q missed-lock "$W/warnings.json"'
 
 echo "test-vault: gocryptfs dies under an open vault"
 open_vault
@@ -255,6 +269,16 @@ mkdir -p "$HOME/.local/state/vault"; echo '{"/org/gnome/desktop/thumbnailers/dis
 dconf write /org/gnome/desktop/thumbnailers/disable-all true
 v check --quiet
 expect "the check puts thumbnails back on" '[ -z "$(thumbs)" ] && [ ! -e "$HOME/.local/state/vault/paused-settings.json" ]'
+
+echo "test-vault: when the check itself cannot run"
+PATH="$T/bin:$PATH" bash "$repo/modules/vault-alarm.sh" vault-check.service
+expect "the shell alarm raises a critical notification" 'grep -q -- "-u critical.*2-minute check failed to run" "$T/notified"'
+PATH="$T/bin:$PATH" bash "$repo/modules/vault-alarm.sh" vault-check.service
+expect "and does not repeat it on the next failure" '[ "$(grep -c "2-minute check failed to run" "$T/notified")" -eq 1 ]'
+expect "new terminals show it" 'bash "$repo/modules/vault-banner.sh" | grep -q "⚠ Vault: the 2-minute check failed to run"'
+v check --quiet
+expect "the next check that runs clears it" '[ ! -e "$W/alarms.txt" ]'
+expect "a terminal with nothing to report shows nothing" '[ -z "$(XDG_STATE_HOME="$T/none" bash "$repo/modules/vault-banner.sh")" ]'
 
 echo "test-vault: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
