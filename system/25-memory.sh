@@ -111,9 +111,28 @@ else
 # A compressed swap device in RAM, tried before the disk swapfile. See the
 # header of system/25-memory.sh for why this exists.
 [zram0]
-# Half of RAM, capped at 8 GiB. The expression form (rather than a literal) is
+# 1.5x RAM, capped at 16 GiB. The expression form (rather than a literal) is
 # what keeps this sane on a machine with 8 GB or with 64 GB.
-zram-size = min(ram / 2, 8192)
+#
+# zram-size is a VIRTUAL size. The RAM it actually costs is the COMPRESSED
+# size, so the cap is not a RAM budget — it is a ceiling on how much cold data
+# the tier can hold. Measured on this machine with zstd: 7.02 GB of swapped
+# pages stored in 1.97 GB of real RAM, a 3.56x ratio, with only 2% of pages
+# incompressible. At that ratio 16 GiB of capacity costs ~4.5 GB of RAM in the
+# realistic worst case and holds ~8 GB more than the old value did.
+#
+# Why this was raised from min(ram / 2, 8192): that gave 7.5 GB here, and an
+# ordinary session (browser, chat, an Electron app running agents) filled it to
+# 93%. Once zram is full every further page goes to the disk tier instead —
+# 305 GB written to swap across 39 hours of uptime, with `io` PSI stalling
+# EVERY task 15-40% of wall time. The tier was sized for the pathology it was
+# written for (one big Java heap) and is undersized for many medium ones.
+#
+# The failure mode if this is ever set too high is real but gradual: pages that
+# would have been evicted to disk sit in RAM compressed instead, so the working
+# set shrinks. Watch `zramctl` — if DATA approaches DISKSIZE while TOTAL is a
+# large fraction of RAM, lower the cap.
+zram-size = min(ram * 3 / 2, 16384)
 # zstd compresses a Java heap far better than the lzo-rle default, and the CPU
 # cost is invisible next to a page fault that would otherwise reach the disk.
 compression-algorithm = zstd
