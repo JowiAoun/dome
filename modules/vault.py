@@ -95,7 +95,9 @@ REMIND = 4 * 3600
 RECENT = DATA / "recently-used.xbel"
 TEXT_EDITOR = DATA / "org.gnome.TextEditor"
 THUMBNAILS = CACHE / "thumbnails"
-DOCS = f"{RUNTIME}/doc/"
+# The document portal, as a Flatpak app is handed it and as /proc shows that
+# app's open files: inside its sandbox the portal is mounted at /run/flatpak/doc.
+DOCS = (f"{RUNTIME}/doc/", "/run/flatpak/doc/")
 
 # Each recent list, and the program to close when it holds a vault file. None
 # means read the program off the entry. Text Editor keeps a list of its own
@@ -578,9 +580,10 @@ def flatpak_documents():
 
 
 def doc_in_vault(path, docs):
-    if not path.startswith(DOCS):
+    prefix = next((p for p in DOCS if path.startswith(p)), None)
+    if prefix is None:
         return False
-    parts = path[len(DOCS):].split("/")
+    parts = path[len(prefix):].split("/")
     if parts[0] == "by-app" and len(parts) > 2:
         parts = parts[2:]
     return in_vault(docs.get(parts[0], ""))

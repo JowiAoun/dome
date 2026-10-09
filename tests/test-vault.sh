@@ -61,11 +61,22 @@ cleanup() {
 trap cleanup EXIT
 
 # The installed wrapper, pointed at this checkout's vault.py, with stand-ins
-# for flatpak (no portal on this private bus) and notify-send (logged).
+# for flatpak (no portal on this private bus) and notify-send (logged). The
+# portal's documents and the running Flatpak apps are whatever the tests put
+# in $T/docs, $T/docs-<app> and $T/ps.
 sed -e "s#/nix/store/[^ ]*-vault.py#$repo/modules/vault.py#" -e '/VAULT_IDLE_SECONDS/d' \
     -e "s#^export PATH=\"#export PATH=\"$T/bin:#" "$VAULT_TEST_INNER" > "$T/bin/vault-test"
 sed -e 's#^exec \([^ ]*\) .*#exec \1 "$@"#' "$T/bin/vault-test" > "$T/bin/py"
-printf '#!/bin/sh\nexit 1\n' > "$T/bin/flatpak"
+cat > "$T/bin/flatpak" <<EOF
+#!/bin/sh
+case "\$1 \$2" in
+  "documents --"*) cat "$T/docs" 2>/dev/null ;;
+  "documents "*) cat "$T/docs-\$2" 2>/dev/null ;;
+  "ps "*) cat "$T/ps" 2>/dev/null ;;
+  "document-unexport "*) echo "\$*" >> "$T/unexported" ;;
+  *) exit 1 ;;
+esac
+EOF
 printf '#!/bin/sh\necho "$*" >> %s/notified\necho 42\n' "$T" > "$T/bin/notify-send"
 printf '#!/bin/sh\necho "$*" >> %s/xclip\n' "$T" > "$T/bin/xclip"
 chmod +x "$T/bin/"*
@@ -378,6 +389,24 @@ expect "Brave: its last download folder in the vault is forgotten" '! grep -q Va
 expect "VS Code: Open Recent loses only its vault entries" 'py -c "import sqlite3, json; d = sqlite3.connect(\"$code/User/globalStorage/state.vscdb\"); r = json.loads(d.execute(\"select value from ItemTable where key = ?\", (\"history.recentlyOpenedPathsList\",)).fetchone()[0]); assert r == {\"entries\": [{\"folderUri\": \"file:///tmp/other\"}]}, r"'
 expect "VS Code: other state naming the vault goes, the rest stays" '[ "$(py -c "import sqlite3; d = sqlite3.connect(\"$code/User/globalStorage/state.vscdb\"); print(\",\".join(sorted(k for (k,) in d.execute(\"select key from ItemTable\"))))")" = "history.recentlyOpenedPathsList,unrelated" ]'
 expect "VS Code: a vault workspace, backup and file history are deleted" '[ ! -e "$code/User/workspaceStorage/vaultws" ] && [ -e "$code/User/workspaceStorage/otherws" ] && [ ! -e "$code/Backups/123/file/abc" ] && [ ! -e "$code/User/History/h1" ]'
+
+echo "test-vault: a Flatpak app reading a vault file, seen from outside its sandbox"
+doc="$XDG_RUNTIME_DIR/doc"
+printf 'd2\t%s/clip.mp4\nd9\t/tmp/other.mp4\n' "$M" > "$T/docs"
+py - "$repo/modules" "$M" > "$T/out" 2>&1 <<'EOF'
+import sys; sys.path.insert(0, sys.argv[1])
+import vault
+docs = {"d2": sys.argv[2] + "/clip.mp4", "d9": "/tmp/other.mp4"}
+print(vault.doc_in_vault("/run/flatpak/doc/d2/clip.mp4 (deleted)", docs), vault.doc_in_vault("/run/flatpak/doc/d9/other.mp4", docs))
+EOF
+expect "an open file shown as /run/flatpak/doc counts as a vault file, another does not" '[ "$(cat "$T/out")" = "True False" ]'
+py -c "import time; time.sleep(300)" "$doc/d2/clip.mp4" & portal_user=$!
+sleep 0.3
+v close >/dev/null
+expect "a program started on a vault file through the portal is closed at the lock" '! alive $portal_user'
+expect "and the portal forgets the vault documents, not the others" 'grep -q "doc-id d2" "$T/unexported" && ! grep -q "doc-id d9" "$T/unexported"'
+rm -f "$T/docs" "$T/unexported"
+open_vault
 
 echo "test-vault: a vault file name in the system log"
 v check --quiet; sleep 1
