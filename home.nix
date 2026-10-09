@@ -763,6 +763,14 @@ in
       # so push/pull authenticate with the SSH key instead of a Personal Access
       # Token. Makes SSH the default without having to reclone anything.
       url."git@github.com:".insteadOf = "https://github.com/";
+      # Exception to the rewrite above. Wally resolves its package registry over
+      # HTTPS through libgit2, which honors insteadOf, so the rewrite turned it
+      # into an SSH clone that cannot authenticate against the keyring agent and
+      # every `wally install` failed. Git picks the longest matching prefix, so
+      # mapping this one URL to itself keeps it on HTTPS while every other
+      # GitHub URL still goes over SSH.
+      url."https://github.com/UpliftGames/wally-index".insteadOf =
+        "https://github.com/UpliftGames/wally-index";
     };
   };
 
