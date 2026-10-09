@@ -69,6 +69,15 @@ in
     # run a service under. modules/tinyproxy.nix has what it is for.
     tinyproxy.enable = (userConfig.modules.tinyproxy or false) && !isCodespaces;
 
+    # Installs the `vinegar-reap` COMMAND for clearing Wine sessions that
+    # outlive Roblox. Nothing runs on its own: an earlier timer-driven version
+    # of this stopped a Roblox session that was being played and took the whole
+    # graphical session down with it, twice. modules/vinegar.nix opens with the
+    # log lines and why the check cannot be made reliable from outside a
+    # Flatpak sandbox. Deliberately NOT tied to `gameMode`, which is about
+    # giving a running game the performance governor.
+    vinegar.enable = !isCodespaces;
+
     # Lock-screen half of loginPinLength. The extension itself is installed by
     # system/87-login-pin.sh — it has to be system-wide for the GDM greeter to
     # see it — so all this does is add it to the authoritative

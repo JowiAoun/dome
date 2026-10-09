@@ -124,6 +124,46 @@ This has burned one investigation already: two correctly written GNOME custom
 keybindings in `modules/obs.nix` looked ignored because `gsettings` reported an
 empty string for both.
 
+## Never subtract a systemd `*TimestampMonotonic` from `/proc/uptime`
+
+Third instance of the same shape: it type-checks, it runs, the arithmetic is
+right, and the answer is wrong by a day. **This laptop suspends, and those two
+numbers are different clocks.**
+
+```
+/proc/uptime                    CLOCK_BOOTTIME    counts time spent suspended
+ActiveEnterTimestampMonotonic   CLOCK_MONOTONIC   does NOT
+```
+
+Their difference is therefore not an age — it is an age **plus every second the
+machine has ever spent in s2idle**. Measured on a transient scope created two
+seconds earlier, after 24 h of suspend across 39 h of uptime:
+
+```bash
+systemctl --user show <unit> -p ActiveEnterTimestampMonotonic --value   #  55279 s
+awk '{print $1}' /proc/uptime                                           # 142199 s
+#                                                        difference -> 86920 s   (24 h, not 2 s)
+```
+
+Anything gated on "has this been around longer than N" then fires **immediately
+and always**, on the freshest possible object. `modules/vinegar.nix` reaps
+leftover Roblox sandboxes on exactly that test; written this way it would have
+killed every new session during the game's own startup window, and the log line
+explaining the kill would have looked perfectly reasonable.
+
+Use wall time on both sides — `ActiveEnterTimestamp` (not `…Monotonic`) against
+`date +%s`. Both read the same clock, so they agree, and an NTP step only skews
+the result by seconds:
+
+```bash
+started="$(systemctl --user show "$unit" -p ActiveEnterTimestamp --value)"
+age=$(( $(date +%s) - $(date -d "$started" +%s) ))
+```
+
+The general rule: on this machine, uptime is **not** awake-time. Any duration
+built from two sources needs both to agree about suspend before the subtraction
+means anything.
+
 Instructions for AI agents (Claude Code and the like) working in this dotfiles
 repository. This file is loaded into agent context automatically, so keep it
 short and factual. For a full tour, read `README.md`; the machine is configured

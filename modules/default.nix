@@ -15,6 +15,7 @@
     ./desktop-shell.nix
     ./gaming.nix
     ./tinyproxy.nix
+    ./vinegar.nix
   ];
 
   options = {
