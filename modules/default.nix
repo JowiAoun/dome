@@ -23,7 +23,7 @@
       node.enable = lib.mkEnableOption "Node.js development environment";
       java.enable = lib.mkEnableOption "Java development environment";
       ai.enable = lib.mkEnableOption "AI development tools (Claude, Ollama, Copilot, etc.)";
-      cloud.enable = lib.mkEnableOption "Cloud development tools (Terraform, Pulumi, AWS CLI, etc.)";
+      cloud.enable = lib.mkEnableOption "Cloud development tools (Google Cloud CLI, AWS CLI, Azure CLI, Terraform, Pulumi, kubectl)";
 
       # Deliberately NOT under `apps`. The terminal is what every other tool in
       # this repo runs inside, so it must not ride on the optional desktop-apps

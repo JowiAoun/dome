@@ -168,6 +168,43 @@ input, and `system/40-zenbook-duo.sh` runs that repo's installer.
   its own defaults into `settings.json` as you use it, so the key is usually
   already there holding the value you wanted changed.
 
+#### Cloud (`modules.cloud = true`)
+The heaviest module — multi-GB of SDKs for clouds a given machine may never talk
+to — so it is off by default on the Duo (`hosts/zenbook-duo/setup-defaults.env`)
+and on for `generic`. `doctl` is the deliberate exception that lives outside it,
+in `home.nix`: one Go binary, for the DigitalOcean deploys.
+
+- **Google Cloud CLI** (`gcloud`, plus `gsutil`, `bq`, `docker-credential-gcloud`):
+  from **Google's official tarball**, not nixpkgs, for the same two reasons
+  Claude Code is:
+  - *Latest.* `pkgs.google-cloud-sdk` is frozen at the flake pin — 548.0.0
+    against 580.0.0 upstream when this was written — and a read-only store path
+    cannot update itself. The official install self-updates with
+    `gcloud components update`.
+  - *Components.* nixpkgs serves those through a rebuild
+    (`google-cloud-sdk.withExtraComponents`) and its wrapper refuses
+    `gcloud components install` outright.
+
+  It installs to `~/.local/google-cloud-sdk` during `make home` (equally during
+  `./bootstrap.sh` and `./install.sh` — all three run the same activation), and
+  only when it is missing: an existing install is left alone so that updates,
+  components and credentials survive. `gke-gcloud-auth-plugin` is installed with
+  it, because `kubectl` is in this same module and GKE auth fails without it.
+  Extra components are ordinary `gcloud components install <id>`; to have one
+  reinstated on every switch, add it to `gcloudComponents` in `modules/cloud.nix`.
+
+  `PATH` comes from `home.sessionPath` (so `gcloud` also resolves in scripts and
+  non-interactive shells, and so the SDK's own `path.zsh.inc` — a bare prepend
+  with no already-there check — is not sourced on every nested shell). Shell
+  completion is sourced from the install. `CLOUDSDK_PYTHON` is deliberately
+  **unset**: `bin/gcloud` picks the Python 3.14 bundled in the tarball, but only
+  when that variable is empty.
+
+  First run: `gcloud init`. Then e.g. `gcloud services list --enabled`.
+- **AWS CLI v2**, **Azure CLI**, **OCI CLI** — from nixpkgs, pinned to the flake
+- **Terraform** + `terraform-ls`, **Pulumi**
+- **kubectl**, **Helm**, plus completions and the `k`/`tf`/`pu` aliases
+
 #### Local proxy (`modules.tinyproxy = true`)
 [tinyproxy](https://tinyproxy.github.io/), a small HTTP/HTTPS forward proxy, as
 a user service on `127.0.0.1:8888`. Off by default, and nothing on the machine
@@ -1557,7 +1594,7 @@ dome/
 │   ├── tinyproxy.nix      # Local HTTP/HTTPS proxy as a user service
 │   ├── obs.nix            # OBS recording hotkeys that work unfocused
 │   ├── vault.nix          # Encrypted ~/Vault that locks itself (+ vault.py, vault-*.sh)
-│   └── cloud.nix          # Terraform/Pulumi/cloud CLIs/k8s
+│   └── cloud.nix          # gcloud (official)/Terraform/Pulumi/cloud CLIs/k8s
 ├── system/                # Idempotent root-layer scripts (Ubuntu)
 │   └── gnome-extensions/  # Shell extensions the GDM greeter needs, so they
 │                          # install to /usr/share, not to ~/.local/share

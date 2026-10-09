@@ -10,7 +10,7 @@
     node = false;
     java = false;
     ai = true;
-    cloud = true;
+    cloud = true;   # gcloud (official, latest), aws, az, terraform, pulumi, kubectl
     apps = false;    # Desktop apps (Brave, Discord, draw.io) + desktop integration
     tinyproxy = false;  # Local HTTP/HTTPS proxy as a user service on 127.0.0.1:8888.
                         # Nothing uses it unless pointed at it. See modules/tinyproxy.nix.

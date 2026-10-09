@@ -105,19 +105,32 @@ collect_module_preferences() {
     # AI module (default yes)
     read -rp "Install AI tools (Claude Code)? (Y/n): " ai_choice
     ai_enabled=$([ "$ai_choice" = "n" ] || [ "$ai_choice" = "N" ] && echo "false" || echo "true")
-    
+
+    # Cloud module. Offered here for the same reason as the four above: this is
+    # the ONLY module picker on the Codespaces/WSL path (setup.sh's checklist
+    # needs a TTY and a machine to provision), so a module missing from it can
+    # never be turned on without hand-editing user-config.nix.
+    #
+    # Default no: it is the heaviest module by far — terraform, pulumi, awscli2,
+    # azure-cli, oci-cli, plus the ~600 MB Google Cloud CLI that modules/cloud.nix
+    # fetches from Google during activation.
+    read -rp "Install cloud tools (gcloud, aws, az, terraform, kubectl)? (y/N): " cloud_choice
+    cloud_enabled=$([ "$cloud_choice" = "y" ] || [ "$cloud_choice" = "Y" ] && echo "true" || echo "false")
+
     # Update module selections in user-config.nix
     sed -i "s|python = .*;|python = $python_enabled;|" user-config.nix
     sed -i "s|node = .*;|node = $node_enabled;|" user-config.nix
     sed -i "s|java = .*;|java = $java_enabled;|" user-config.nix
     sed -i "s|ai = .*;|ai = $ai_enabled;|" user-config.nix
-    
+    sed -i "s|cloud = .*;|cloud = $cloud_enabled;|" user-config.nix
+
     echo ""
     echo "✅ Module preferences saved:"
     echo "   Python: $python_enabled"
-    echo "   Node.js: $node_enabled"  
+    echo "   Node.js: $node_enabled"
     echo "   Java: $java_enabled"
     echo "   AI Tools: $ai_enabled"
+    echo "   Cloud: $cloud_enabled"
 }
 
 # Function to collect user information
