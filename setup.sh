@@ -43,6 +43,20 @@ cfg_get() { # <field> — read a value from user-config.nix; empty (success) if 
   sed -nE "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"?([^\";]+)\"?;.*/\1/p" user-config.nix 2>/dev/null | head -n1 || true
 }
 
+module_desc() { # <module> — one line for the checklist, so the picker says what
+                # each toggle actually installs instead of just naming it.
+  case "$1" in
+    python) echo "python3, pyenv, pipx" ;;
+    node)   echo "node 22, pnpm, typescript" ;;
+    java)   echo "jdk 21, maven, gradle" ;;
+    ai)     echo "claude code, gemini cli" ;;
+    cloud)  echo "gcloud, aws, az, terraform, kubectl" ;;
+    apps)   echo "desktop apps (browser, chat, media)" ;;
+    tinyproxy) echo "local http proxy on 127.0.0.1:8888" ;;
+    *)      echo "" ;;
+  esac
+}
+
 module_seed() { # <module> <host> — saved choice > host seed > false
   local saved seed_file
   saved="$(cfg_get "$1")"
@@ -600,10 +614,12 @@ if have_whiptail; then
   for m in "${MODULES[@]}"; do
     state=OFF
     [ "$(module_seed "$m" "$HOST")" = true ] && state=ON
-    MOD_ITEMS+=("$m" "" "$state")
+    MOD_ITEMS+=("$m" "$(module_desc "$m")" "$state")
   done
+  # Width 74, not 60: the descriptions are the point of the list, and whiptail
+  # truncates them to fit rather than wrapping. 74 still fits an 80-column tty.
   CHOSEN="$(whiptail --title "dome setup" --checklist \
-    "Modules to enable (space toggles, enter confirms):" 15 60 "${#MODULES[@]}" \
+    "Modules to enable (space toggles, enter confirms):" 15 74 "${#MODULES[@]}" \
     "${MOD_ITEMS[@]}" 3>&1 1>&2 2>&3)" || { echo "aborted"; exit 1; }
   for m in "${MODULES[@]}"; do
     declare "m_$m=false"
@@ -655,7 +671,7 @@ else
   [ -d "hosts/$HOST" ] || { echo "unknown host profile: $HOST" >&2; exit 1; }
   for m in "${MODULES[@]}"; do
     seed="$(module_seed "$m" "$HOST")"
-    printf 'Enable module %-9s [%s] (y/n): ' "$m" "$seed"
+    printf 'Enable module %-9s %-36s [%s] (y/n): ' "$m" "($(module_desc "$m"))" "$seed"
     read -r ans
     case "${ans:-}" in
       y|Y) declare "m_$m=true" ;;
