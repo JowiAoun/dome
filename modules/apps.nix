@@ -489,6 +489,72 @@ let
     wmClass = "brave-browser";
   };
 
+  # Default handlers for the file types nothing in this repo installs an app for.
+  #
+  # The browser and mail client below are set from `patched` — apps this module
+  # builds, whose .desktop id it therefore knows at build time. These two are the
+  # opposite case: the app comes from outside Nix entirely (VLC from Flathub via
+  # `flatpakApps`, the image viewer from Ubuntu's own seed), so the id cannot be
+  # named here and is resolved against the filesystem at activation instead.
+  #
+  # WHY THIS EXISTS. A stock 24.04 desktop registers NO handler for audio/mpeg or
+  # video/mp4 — `xdg-mime query default` returns empty for both — so
+  # double-clicking an MP3 in Files does nothing at all. Installing a player does
+  # not fix that by itself: an app becomes the default only when something writes
+  # mimeapps.list, and until now nothing here did. (The symptom is confusing
+  # because a few types ARE claimed by accident — audio/flac had landed on
+  # Firefox and every image on Brave, so media looked half-working.)
+  #
+  # `ids` is a candidate list in preference order, so one entry covers whichever
+  # way the machine got a player. First id found on disk wins; none found is a
+  # logged no-op, never a default pointing at an app that is not there.
+  #
+  # NOT swept when an app is removed: uninstalling VLC leaves its id in
+  # mimeapps.list, and those types fall back to "no handler" until something
+  # else claims them. Re-running `apps-setup` after installing a replacement
+  # fixes it, which is the same contract as the browser default above.
+  mimeDefaults = [
+    {
+      what = "media player";
+      ids = [
+        "org.videolan.VLC.desktop"                      # Flathub — what flatpakApps installs
+        "vlc.desktop"                                   # apt
+        "vlc_vlc.desktop"                               # snap
+        "io.github.celluloid_player.Celluloid.desktop"  # GTK4 mpv frontend
+        "mpv.desktop"
+        "org.gnome.Totem.desktop"                       # GNOME Videos
+        "totem.desktop"
+      ];
+      types = [
+        # audio
+        "audio/mpeg" "audio/mp4" "audio/x-m4a" "audio/aac"
+        "audio/flac" "audio/x-flac"
+        "audio/ogg" "audio/x-vorbis+ogg" "audio/opus"
+        "audio/wav" "audio/x-wav" "audio/webm"
+        "audio/x-ms-wma" "audio/x-matroska"
+        # video
+        "video/mp4" "video/x-matroska" "video/webm" "video/quicktime"
+        "video/x-msvideo" "video/mpeg" "video/mp2t"
+        "video/x-ms-wmv" "video/3gpp" "video/x-flv" "video/ogg"
+      ];
+    }
+    {
+      what = "image viewer";
+      # Loupe is GNOME 45+'s replacement for Eye of GNOME and is listed first so
+      # a machine that has moved on picks it up; 24.04 still ships eog, which is
+      # already installed here and was simply never made the default.
+      ids = [ "org.gnome.Loupe.desktop" "org.gnome.eog.desktop" "eog.desktop" ];
+      # image/svg+xml is deliberately absent. Both viewers open SVGs, but an SVG
+      # is as often something to read the source of or edit as it is a picture,
+      # and the browser is a better default for that than a photo viewer.
+      types = [
+        "image/png" "image/jpeg" "image/gif" "image/webp"
+        "image/bmp" "image/tiff" "image/x-icon"
+        "image/heif" "image/avif"
+      ];
+    }
+  ];
+
   # Apps listed in modules.apps.skip are dropped entirely: no package, no
   # desktop entry, no pin, never the default browser. setup.sh fills this in
   # automatically for anything it finds already installed outside Nix
@@ -1163,6 +1229,100 @@ let
       log "default mail client set to $id"
     }
 
+    # ── 2b. media and image defaults ─────────────────────────────────────────
+    # See the mimeDefaults comment in modules/apps.nix for what this is for.
+    # Every directory a .desktop file can arrive in. SYS_APP_DIRS already covers
+    # the SYSTEM flatpak exports — which is where `flatpak install --system`
+    # lands, i.e. exactly how VLC gets here — so the two added below are only for
+    # a --user flatpak or a launcher written by hand.
+    ALL_APP_DIRS="$SYS_APP_DIRS $HOME/.local/share/flatpak/exports/share/applications $HOME/.local/share/applications"
+
+    # <what> <candidate ids, space separated> <mime types, space separated>
+    set_mime_default() {
+      local what="$1" ids="$2" types="$3"
+      local id="" found="" dir cand type cur mimeapps declared skipped=""
+      local changed=0 failed=0
+
+      # shellcheck disable=SC2086  # both are space-separated candidate lists
+      for dir in $ALL_APP_DIRS; do
+        for cand in $ids; do
+          if [ -e "$dir/$cand" ]; then id="$cand"; found="$dir/$cand"; break 2; fi
+        done
+      done
+      if [ -z "$id" ]; then
+        log "no $what installed — those file types are left unclaimed"
+        return 0
+      fi
+
+      # Claim only what the app SAYS it can open.
+      #
+      # The type lists in mimeDefaults are deliberately generous, because one
+      # list has to cover every candidate id. Measured against 24.04's eog:
+      # it declares no image/heif and no image/avif, and spells the icon type
+      # image/x-ico rather than the image/x-icon the shared MIME database uses —
+      # while Loupe, the GNOME 45+ replacement listed ahead of it, reads all
+      # three. Handing an app a type it never claimed is a REGRESSION, not a
+      # no-op: AVIF currently opens in Brave, and making eog its default would
+      # trade a working viewer for a "could not load image" dialog.
+      #
+      # Intersecting here instead of trimming the lists keeps one entry correct
+      # across every way the machine might get a viewer or a player, and means a
+      # later eog -> Loupe swap picks the extra types up on its own.
+      #
+      # An entry with no MimeType= line at all claims everything asked for
+      # rather than nothing: that is a launcher that declined to describe
+      # itself, not one that declared it supports nothing.
+      #
+      # Bracketed with ";" at BOTH ends so the first and last entries match the
+      # same *";$type;"* test as the middle ones — the trailing ";" is
+      # conventional in a MimeType= line but is not guaranteed by the spec.
+      declared=";$(sed -n 's/^MimeType=//p' "$found" | head -n1)"
+      case "$declared" in
+        ";") declared="" ;;
+        *";") ;;
+        *) declared="$declared;" ;;
+      esac
+
+      mimeapps="''${XDG_CONFIG_HOME:-$HOME/.config}/mimeapps.list"
+      # shellcheck disable=SC2086
+      for type in $types; do
+        if [ -n "$declared" ]; then
+          case "$declared" in
+            *";$type;"*) ;;
+            *) skipped="$skipped $type"; continue ;;
+          esac
+        fi
+        # Read the file rather than parse `gio mime`, whose output is translated
+        # and would stop matching under a non-English locale — the same reason
+        # set_default_browser reads it directly. sed with a | delimiter because a
+        # mime type always contains / and sometimes + (audio/x-vorbis+ogg):
+        # neither is special in a BRE, but / would close the expression early.
+        cur="$(sed -n "s|^$type=||p" "$mimeapps" 2>/dev/null | head -n1)"
+        [ "''${cur%%;*}" = "$id" ] && continue
+        if gio_ mime "$type" "$id" >/dev/null 2>&1; then
+          changed=1
+        else
+          warn "could not set $type -> $id"
+          failed=1
+        fi
+      done
+
+      if [ "$changed" = 1 ]; then
+        log "$what: $id is now the default for those file types"
+      elif [ "$failed" = 0 ]; then
+        log "$what is already $id"
+      fi
+      if [ -n "$skipped" ]; then
+        log "  $id does not declare these, so their current handler stands:$skipped"
+      fi
+    }
+
+    set_mime_defaults() {
+      ${lib.concatMapStringsSep "\n      "
+        (d: "set_mime_default ${lib.escapeShellArg d.what} ${lib.escapeShellArg (lib.concatStringsSep " " d.ids)} ${lib.escapeShellArg (lib.concatStringsSep " " d.types)}")
+        mimeDefaults}
+    }
+
     # ── 3. dash pins ─────────────────────────────────────────────────────────
     merge_dash_pins() {
       local raw cleaned joined="" entry pair name id
@@ -1274,6 +1434,7 @@ let
     find_foreign
     set_default_browser
     set_default_mail_client
+    set_mime_defaults
     merge_dash_pins
   '';
 in
