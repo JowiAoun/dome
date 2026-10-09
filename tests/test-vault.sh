@@ -100,7 +100,7 @@ gocryptfs="$(grep -o '/nix/store/[^:"]*-gocryptfs-[^:"/]*/bin' "$T/bin/vault-tes
 busy="$(py - <<'EOF'
 import os
 names = {"vlc": "VLC", "soffice.bin": "LibreOffice", "audacity": "Audacity", "xournalpp": "Xournal++",
-         "gnome-text-editor": "Text Editor", "brave": "Brave", "code": "VS Code"}
+         "gnome-text-editor": "Text Editor", "brave": "Brave", "code": "VS Code", "kdenlive": "Kdenlive"}
 found = set()
 for pid in filter(str.isdigit, os.listdir("/proc")):
     try:
@@ -389,6 +389,66 @@ expect "Brave: its last download folder in the vault is forgotten" '! grep -q Va
 expect "VS Code: Open Recent loses only its vault entries" 'py -c "import sqlite3, json; d = sqlite3.connect(\"$code/User/globalStorage/state.vscdb\"); r = json.loads(d.execute(\"select value from ItemTable where key = ?\", (\"history.recentlyOpenedPathsList\",)).fetchone()[0]); assert r == {\"entries\": [{\"folderUri\": \"file:///tmp/other\"}]}, r"'
 expect "VS Code: other state naming the vault goes, the rest stays" '[ "$(py -c "import sqlite3; d = sqlite3.connect(\"$code/User/globalStorage/state.vscdb\"); print(\",\".join(sorted(k for (k,) in d.execute(\"select key from ItemTable\"))))")" = "history.recentlyOpenedPathsList,unrelated" ]'
 expect "VS Code: a vault workspace, backup and file history are deleted" '[ ! -e "$code/User/workspaceStorage/vaultws" ] && [ -e "$code/User/workspaceStorage/otherws" ] && [ ! -e "$code/Backups/123/file/abc" ] && [ ! -e "$code/User/History/h1" ]'
+
+echo "test-vault: Kdenlive, a Flatpak that reaches vault files through the portal"
+# Laid out the way Kdenlive 26.08 left it after opening and saving a project
+# through the portal, then being killed: d1 and d2 are vault documents, d9 is not.
+kd="$HOME/.var/app/org.kde.kdenlive"; doc="$XDG_RUNTIME_DIR/doc"; bk="$kd/data/kdenlive/.backup"
+mkdir -p "$kd/config" "$kd/.local/state" "$bk/2026-10-08-22-27" "$bk/2026-10-01-10-00" "$kd/data/stalefiles/kdenlive" \
+         "$kd/cache/kdenlive/111/videothumbs" "$kd/cache/kdenlive/222/audiothumbs" "$kd/cache/kdenlive/proxy" \
+         "$kd/cache/kdenlive/qtpipelinecache-x86_64" "$kd/cache/tmp" "$kd/cache/fontconfig"
+printf 'd1\t%s/secret.kdenlive\nd2\t%s/clip.mp4\nd9\t/tmp/other.mp4\n' "$M" "$M" > "$T/docs"
+printf 'd1\t%s/secret.kdenlive\n' "$M" > "$T/docs-org.kde.kdenlive"
+cat > "$kd/config/kdenlive-flatpakrc" <<EOF
+[Recent Dirs]
+KdenliveClipFolder[\$e]=\$HOME/Videos
+KdenliveProjectsFolder[\$e]=$doc/d1,\$HOME/Videos
+
+[Recent Files]
+File1[\$e]=$doc/d1/secret.kdenlive
+File2[\$e]=\$HOME/Videos/holiday.kdenlive
+File3[\$e]=$doc/d9/other.kdenlive
+Name1[\$e]=secret.kdenlive
+Name2[\$e]=holiday.kdenlive
+Name3[\$e]=other.kdenlive
+
+[env]
+defaultprojectfolder[\$e]=\$HOME/Videos
+EOF
+printf '[MainWindow]\nState=AAAA\n' > "$kd/.local/state/kdenlivestaterc"
+printf '<mlt root="%s/d1"><property name="resource">%s/d2/clip.mp4</property></mlt>\n' "$doc" "$doc" > "$bk/secret-111-2026-10-08-22-27.kdenlive"
+echo jpeg > "$bk/secret-111-2026-10-08-22-29.kdenlive.jpg"; echo words > "$bk/2026-10-08-22-27/secret.srt"
+printf '<mlt root="%s/Videos"></mlt>\n' "$HOME" > "$bk/holiday-222-2026-10-01-10-00.kdenlive"
+echo jpeg > "$bk/holiday-222-2026-10-01-10-05.kdenlive.jpg"; echo words > "$bk/2026-10-01-10-00/holiday.srt"
+echo jpeg > "$bk/once-333-2026-10-02-09-00.kdenlive.jpg"
+autosave="8664Roqfile_$(printf '%s' "$doc/d1" | sed 's#/#%2F#g')ftJM"
+printf '<mlt root="%s/d1"></mlt>\n' "$doc" > "$kd/data/stalefiles/kdenlive/$autosave"
+echo 4242 > "$kd/data/stalefiles/kdenlive/$autosave.lock"
+printf '<mlt root="%s/Videos"></mlt>\n' "$HOME" > "$kd/data/stalefiles/kdenlive/9999file_holidayzz"
+for f in 111/videothumbs/a.jpg 222/audiothumbs/b.dat proxy/p.mkv qtpipelinecache-x86_64/keep; do echo x > "$kd/cache/kdenlive/$f"; done
+echo x > "$kd/cache/audioCache.kcache"; echo x > "$kd/cache/tmp/speech.wav"; echo x > "$kd/cache/fontconfig/keep"
+echo org.kde.kdenlive > "$T/ps"
+v check > "$T/check5.txt"
+expect "Kdenlive open: its files are left alone and it says so" 'grep -q "later    Kdenlive" "$T/check5.txt" && grep -q secret "$kd/config/kdenlive-flatpakrc" && [ -e "$kd/cache/kdenlive/111" ]'
+expect "but that it had a vault file is noted, for after the lock" '[ -e "$W/kdenlive-touched" ]'
+rm "$T/ps"
+v check > "$T/check6.txt"
+rc="$kd/config/kdenlive-flatpakrc"
+expect_app Kdenlive "Kdenlive: the recent list loses its vault project and is numbered again" '! grep -q secret "$rc" && grep -qxF "File1[\$e]=\$HOME/Videos/holiday.kdenlive" "$rc" && grep -qxF "Name2[\$e]=other.kdenlive" "$rc" && ! grep -q "^File3" "$rc"'
+expect_app Kdenlive "Kdenlive: a vault folder leaves its recent folders, the others stay" 'grep -qxF "KdenliveProjectsFolder[\$e]=\$HOME/Videos" "$rc" && grep -qxF "defaultprojectfolder[\$e]=\$HOME/Videos" "$rc"'
+expect_app Kdenlive "Kdenlive: a vault project's backup, timeline picture and subtitles are deleted" '[ ! -e "$bk/secret-111-2026-10-08-22-27.kdenlive" ] && [ ! -e "$bk/secret-111-2026-10-08-22-29.kdenlive.jpg" ] && [ ! -e "$bk/2026-10-08-22-27" ]'
+expect_app Kdenlive "Kdenlive: another project's backup, picture and subtitles are kept" '[ -e "$bk/holiday-222-2026-10-01-10-00.kdenlive" ] && [ -e "$bk/holiday-222-2026-10-01-10-05.kdenlive.jpg" ] && [ -e "$bk/2026-10-01-10-00/holiday.srt" ]'
+expect_app Kdenlive "Kdenlive: a picture with no backup to show whose it is goes" '[ ! -e "$bk/once-333-2026-10-02-09-00.kdenlive.jpg" ]'
+expect_app Kdenlive "Kdenlive: the autosave of a vault project is deleted, another kept" '[ -z "$(ls "$kd/data/stalefiles/kdenlive" | grep Roq)" ] && [ -e "$kd/data/stalefiles/kdenlive/9999file_holidayzz" ]'
+expect_app Kdenlive "Kdenlive: its cache of frames, waveforms, proxies and temp audio is emptied" '[ ! -e "$kd/cache/kdenlive/111" ] && [ ! -e "$kd/cache/kdenlive/222" ] && [ ! -e "$kd/cache/kdenlive/proxy" ] && [ ! -e "$kd/cache/audioCache.kcache" ] && [ -z "$(ls -A "$kd/cache/tmp")" ]'
+expect_app Kdenlive "Kdenlive: its graphics caches and other settings are kept" '[ -e "$kd/cache/kdenlive/qtpipelinecache-x86_64/keep" ] && [ -e "$kd/cache/fontconfig/keep" ] && grep -q State=AAAA "$kd/.local/state/kdenlivestaterc"'
+expect_app Kdenlive "Kdenlive: the note is cleared once it is clean" '[ ! -e "$W/kdenlive-touched" ]'
+cp "$rc" "$T/rc-once"; v check >/dev/null 2>&1
+expect_app Kdenlive "Kdenlive: a second check changes nothing more" 'cmp -s "$T/rc-once" "$rc"'
+rm "$T/docs-org.kde.kdenlive"; mkdir -p "$kd/cache/kdenlive/444"; echo x > "$kd/cache/kdenlive/444/a.jpg"
+v check >/dev/null 2>&1
+expect_app Kdenlive "Kdenlive: a cache is left alone while it has not had a vault file" '[ -e "$kd/cache/kdenlive/444/a.jpg" ]'
+rm -f "$T/docs"
 
 echo "test-vault: a Flatpak app reading a vault file, seen from outside its sandbox"
 doc="$XDG_RUNTIME_DIR/doc"

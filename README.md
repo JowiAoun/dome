@@ -222,8 +222,11 @@ the original outside.
   wipes the whole list. Text Editor's drafts, LibreOffice's crash-recovery
   copies, the file chooser's last folder, and Audacity's and Xournal++'s own
   history are cleared at every lock and check. So are Brave's history and
-  downloads, VS Code's Open Recent list and backups, and the clipboard. A file
-  moved in leaves its preview and Recent entry under its old name; `vault add`
+  downloads, VS Code's Open Recent list and backups, and the clipboard.
+  Kdenlive's recent projects, and its backups and autosaves of vault projects,
+  go too. Once it has had a vault file, so does its cache of frames, waveforms
+  and proxy copies, which it rebuilds. A file moved in leaves its preview and
+  Recent entry under its old name; `vault add`
   removes them at once, and the check removes any left another way. If an app
   prints a vault file name into the system log, the check counts the lines
   (it never reads them out) and warns, with how to wipe the log
@@ -234,7 +237,9 @@ the original outside.
 - **Not covered**, because it is done on purpose or happens elsewhere: copying
   a file out, screenshots and recordings, printing, uploading or sharing, and
   history Brave Sync already sent to your other devices. Pages of an open
-  file can be swapped to `/swap.img`, which is inside the disk encryption
+  file can be swapped to `/swap.img`, which is inside the disk encryption.
+  Nor is Kdenlive's cache of a video it saw before you moved it in: empty it
+  with **Manage Cached Data** in Kdenlive
 - **App history off**: VLC's recent media and "continue where you left off",
   and LibreOffice's recent documents, are switched off for every file and
   their lists emptied, because neither app can leave one folder out

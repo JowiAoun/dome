@@ -89,11 +89,17 @@
 #   - LibreOffice's crash-recovery copies of vault files.
 #   - Audacity's recent files, open projects, session and logs (they name
 #     every file it opens), and Xournal++'s last folders and per-document notes.
-#   - Flatpak document portal entries (VLC opens files through it), at lock.
+#   - Flatpak document portal entries (VLC and Kdenlive open files through
+#     it), at lock.
 # An app's settings are only edited while it is closed, because it writes its
 # own copy back when it exits; the check gets to it after it closes.
 #   - Brave's history, downloads and address-bar suggestions, and VS Code's
 #     Open Recent list, workspace state and backups of unsaved vault files.
+#   - Kdenlive's recent projects and folders, and its backups and autosaves
+#     of vault projects. Once it has had a vault file, its whole cache goes
+#     too, because frames, sound waveforms and proxy copies of the video sit
+#     there and only the locked project file says whose they are. It rebuilds
+#     the cache the next time you open a project.
 #   - the previews and Recent entries a file leaves at its old place when it
 #     is moved in: `vault add` clears them at once, the check later for a
 #     file moved some other way.
@@ -107,7 +113,9 @@
 # a file out, screenshots and recordings, printing, uploading or sharing, a
 # script an AI tool writes that opens files by itself, and history Brave Sync
 # already sent to your other devices. Pages of an open file can also be
-# swapped to /swap.img, which is inside the LUKS disk encryption.
+# swapped to /swap.img, which is inside the LUKS disk encryption. Nor is
+# Kdenlive's cache of a video it saw before you moved it into the vault:
+# empty it with Manage Cached Data in Kdenlive.
 #
 # THE PASSWORD is the one thing this cannot hold. The first `vault open`
 # creates the vault: a password of at least 12 characters, typed twice, with

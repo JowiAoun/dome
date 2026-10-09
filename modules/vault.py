@@ -37,6 +37,7 @@ import time
 import traceback
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from urllib.parse import unquote
 
 import gi
 
@@ -98,6 +99,8 @@ THUMBNAILS = CACHE / "thumbnails"
 # The document portal, as a Flatpak app is handed it and as /proc shows that
 # app's open files: inside its sandbox the portal is mounted at /run/flatpak/doc.
 DOCS = (f"{RUNTIME}/doc/", "/run/flatpak/doc/")
+# A portal path anywhere in a line of text, and the document id in it.
+DOC_IDS = re.compile(r"/run/(?:user/\d+|flatpak)/doc/(?:by-app/[^/\s]+/)?([^/\s\"'<>,;]+)")
 
 # Each recent list, and the program to close when it holds a vault file. None
 # means read the program off the entry. Text Editor keeps a list of its own
@@ -116,6 +119,14 @@ BRAVE = CONFIG / "BraveSoftware/Brave-Browser"
 # what the address bar learned from typing, and the most visited pages.
 BRAVE_DATABASES = ("History", "Shortcuts", "Network Action Predictor", "Top Sites")
 VSCODE = CONFIG / "Code"
+KDENLIVE_ID = "org.kde.kdenlive"
+KDENLIVE = HOME / ".var/app" / KDENLIVE_ID
+# Set once Kdenlive has had a vault file, and cleared once its cache has been
+# emptied. Kept across reboots: the portal forgets which files Kdenlive had
+# at the lock, and Kdenlive may still be open then.
+KDENLIVE_TOUCHED = PERSIST / "kdenlive-touched"
+# A Kdenlive backup or its timeline picture: <name>-<project id>-<time>.kdenlive
+KDENLIVE_BACKUP = re.compile(r"-(\d+)-(\d{4}(?:-\d\d){4})\.kdenlive(?:\.jpg)?$")
 # The file chooser's last folder, GTK 3 and 4 (the portal's chooser included),
 # and Text Editor's last save folder.
 FOLDER_KEYS = (
@@ -403,6 +414,8 @@ PARTS = {
                  "Audacity may keep vault file names in its recent files or logs."),
     "Xournal++": ("Xournal++'s history could not be cleaned",
                   "Xournal++ may keep vault folders, or notes about vault files."),
+    "Kdenlive": ("Kdenlive's history could not be cleaned",
+                 "Kdenlive may keep vault file names, project backups, or frames of vault videos in its cache."),
     "Flatpak documents": ("Flatpak documents could not be cleaned",
                           "The document portal may still list vault file names."),
     "thumbnail switch": ("thumbnails could not be switched",
@@ -563,11 +576,12 @@ def unless_running(label, *names):
         raise AppRunning(f"{label} is open")
 
 
-def flatpak_documents():
-    """Document portal id to the real path it stands for. A Flatpak app such as
-    VLC never sees a vault path, only /run/user/UID/doc/ID/name."""
+def flatpak_documents(app=None):
+    """Document portal id to the real path it stands for, for every app or
+    only the one named. A Flatpak app such as VLC never sees a vault path,
+    only /run/user/UID/doc/ID/name."""
     try:
-        out = subprocess.run(["flatpak", "documents", "--columns=id:f,origin:f"],
+        out = subprocess.run(["flatpak", "documents", *([app] if app else []), "--columns=id:f,origin:f"],
                              capture_output=True, text=True, timeout=10).stdout
     except (OSError, subprocess.TimeoutExpired):
         return {}
@@ -587,6 +601,26 @@ def doc_in_vault(path, docs):
     if parts[0] == "by-app" and len(parts) > 2:
         parts = parts[2:]
     return in_vault(docs.get(parts[0], ""))
+
+
+def names_vault(text, docs):
+    """mentions_vault for a Flatpak app's own files. Such an app cannot see
+    the vault and writes the portal's path for a vault file instead. An id
+    the portal no longer knows counts too, because the lock unexports every
+    vault document; dropping a dead entry costs nothing."""
+    text = text.replace("$HOME", str(HOME))
+    if mentions_vault(text):
+        return True
+    return any(doc_id not in docs or in_vault(docs[doc_id]) for doc_id in DOC_IDS.findall(text))
+
+
+def flatpak_running(app):
+    try:
+        out = subprocess.run(["flatpak", "ps", "--columns=application"],
+                             capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return app in out.split()
 
 
 def touches_vault(pid, docs):
@@ -1198,6 +1232,131 @@ def scrub_xournalpp():
     return changed
 
 
+RECENT_ENTRY = re.compile(r"(File|Name)(\d+)(\[[^\]]*\])?=(.*)")
+
+
+def scrub_kconfig(path, docs):
+    """A KDE settings file without the vault. The recent list (File1, Name1,
+    and so on) loses whole entries and is numbered again, a list of recent
+    folders loses only its vault folders, and any other line naming the vault
+    goes."""
+    lines = read_text(path).splitlines(keepends=True)
+    out, group, recent, seen, slot = [], "", {}, [], None
+
+    def place_recent():
+        # Unchanged, the lines go back as they were. Otherwise renumbered, in
+        # the order KConfig writes keys, so a second pass changes nothing.
+        if slot is None:
+            return
+        kept = [n for n in sorted(recent) if not names_vault(recent[n].get("File", ("", ""))[1], docs)]
+        if len(kept) == len(recent):
+            out[slot:slot + 1] = seen
+            return
+        keys = {}
+        for i, n in enumerate(kept, 1):
+            for kind, (flags, value) in recent[n].items():
+                keys[f"{kind}{i}"] = f"{kind}{i}{flags or ''}={value}\n"
+        out[slot:slot + 1] = [keys[k] for k in sorted(keys)]
+
+    for line in lines:
+        text = line.rstrip("\n")
+        if text.startswith("[") and text.endswith("]"):
+            place_recent()
+            group, recent, seen, slot = text, {}, [], None
+            out.append(line)
+            continue
+        match = RECENT_ENTRY.fullmatch(text) if group == "[Recent Files]" else None
+        if match:
+            if slot is None:
+                slot = len(out)
+                out.append(None)
+            recent.setdefault(int(match[2]), {})[match[1]] = (match[3], match[4])
+            seen.append(line)
+            continue
+        if not names_vault(text, docs):
+            out.append(line)
+            continue
+        key, _, value = text.partition("=")
+        if group == "[Recent Dirs]":
+            folders = [f for f in value.split(",") if not names_vault(f, docs)]
+            if folders:
+                out.append(f"{key}={','.join(folders)}\n")
+    place_recent()
+    if out == lines:
+        return 0
+    write_atomic(path, "".join(out))
+    return 1
+
+
+def scrub_kdenlive(docs=None):
+    """Kdenlive is a Flatpak, so it reaches vault files only through the
+    document portal, and it keeps a lot about them outside the vault: frames
+    and sound waveforms in its cache, a copy of every saved project and a
+    picture of its timeline in .backup, an autosave that stays behind when
+    the lock kills it (it ignores SIGTERM), and the project in its recent
+    lists. All measured on 26.08.
+
+    Once it has had a vault file, its cache is emptied as soon as it is
+    closed. Telling one project's cache from another's needs the project
+    file, which is locked away, and Kdenlive rebuilds it. Backups, autosaves
+    and settings lines that name the vault go whenever it is closed."""
+    if not KDENLIVE.is_dir():
+        return 0
+    docs = flatpak_documents() if docs is None else docs
+    backups = KDENLIVE / "data/kdenlive/.backup"
+    autosaves = KDENLIVE / "data/stalefiles/kdenlive"
+    settings = [p for d in ("config", ".local/state") for p in (KDENLIVE / d).glob("*rc") if p.is_file()]
+    vault_backups = [p for p in backups.glob("*.kdenlive") if names_vault(read_text(p), docs)]
+    # An autosave is named after the project's path, encoded.
+    vault_autosaves = [p for p in autosaves.glob("*") if p.is_file()
+                       and (names_vault(unquote(p.name), docs) or names_vault(read_text(p), docs))]
+    granted = any(in_vault(origin) for origin in flatpak_documents(KDENLIVE_ID).values())
+    if granted or vault_backups or vault_autosaves or any(names_vault(read_text(p), docs) for p in settings):
+        PERSIST.mkdir(parents=True, exist_ok=True)
+        KDENLIVE_TOUCHED.touch()
+    if not KDENLIVE_TOUCHED.exists():
+        return 0
+    # Its renders and speech-to-text run as other programs in the same sandbox.
+    if flatpak_running(KDENLIVE_ID):
+        raise AppRunning("Kdenlive is open")
+    unless_running("Kdenlive", "kdenlive", "kdenlive_render")
+
+    changed = sum(scrub_kconfig(p, docs) for p in settings)
+    for file in vault_backups + vault_autosaves:
+        file.unlink(missing_ok=True)
+        changed += 1
+    # A backup's timeline picture and subtitle copies go unless they belong to
+    # a backup that is kept: a project saved only once has a picture and no
+    # backup to read.
+    kept = [KDENLIVE_BACKUP.search(p.name) for p in backups.glob("*.kdenlive")]
+    kept_ids = {m[1] for m in kept if m}
+    kept_times = {m[2] for m in kept if m}
+    gone_times = {m[2] for m in map(KDENLIVE_BACKUP.search, (p.name for p in vault_backups)) if m}
+    for picture in backups.glob("*.jpg"):
+        match = KDENLIVE_BACKUP.search(picture.name)
+        if not match or match[1] not in kept_ids:
+            picture.unlink(missing_ok=True)
+            changed += 1
+    for folder in backups.glob("*"):
+        if folder.is_dir() and (folder.name in gone_times or folder.name not in kept_times):
+            shutil.rmtree(folder, ignore_errors=True)
+            changed += 1
+    # The cache: one folder per project (thumbnails, waveforms, timeline
+    # previews, masks), proxy copies, its in-memory audio cache, and the
+    # sandbox's /var/tmp, where speech-to-text extracts the audio.
+    cache = KDENLIVE / "cache"
+    for item in [*(cache / "kdenlive").glob("*"), *cache.glob("*.kcache"), *(cache / "tmp").glob("*")]:
+        if item.parent.name == "kdenlive" and not (item.name.isdigit() or item.name == "proxy"):
+            continue
+        if item.is_dir() and not item.is_symlink():
+            shutil.rmtree(item, ignore_errors=True)
+        else:
+            item.unlink(missing_ok=True)
+        changed += 1
+    KDENLIVE_TOUCHED.unlink(missing_ok=True)
+    return changed
+
+
 def sweep(report, vault_open, docs=None):
     """Clear every trace this can reach. Each part runs on its own, and one
     whose app is open is left for the next check, every two minutes."""
@@ -1209,6 +1368,7 @@ def sweep(report, vault_open, docs=None):
     attempt(report, "LibreOffice", scrub_libreoffice)
     attempt(report, "Audacity", scrub_audacity)
     attempt(report, "Xournal++", scrub_xournalpp)
+    attempt(report, "Kdenlive", scrub_kdenlive, docs)
     attempt(report, "Brave", scrub_brave)
     attempt(report, "VS Code", scrub_vscode)
     # Not while open: a Flatpak app may be reading one of them right now.
