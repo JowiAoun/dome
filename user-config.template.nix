@@ -20,6 +20,12 @@
   # these completely alone. Filled in by ./setup.sh --sync-apps-skip.
   appsSkip = [ ];
 
+  # Flatpak apps to install system-wide from Flathub, by application id. Needs
+  # `flatpak = true;` below. Find an id with `flatpak search <name>`; installed
+  # apps are detected by --sync-apps-skip, so Nix never adds a second copy.
+  #   flatpakApps = [ "com.spotify.Client" "org.videolan.VLC" ];
+  flatpakApps = [ ];
+
   # System-layer switches. These live outside `modules` because the root layer
   # (system/*.sh) reads them with sed, not Nix - they install things Nix cannot
   # provide on Ubuntu (a systemd daemon, a group, a .deb).
@@ -42,6 +48,11 @@
                               # modules.apps.chromiumFlags does for the Chromium apps, so
                               # middle click pans instead of pasting everywhere. See
                               # system/77-gecko-policy.sh.
+  flatpak = true;         # Flatpak plus the Flathub remote, system-wide, and the
+                          # GNOME Software plugin when that store is installed.
+                          # Installing it costs ~20 MB and no apps: nothing is
+                          # fetched until flatpakApps below names something.
+                          # See system/82-flatpak.sh.
   gameMode = false;       # Feral GameMode: /etc/gamemode.ini plus a CurseForge launcher
                           # that starts the game through gamemoderun. Moves the CPU
                           # governor to performance while a game is running (gamemode's

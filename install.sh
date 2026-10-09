@@ -118,6 +118,10 @@ ensure_system_flag braveBrowser true
 ensure_system_flag braveManagedPolicy true
 ensure_system_flag gameMode false
 ensure_system_flag tailscale true
+ensure_system_flag flatpak true
+# Not a bool: the list of Flathub app ids to install. Empty is the only honest
+# default — dome should never decide on someone's behalf which apps to fetch.
+ensure_system_flag flatpakApps "[ ]"
 # Not a bool: 0 means "the login screen keeps asking for Enter". The seeded
 # default has to be OFF — a length guessed on someone else's behalf would
 # submit a prefix of their password on every attempt.

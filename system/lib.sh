@@ -95,6 +95,42 @@ config_num() {
   echo "${v:-0}"
 }
 
+# The elements of a LIST-of-strings field in user-config.nix, one per line.
+#
+#   flatpakApps = [ "com.spotify.Client" "md.obsidian.Obsidian" ];
+#   flatpakApps = [                       # or spread over several lines
+#     "com.spotify.Client"
+#   ];
+#
+# Both spellings read the same, because a hand-edited list grows downwards and a
+# generated one does not. Nothing here parses Nix — it takes the text between
+# `<key> = [` and the first `]` and returns every double-quoted run inside it,
+# which is all a list of plain strings ever is. A trailing `# comment` is
+# dropped so a commented-out entry does not come back as an app.
+#
+# Prints nothing for a missing file, a missing key, or an empty list, so a
+# caller can loop over it unconditionally.
+config_list() { # <key>
+  [ -f "$DOME_ROOT/user-config.nix" ] || return 0
+  awk -v key="$1" '
+    !inlist && $0 ~ "^[[:space:]]*" key "[[:space:]]*=[[:space:]]*\\[" {
+      inlist = 1
+      sub("^[[:space:]]*" key "[[:space:]]*=[[:space:]]*\\[", "")
+    }
+    inlist {
+      line = $0
+      if (index(line, "]") > 0) { line = substr(line, 1, index(line, "]") - 1); last = 1 }
+      sub(/(^|[[:space:]])#.*/, "", line)
+      while (match(line, /"[^"]*"/)) {
+        item = substr(line, RSTART + 1, RLENGTH - 2)
+        if (item != "") print item
+        line = substr(line, RSTART + RLENGTH)
+      }
+      if (last) exit
+    }
+  ' "$DOME_ROOT/user-config.nix"
+}
+
 # The human user the duo tooling belongs to:
 # user-config.nix username > the user who invoked sudo > failure.
 target_user() {

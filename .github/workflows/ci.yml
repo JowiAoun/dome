@@ -56,6 +56,11 @@ jobs:
           grep -q 'gameMode = false;' user-config.nix
           # Tailscale is on by default: installing it joins nothing until `tailscale up`.
           grep -q 'tailscale = true;' user-config.nix
+          # Flatpak: the tooling is on by default, the app list is not seeded.
+          # An empty list is the only honest default — dome must never decide
+          # on someone's behalf which apps to fetch from Flathub.
+          grep -q 'flatpak = true;' user-config.nix
+          grep -q 'flatpakApps = \[ \];' user-config.nix
           # loginPinLength is a NUMBER, and its backfill is the one that cannot
           # borrow the `= false;` default the other switches use. 0 means the
           # login screen keeps asking for Enter, which is what a machine whose
@@ -67,6 +72,18 @@ jobs:
           # An empty hostName means "leave the machine name alone" — a first run
           # must never invent one and rename someone's computer.
           grep -q 'hostName = "";' user-config.nix
+          # write_config REGENERATES user-config.nix, so a field it cannot parse
+          # is a field it erases. A hand-edited list grows downwards, and the
+          # single-line reader returns nothing for that shape — which would have
+          # silently dropped the user's apps on the next ./setup.sh.
+          printf '%s\n' 'flatpakApps = [' '  "com.spotify.Client"' '  # "com.commented.Out"' '  "org.videolan.VLC"' '];' > /tmp/list.nix
+          python3 - <<'PY'
+          s = open('user-config.nix').read()
+          s = s.replace('flatpakApps = [ ];', open('/tmp/list.nix').read().strip())
+          open('user-config.nix', 'w').write(s)
+          PY
+          ./setup.sh --defaults zenbook-duo
+          grep -q 'flatpakApps = \[ "com.spotify.Client" "org.videolan.VLC" \];' user-config.nix
           rm user-config.nix
 
       - name: apps already installed elsewhere are detected and skipped

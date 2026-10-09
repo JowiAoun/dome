@@ -751,11 +751,67 @@ openWhispr = true;          # OpenWhispr dictation, from its GitHub release (~1 
 braveBrowser = true;        # Brave from Brave's apt repo, not nixpkgs
 braveManagedPolicy = true;  # Leo, Wallet, Rewards, VPN, News, Web Discovery off
 geckoPolicy = true;         # Firefox + Thunderbird: middle-click autoscroll, as policy
+flatpak = true;             # Flatpak + the Flathub remote, system-wide
 ```
 
 Each has a matching one-run override on `system/run.sh` — `--no-brave`,
 `--no-brave-policy`, `--no-gecko-policy`, `--no-openwhispr`,
-`--no-claude-desktop`.
+`--no-claude-desktop`, `--no-flatpak`.
+
+### Flatpak
+
+`system/82-flatpak.sh` installs Flatpak, registers **Flathub** system-wide, and
+installs whatever `flatpakApps` names:
+
+```nix
+flatpak = true;                                  # the tooling and the remote
+flatpakApps = [ "com.spotify.Client" ];          # apps, by application id
+```
+
+On by default, and by itself that costs ~20 MB and downloads no apps — the list
+is empty until you put something in it. `flatpak search <name>` finds an id.
+
+It is the **fourth** way this machine can install a GUI app, so the obvious
+question is when to reach for it. Nix first (`modules.apps`, pinned and
+declarative), apt for anything needing root plumbing or its own update stream
+(Docker, Brave, Claude Desktop), and Flatpak for the case neither covers: a
+sandboxed vendor build of something nixpkgs does not have, or has too old, that
+you would otherwise download as a tarball into `~/Applications`. Snap is left to
+whatever Ubuntu already shipped.
+
+Three details worth knowing, in the order they will surprise you:
+
+- **A newly installed app is missing from the app grid until you log out and
+  back in.** Flatpak's exports reach GNOME through `XDG_DATA_DIRS`, and the
+  package extends that variable in exactly two places — `/etc/profile.d/flatpak.sh`
+  and the systemd user-environment generator `60-flatpak` (both verified with
+  `dpkg -c`). Both run when a **session starts**, so neither can reach the
+  gnome-shell that is already running. The first install after enabling this is
+  the only one affected; later ones appear immediately.
+- **It is installed `--system`, not `--user`**, which puts it in
+  `/var/lib/flatpak/exports/share/applications` — exactly where
+  `setup.sh --sync-apps-skip` and `modules/apps.nix` already look. So a Flatpak
+  of something the apps module also knows lands in `appsSkip` on the next run,
+  and Nix never installs a second copy or takes over its launcher. A `--user`
+  install would be invisible to half of that.
+- **Every `sudo make system` runs `flatpak update`**, for the same reason Brave
+  does its own upgrade: nothing on this machine updates Flatpaks on a schedule.
+  GNOME Software would, in the background, but it is not installed here.
+
+Turning it off is *not* an uninstall — it stops dome adding remotes and apps and
+leaves the existing install alone, because `apt remove flatpak` would orphan
+gigabytes of already-installed runtimes and apps. Remove it yourself if that is
+really what you want:
+
+```bash
+sudo bash system/run.sh --no-flatpak       # one run
+sudo apt remove --purge flatpak            # deletes installed apps too
+```
+
+The GNOME Software plugin (`gnome-software-plugin-flatpak`) is installed **only
+if GNOME Software already is** — without the plugin that store silently omits
+every Flatpak, but pulling in a whole app store on a machine that does not have
+one would be installing something nobody asked for.
 
 ### Brave, and why it is not a Nix package
 

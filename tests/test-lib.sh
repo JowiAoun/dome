@@ -132,6 +132,36 @@ is "config_num ignores a bool"         "$(config_num notANumber)"     "0"
 # switch. (It is indented, so the anchor is what saves us.)
 succeeds "nested modules.apps is still matched by the anchor" config_flag apps
 
+# ── config_list ──────────────────────────────────────────────────────────────
+# The other half of the Nix -> bash bridge: a list of strings. A wrong answer
+# here installs the wrong apps, or silently installs none.
+group "config_list"
+
+cat > "$fixture/user-config.nix" <<'EOF'
+{
+  appsSkip = [ "brave" ];
+  emptyList = [ ];
+  oneLine = [ "com.spotify.Client" "md.obsidian.Obsidian" ];
+  spread = [
+    "org.videolan.VLC"      # a trailing comment is not an app
+    # "com.commented.Out"
+    "com.github.tchx84.Flatseal"
+  ];
+  notAList = "brave";
+  after = [ "sentinel" ];
+}
+EOF
+
+is "config_list reads a one-element list"   "$(config_list appsSkip)"  "brave"
+is "config_list on an empty list"           "$(config_list emptyList)" ""
+is "config_list on a missing key"           "$(config_list neverDefined)" ""
+is "config_list reads several on one line"  "$(config_list oneLine | tr '\n' ' ')" "com.spotify.Client md.obsidian.Obsidian "
+# A hand-edited list grows downwards, so the multi-line spelling has to work —
+# and must stop at its own ']' rather than swallowing every later list.
+is "config_list reads a multi-line list"    "$(config_list spread | tr '\n' ' ')" "org.videolan.VLC com.github.tchx84.Flatseal "
+is "config_list stops at the closing ]"     "$(config_list spread | grep -c sentinel)" "0"
+is "config_list ignores a non-list key"     "$(config_list notAList)" ""
+
 rm -rf "$fixture"
 # shellcheck disable=SC2034  # read by config_flag/config_str inside lib.sh
 DOME_ROOT="$(pwd)"

@@ -78,6 +78,46 @@ cfg_get_list() { # <field> — read `field = [ ... ];` and return the inner text
   sed -nE "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\[(.*)\];.*/\1/p" user-config.nix 2>/dev/null | head -n1 || true
 }
 
+# Same, but for a list that may be spread over SEVERAL lines, returned as a
+# ready-to-write one-line Nix literal. write_config regenerates user-config.nix
+# from scratch on every run, so a field it cannot read is a field it silently
+# erases — and a hand-edited list is exactly the kind that grows downwards:
+#
+#   flatpakApps = [
+#     "com.spotify.Client"
+#   ];
+#
+# cfg_get_list above sees no `];` on the first line and returns nothing, which
+# would drop the user's apps. This mirrors config_list() in system/lib.sh (same
+# awk, same "text between `= [` and the first `]`" rule) so both layers agree on
+# what the list contains; the normalised output is what gets written back.
+cfg_get_list_literal() { # <field> -> `[ "a" "b" ]`, or `[ ]`
+  local items
+  items="$(awk -v key="$1" '
+    !inlist && $0 ~ "^[[:space:]]*" key "[[:space:]]*=[[:space:]]*\\[" {
+      inlist = 1
+      sub("^[[:space:]]*" key "[[:space:]]*=[[:space:]]*\\[", "")
+    }
+    inlist {
+      line = $0
+      if (index(line, "]") > 0) { line = substr(line, 1, index(line, "]") - 1); last = 1 }
+      sub(/(^|[[:space:]])#.*/, "", line)
+      while (match(line, /"[^"]*"/)) {
+        item = substr(line, RSTART + 1, RLENGTH - 2)
+        if (item != "") printf "\"%s\" ", item
+        line = substr(line, RSTART + RLENGTH)
+      }
+      if (last) exit
+    }
+  ' user-config.nix 2>/dev/null || true)"
+  items="${items% }"
+  if [ -n "$items" ]; then
+    printf '[ %s ]' "$items"
+  else
+    printf '[ ]'
+  fi
+}
+
 # ── "is this app already installed?" ─────────────────────────────────────────
 # The apps module must never install a second copy of software the machine
 # already has, nor take over its launcher. This is the shell half of the
@@ -420,7 +460,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   # up its redirection first and truncates the file, so a $(cfg_get ...) inside
   # the heredoc body would read the now-empty file and every saved preference
   # would silently reset to the hard-coded default below on each re-run.
-  local git_branch git_editor pref_shell pref_editor docker_engine docker_desktop claude_desktop brave_browser brave_policy open_whispr game_mode tailscale login_pin_length login_rate_limit
+  local git_branch git_editor pref_shell pref_editor docker_engine docker_desktop claude_desktop brave_browser brave_policy open_whispr game_mode tailscale flatpak flatpak_apps login_pin_length login_rate_limit
   git_branch="$(cfg_get gitDefaultBranch)"
   git_editor="$(cfg_get gitEditor)"
   pref_shell="$(cfg_get preferredShell)"
@@ -436,6 +476,9 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   open_whispr="$(cfg_get openWhispr)"
   game_mode="$(cfg_get gameMode)"
   tailscale="$(cfg_get tailscale)"
+  flatpak="$(cfg_get flatpak)"
+  # Carried through, never invented: the apps in it were chosen by hand.
+  flatpak_apps="$(cfg_get_list_literal flatpakApps)"
   login_pin_length="$(cfg_get loginPinLength)"
   login_rate_limit="$(cfg_get loginRateLimit)"
   # Carried through untouched. There is deliberately no prompt for this:
@@ -469,6 +512,10 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   # Apps already installed outside Nix - the apps module leaves these alone
   appsSkip = $apps_skip;
 
+  # Flatpak apps installed system-wide from Flathub, by application id
+  # (needs flatpak = true below). Find one with: flatpak search <name>
+  flatpakApps = $flatpak_apps;
+
   # System-layer switches (read by system/*.sh, not by Nix)
   dockerEngine = $docker_engine;
   dockerDesktop = $docker_desktop;
@@ -479,6 +526,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   geckoPolicy = $gecko_policy;
   gameMode = $game_mode;
   tailscale = $tailscale;
+  flatpak = $flatpak;
   loginPinLength = $login_pin_length;
   loginRateLimit = $login_rate_limit;
 
@@ -527,6 +575,7 @@ EOF
   sed -i 's/openWhispr = ;/openWhispr = true;/' user-config.nix
   sed -i 's/gameMode = ;/gameMode = false;/' user-config.nix
   sed -i 's/tailscale = ;/tailscale = true;/' user-config.nix
+  sed -i 's/flatpak = ;/flatpak = true;/' user-config.nix
   # loginPinLength is a NUMBER, not a bool — 0 means "ask for Enter as usual".
   sed -i 's/loginPinLength = ;/loginPinLength = 0;/' user-config.nix
   sed -i 's/loginRateLimit = ;/loginRateLimit = false;/' user-config.nix
