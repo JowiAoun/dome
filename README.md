@@ -1267,6 +1267,105 @@ sysctl off, which would hand it back to every binary on the machine including
 anything downloaded to `/tmp`. To tighten it, name the binaries explicitly in
 place of the `**`.
 
+### A hand-installed Qt (Qt Creator) that will not start
+
+Symptom, from Qt Creator installed by the Qt online installer into `/opt/Qt`:
+
+```
+qt.qpa.plugin: From 6.5.0, xcb-cursor0 or libxcb-cursor0 is needed to load the
+  Qt xcb platform plugin.
+Could not load the Qt platform plugin "xcb" in "" even though it was found.
+This application failed to start because no Qt platform plugin could be
+  initialized. Reinstalling the application may fix this problem.
+```
+
+"even though it was found" is the confusing part, and the one thing the message
+suggests — reinstalling — cannot help. The plugin file is present and intact; it
+links against a library Ubuntu does not install by default. Ask the plugin
+directly rather than the app:
+
+```bash
+ldd /opt/Qt/Tools/QtCreator/lib/Qt/plugins/platforms/libqxcb.so | grep 'not found'
+#   libxcb-cursor.so.0 => not found
+```
+
+Qt 6.5 added a hard dependency on libxcb-cursor for X11 cursor themes. The Qt
+installer neither bundles it nor checks for it — it has no package manager to
+ask, which is the gap `system/83-qt-runtime.sh` fills. It needs no switch: it
+detects a hand-installed Qt (`/opt/Qt`, `~/Qt`, or `qtcreator` on `PATH`),
+installs `libxcb-cursor0`, and does nothing at all on a machine without one.
+
+```bash
+sudo make system     # or: sudo bash system/83-qt-runtime.sh
+```
+
+**Why it happens on a Wayland machine at all**, given Qt ships a working wayland
+plugin — Qt refuses to use it under GNOME:
+
+```
+Warning: Ignoring WAYLAND_DISPLAY on Gnome. Use QT_QPA_PLATFORM=wayland to run
+         on Wayland anyway.
+```
+
+So Qt apps here run on XWayland through xcb, and xcb is the plugin with the
+missing library. `QT_QPA_PLATFORM=wayland` does start the app (that is how
+`qtcreator -version` was got out of it before the fix) and scales more crisply
+on a HiDPI panel, but avoiding that path on GNOME is Qt's own decision, so
+nothing here overrides it for every Qt app on the machine. Set it per-launch if
+you want it.
+
+`libxcb-xinerama0` is the package every answer online adds alongside. It is
+deliberately **not** installed: nothing in this Qt references that soname
+(`objdump -p` over the shipped `.so` files finds no `libxcb-xinerama` at all),
+and `libqxcb.so` has exactly one unresolved library.
+
+**The generic-cog icon is a separate problem, and `mkdesktop` is the wrong tool
+for it** — this is the one hand-installed app that does *not* want one, and
+reaching for it puts a third Qt Creator in the app grid.
+
+The installer really does write launchers. Run as root it puts them in
+**`/usr/local/share/applications`** (`org.qt-project.qtcreator.desktop`,
+`Qt-MaintenanceTool.desktop`), which is on `XDG_DATA_DIRS` — so they are found,
+they launch, and they carry the right `MimeType`, `%F` and `StartupWMClass`.
+Only one line is wrong:
+
+```ini
+Icon=QtProject-qtcreator     # Qt Creator
+Icon=QtIcon                  # Qt Maintenance Tool
+```
+
+Those are icon **theme names**, looked up in the icon search path. The installer
+even creates the entire directory layout to hold them —
+`/usr/local/share/icons/hicolor/{16x16,…,512x512}/apps` — and then never copies
+the icons in. Eight directories, zero files:
+
+```bash
+find /usr/local/share/icons -type f | wc -l    # 0
+```
+
+So the entry works perfectly and shows a grey cog forever, which reads like a
+broken launcher when nothing about it is broken. `system/83-qt-runtime.sh`
+copies Qt's own icons into the tree Qt made for them (and installs
+`/opt/Qt/icons/QtIcon.png` for the Maintenance Tool, which ships outside any
+hicolor layout). One launcher, with its icon.
+
+Writing an `mkdesktop` entry instead — absolute `Exec`, absolute `Icon` — also
+produces a working launcher, but a launcher with a *different desktop id*, so
+GNOME shows it **alongside** the vendor's rather than instead of it. That is
+where the third icon comes from. Before running `mkdesktop` on anything, check
+whether the vendor already installed an entry, and check `/usr/local/share` —
+not just `/usr/share` and `~/.local/share`:
+
+```bash
+grep -rl "$(basename /opt/Qt/Tools/QtCreator/bin/qtcreator)" \
+  /usr/share/applications /usr/local/share/applications ~/.local/share/applications
+```
+
+The same script also takes `/usr/local/share/{applications,icons}` back from
+mode **0777**, which the installer leaves them at. A world-writable directory
+that GNOME reads `.desktop` files out of lets any local process drop in a
+launcher every user of the machine sees and may click.
+
 ### Reinstalling this machine
 
 Most of a rebuild is already free: the repo is on GitHub and `./install.sh`

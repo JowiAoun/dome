@@ -199,6 +199,24 @@ the entry, and refreshes the app database so search picks it up immediately.
 mkdesktop ~/Applications/Obsidian.AppImage --name "Obsidian" --icon ~/Applications/obsidian.png
 ```
 
+**First check whether the app already has a launcher, and search
+`/usr/local/share` when you do.** A generic-cog icon does *not* mean there is no
+entry — an entry whose `Icon=` names a theme icon that was never installed looks
+identical to no entry at all. `mkdesktop` writes a different desktop **id**, so
+it does not replace such an entry, it **adds a second one**, and the user gets
+two icons in the app grid (this happened with Qt Creator: three).
+
+```bash
+grep -rl <binary-name> /usr/share/applications /usr/local/share/applications \
+                       ~/.local/share/applications /var/lib/snapd/desktop/applications
+```
+
+`/usr/local/share/applications` is the one people forget and is exactly where a
+vendor installer run under `sudo` writes — the Qt online installer does. If an
+entry exists and only its icon is broken, fix the **icon** (put the file where
+the entry's `Icon=` name resolves — see `system/83-qt-runtime.sh`), never write
+a competing entry.
+
 **The dash icon — the one thing `mkdesktop` cannot guess.** `StartupWMClass` is
 the class the *running* window reports, and it is what makes the taskbar/dash show
 the app's own icon instead of a generic placeholder. `mkdesktop` leaves it unset
