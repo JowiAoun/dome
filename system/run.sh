@@ -88,7 +88,7 @@ fi
 # Host-independent extras. Each one either honors a user-config.nix switch
 # (docker) or detects that it has nothing to do (GPU, AppArmor), and every one
 # of them logs why it is skipping — so they are safe to run unconditionally.
-for script in 60-docker.sh 62-tailscale.sh 70-docker-desktop.sh 75-claude-desktop.sh 76-openwhispr.sh 77-gecko-policy.sh 78-brave.sh 79-brave-policy.sh 80-nix-gpu.sh 82-flatpak.sh 83-qt-runtime.sh 85-apparmor-userns.sh 86-gamemode.sh 87-login-pin.sh 88-faillock.sh 96-tpm-unlock.sh 95-luks.sh; do
+for script in 60-docker.sh 62-tailscale.sh 70-docker-desktop.sh 75-claude-desktop.sh 76-openwhispr.sh 77-gecko-policy.sh 78-brave.sh 79-brave-policy.sh 80-nix-gpu.sh 82-flatpak.sh 83-qt-runtime.sh 84-media.sh 85-apparmor-userns.sh 86-gamemode.sh 87-login-pin.sh 88-faillock.sh 96-tpm-unlock.sh 95-luks.sh; do
   log "── $script"
   bash "./$script"
 done
