@@ -258,6 +258,13 @@ def attempt(report, label, action, *args):
         report.append((label, "later", str(busy)))
         return None
     except Exception as error:
+        # The app opened while its files were being cleaned and locked them,
+        # as Brave does with its history. Wait for it to close, as if it had
+        # been open from the start.
+        if app_open(label):
+            log(f"{label}: opened during the clean-up ({type(error).__name__}), so it waits")
+            report.append((label, "later", f"{label} is open"))
+            return None
         log(f"{label}: failed ({type(error).__name__})")
         report.append((label, "failed", type(error).__name__))
         return None
@@ -571,8 +578,26 @@ def is_open():
     return mounted() and bool(gocryptfs_pids())
 
 
-def unless_running(label, *names):
-    if any(name_of(p) in names for p in own_pids()):
+# The programs of each app whose files a clean-up has to wait to edit.
+APP_PROGRAMS = {
+    "Text Editor": ("gnome-text-editor",),
+    "VLC": ("vlc",),
+    "LibreOffice": ("soffice.bin",),
+    "Audacity": ("audacity",),
+    "Xournal++": ("xournalpp",),
+    "Kdenlive": ("kdenlive", "kdenlive_render"),
+    "Brave": ("brave",),
+    "VS Code": ("code",),
+}
+
+
+def app_open(label):
+    names = APP_PROGRAMS.get(label, ())
+    return any(name_of(p) in names for p in own_pids())
+
+
+def unless_running(label):
+    if app_open(label):
         raise AppRunning(f"{label} is open")
 
 
@@ -856,7 +881,7 @@ def scrub_text_editor():
     session = TEXT_EDITOR / "session.gvariant"
     if not session.exists():
         return 0
-    unless_running("Text Editor", "gnome-text-editor")
+    unless_running("Text Editor")
     state = GLib.Variant.new_from_bytes(GLib.VariantType("a{sv}"), GLib.Bytes.new(session.read_bytes()), False)
     dropped, drafts = 0, []
 
@@ -1013,7 +1038,7 @@ def scrub_vlc():
     the vault."""
     if not VLC.exists():
         return 0
-    unless_running("VLC", "vlc")
+    unless_running("VLC")
     changed = 0
     rc = VLC / "vlcrc"
     if rc.exists():
@@ -1061,7 +1086,7 @@ def scrub_libreoffice():
                if d.is_dir() and not d.is_symlink() and d.stat().st_uid == UID]
     if not xcu.exists() and not scratch:
         return 0
-    unless_running("LibreOffice", "soffice.bin")
+    unless_running("LibreOffice")
     for folder in scratch:
         shutil.rmtree(folder, ignore_errors=True)
     if not xcu.exists():
@@ -1167,7 +1192,7 @@ def scrub_brave():
     profiles = [p for p in BRAVE.iterdir() if (p / "Preferences").exists()] if BRAVE.is_dir() else []
     if not profiles:
         return 0
-    unless_running("Brave", "brave")
+    unless_running("Brave")
     changed = 0
     for profile in profiles:
         for name in BRAVE_DATABASES:
@@ -1183,7 +1208,7 @@ def scrub_vscode():
     closed, for the same reason as Brave."""
     if not VSCODE.is_dir():
         return 0
-    unless_running("VS Code", "code")
+    unless_running("VS Code")
     changed = scrub_item_table(VSCODE / "User/globalStorage/state.vscdb")
     changed += scrub_json(VSCODE / "User/globalStorage/storage.json")
     changed += scrub_json(VSCODE / "Backups/workspaces.json")
@@ -1210,7 +1235,7 @@ def scrub_audacity():
     no switch for any of them, and its logs name every file it opens."""
     if not (AUDACITY.exists() or AUDACITY_INI.exists()):
         return 0
-    unless_running("Audacity", "audacity")
+    unless_running("Audacity")
     return (scrub_json(AUDACITY / "recent_files.json") + scrub_json(AUDACITY / "session/session.json")
             + drop_lines(AUDACITY_INI) + delete_mentioning(AUDACITY / "logs"))
 
@@ -1220,7 +1245,7 @@ def scrub_xournalpp():
     (last page, zoom). Its recent list is GTK's, which strip_recent covers."""
     if not (XOURNALPP.exists() or any(d.is_dir() for d in XOURNALPP_NOTES)):
         return 0
-    unless_running("Xournal++", "xournalpp")
+    unless_running("Xournal++")
     changed = sum(delete_mentioning(d) for d in XOURNALPP_NOTES)
     if XOURNALPP.exists():
         text = read_text(XOURNALPP)
@@ -1319,7 +1344,7 @@ def scrub_kdenlive(docs=None):
     # Its renders and speech-to-text run as other programs in the same sandbox.
     if flatpak_running(KDENLIVE_ID):
         raise AppRunning("Kdenlive is open")
-    unless_running("Kdenlive", "kdenlive", "kdenlive_render")
+    unless_running("Kdenlive")
 
     changed = sum(scrub_kconfig(p, docs) for p in settings)
     for file in vault_backups + vault_autosaves:

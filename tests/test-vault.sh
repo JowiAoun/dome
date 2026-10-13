@@ -390,6 +390,23 @@ expect "VS Code: Open Recent loses only its vault entries" 'py -c "import sqlite
 expect "VS Code: other state naming the vault goes, the rest stays" '[ "$(py -c "import sqlite3; d = sqlite3.connect(\"$code/User/globalStorage/state.vscdb\"); print(\",\".join(sorted(k for (k,) in d.execute(\"select key from ItemTable\"))))")" = "history.recentlyOpenedPathsList,unrelated" ]'
 expect "VS Code: a vault workspace, backup and file history are deleted" '[ ! -e "$code/User/workspaceStorage/vaultws" ] && [ -e "$code/User/workspaceStorage/otherws" ] && [ ! -e "$code/Backups/123/file/abc" ] && [ ! -e "$code/User/History/h1" ]'
 
+echo "test-vault: an app that opens while its files are being cleaned"
+# Brave opening just as a check edits its history: the database is locked
+# under the clean-up. That is a wait for Brave to close, not a failure.
+py - "$repo/modules" <<'EOF' > "$T/out" 2>&1
+import sqlite3, sys; sys.path.insert(0, sys.argv[1])
+import vault
+def locked():
+    raise sqlite3.OperationalError("database is locked")
+for now_open in (True, False):
+    vault.app_open = lambda label: now_open
+    report = []
+    vault.attempt(report, "Brave", locked)
+    print("result", report[0][1])
+EOF
+expect "it waits for the app to close" '[ "$(grep ^result "$T/out" | sed -n 1p)" = "result later" ]'
+expect "the same error with the app closed is still a failure" '[ "$(grep ^result "$T/out" | sed -n 2p)" = "result failed" ]'
+
 echo "test-vault: Kdenlive, a Flatpak that reaches vault files through the portal"
 # Laid out the way Kdenlive 26.08 left it after opening and saving a project
 # through the portal, then being killed: d1 and d2 are vault documents, d9 is not.
