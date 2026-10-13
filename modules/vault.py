@@ -352,6 +352,15 @@ def resolve(key):
     send("Vault: fixed", entry["fixed"], replace=entry.get("id"))
 
 
+def forget(key):
+    """Drop a warning without telling you it is fixed, for a part that is not
+    broken but waiting. A notification already on screen stays until closed."""
+    with warnings_held():
+        warnings = active_warnings()
+        if warnings.pop(key, None) is not None:
+            save_warnings(warnings)
+
+
 def remind_all():
     with warnings_held():
         warnings = active_warnings()
@@ -1683,6 +1692,10 @@ def review(report, restarted, reason, lock_error, previous):
             warn_part(label)
         elif status == "ok":
             resolve(f"part:{label}")
+        elif status == "later":
+            # Waiting for an app to close is not a failure. One from before it
+            # opened is tried again once it closes, and warns again if it fails.
+            forget(f"part:{label}")
 
     guard = next((status for label, status, _ in report if label == "vault-guard"), None)
     if guard == "failed":

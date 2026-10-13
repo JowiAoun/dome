@@ -241,8 +241,11 @@ rm "$lo/registrymodifications.xcu"
 echo "test-vault: an app's files wait until it closes"
 cp /usr/bin/sleep "$T/bin/vlc"; "$T/bin/vlc" 300 & fakevlc=$!
 printf '[General]\nfiledialog-path=%s\n' "$M" > "$vlc/vlc-qt-interface.conf"
+# A failure from before VLC opened, as when it opens in the middle of a clean-up.
+py -c "import json, os, time; p = '$W/warnings.json'; w = json.load(open(p)) if os.path.exists(p) else {}; w['part:VLC'] = {'since': time.time(), 'notified': time.time(), 'id': None, 'title': 'Vault: VLC old', 'body': 'b', 'fixed': 'VLC is working again.', 'incident': False}; json.dump(w, open(p, 'w'))"
 v check > "$T/check3.txt"
 expect_app "VLC" "VLC open: its files are left alone and it says so" 'grep -q "later    VLC" "$T/check3.txt" && grep -q filedialog-path "$vlc/vlc-qt-interface.conf"'
+expect_app "VLC" "and an old failure of VLC's part goes quietly while it waits" '! grep -q part:VLC "$W/warnings.json" && ! grep -q "VLC is working again" "$T/notified"'
 expect_app "LibreOffice" "once LibreOffice works again its warning goes" '! grep -q LibreOffice "$W/warnings.txt"'
 expect_app "LibreOffice" "and the notification is replaced with one saying it is fixed" 'grep -q -- "-r 42 Vault: fixed LibreOffice is working again" "$T/notified"'
 kill "$fakevlc"; wait "$fakevlc" 2>/dev/null
