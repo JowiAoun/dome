@@ -1474,10 +1474,12 @@ than discovering it later.
 `system/96-tpm-unlock.sh` can enrol the encrypted root into the TPM so the disk
 unlocks from the chip and no passphrase is typed at boot. It is **off by
 default** and gated on `tpmAutoUnlock = true` in `user-config.nix`, because it is
-a genuine trade-off: the disk stays encrypted against a pulled drive or a
-powered-off theft, but anyone who can power the machine on reaches the login
-screen without the disk passphrase. The passphrase keyslot is never removed, so
-it remains the automatic fallback.
+a genuine trade-off: the disk stays encrypted against a pulled drive, but anyone
+who can power the machine on reaches the login screen without the disk
+passphrase. It does not hold against someone who has the whole laptop either.
+PCR 7 only checks Secure Boot, and the initramfs in `/boot` is not encrypted or
+checked, so they can change it and the TPM hands the key to their copy. The
+passphrase keyslot is never removed, so it remains the automatic fallback.
 
 It uses **Clevis**, not `systemd-cryptenroll`. The systemd-native
 `tpm2-device=auto` option is honoured only by `sd-cryptsetup`, which is not in
@@ -1507,6 +1509,9 @@ screen submit the password by themselves the moment it reaches that many
 characters — a Windows Hello PIN, on GNOME. `0` (the default) leaves both
 screens asking for Enter. `loginRateLimit = true;` is the lockout that makes a
 short PIN defensible; the two are separate switches and either works alone.
+The lockout covers the login and lock screens only. `sudo` has none, so a
+program already running as you can try a short PIN many times at once and get
+root. A longer password is what protects against that.
 
 **It does not check the password after every character, and neither does Windows.**
 A Hello PIN is a fixed-length credential and Windows submits at that length. Per-

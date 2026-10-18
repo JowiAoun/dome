@@ -78,8 +78,10 @@
   tpmAutoUnlock = false;  # Enroll the LUKS root into the TPM (Clevis, PCR 7) so boot
                           # skips the passphrase. Keeps the passphrase as a fallback.
                           # SECURITY TRADEOFF: anyone who powers the machine on reaches
-                          # the login screen without the disk passphrase. Off by default;
-                          # opt in deliberately. See system/96-tpm-unlock.sh.
+                          # the login screen without the disk passphrase, and someone
+                          # holding the laptop can change the unencrypted initramfs in
+                          # /boot to get the disk key. It guards a pulled drive only.
+                          # Off by default; opt in deliberately. See system/96-tpm-unlock.sh.
 
   # Machine name - applied to /etc/hostname, the GNOME "Device Name" and
   # /etc/hosts. Empty leaves whatever the machine is already called.

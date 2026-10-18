@@ -4,9 +4,16 @@
 # Enrolls the encrypted root into the TPM so the initramfs unlocks the disk from
 # the chip instead of asking for a passphrase at every boot. Gated on
 # `tpmAutoUnlock = true` in user-config.nix — off by default, because it is a
-# real security trade-off (see the banner at the end): the disk stays encrypted
-# against a pulled drive or a powered-off theft, but anyone who can power the
-# machine on reaches the login screen without the disk passphrase.
+# real security trade-off (see the banner at the end). The disk stays encrypted
+# against a pulled drive, but not against someone who has the whole laptop:
+#   - anyone who can power it on reaches the login screen without the disk
+#     passphrase;
+#   - PCR 7 only proves Secure Boot is on with the same keys. The initramfs sits
+#     unencrypted in /boot and nothing checks it, so someone who swaps in their
+#     own can boot normally and the TPM hands the key to their copy.
+# Ubuntu's initramfs-tools has no TPM PIN and no signed initramfs to bind to
+# instead (see "Why Clevis" below), so use this only if a pulled drive is the
+# risk you care about.
 #
 # Why Clevis, not systemd-cryptenroll:
 #   The systemd-native path (`systemd-cryptenroll --tpm2-device=auto` +
@@ -248,5 +255,9 @@ if [ "$DRY_RUN" != 1 ] && out_matches "$(clevis luks list -d "$LUKS_DEV" 2>/dev/
     "      sudo update-initramfs -u -k all" \
     "" \
     "  * To turn this off entirely: unbind as above, set tpmAutoUnlock = false" \
-    "    in user-config.nix, and rebuild the initramfs."
+    "    in user-config.nix, and rebuild the initramfs." \
+    "" \
+    "  * This guards a pulled drive, not a stolen laptop. The TPM checks" \
+    "    Secure Boot, not the initramfs in /boot, so someone holding the" \
+    "    laptop can change that file and get the disk key."
 fi

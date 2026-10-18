@@ -23,6 +23,10 @@
 #
 #     sudo faillock --user "$USER" --reset
 #
+# The cost: sudo keeps unlimited guessing. Each sudo waits its own 2 s, so a
+# program already running as you can run many at once, and a 4-digit PIN falls
+# in minutes. The PIN protects the screen, not root.
+#
 # gdm-password is the service GDM uses for the greeter AND for unlocking a
 # locked session, so one file covers both screens.
 #
