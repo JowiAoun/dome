@@ -123,6 +123,8 @@ open_vault() { (sleep 1.5; printf 'testpass\n') | script -qec "$T/bin/vault-test
 mounted()    { findmnt -no FSTYPE "$M" >/dev/null 2>&1; }
 thumbs()     { dconf read /org/gnome/desktop/thumbnailers/disable-all; }
 alive()      { [ -d "/proc/$1" ] && ! grep -q '^State:.*Z' "/proc/$1/status"; }
+# Wait up to 10 seconds for a condition, for what a background process does.
+eventually() { local i; for i in $(seq 100); do eval "$1" && return 0; sleep 0.1; done; return 1; }
 
 # A vault file in a recent list, the way an image viewer adds one.
 recent() { py - "$1" "$2" "$3" <<'EOF'
@@ -153,12 +155,15 @@ expect "GNOME's search indexer is told to skip it" '[ -e "$M/.trackerignore" ]'
 expect "gocryptfs, which holds the key, can never dump its memory to disk" 'grep -Eq "^Max core file size +0 +0 " /proc/$(pgrep -f "gocryptfs.*$HOME/.vault" | head -1)/limits'
 
 echo "test-vault: the guard keeps files hidden and Recent clean as things happen"
-v guard 2>"$T/guard.log" & guard=$!
+"$T/bin/vault-test" guard 2>"$T/guard.log" & guard=$!
 sleep 1.5
-mkdir "$M/Taxes"; echo a > "$M/photo.jpg"; echo b > "$M/Taxes/return.pdf"; sleep 1
+mkdir "$M/Taxes"; echo a > "$M/photo.jpg"; echo b > "$M/Taxes/return.pdf"
+# The guard reacts within a second or so, longer on a busy machine.
+eventually 'grep -qx photo.jpg "$M/.hidden" && grep -qx return.pdf "$M/Taxes/.hidden"'
 expect "a new file is hidden" 'grep -qx photo.jpg "$M/.hidden"'
 expect "a file in a new folder is hidden" 'grep -qx return.pdf "$M/Taxes/.hidden"'
-recent "$XDG_DATA_HOME/recently-used.xbel" "file://$HOME/Vault/photo.jpg" dummyviewer; sleep 1
+recent "$XDG_DATA_HOME/recently-used.xbel" "file://$HOME/Vault/photo.jpg" dummyviewer
+eventually '! grep -q "Vault/photo.jpg" "$XDG_DATA_HOME/recently-used.xbel" && grep -q dummyviewer "$VAULT_STATE/apps.json" 2>/dev/null'
 expect "a Recent entry for a vault file is removed as it is written" '! grep -q "Vault/photo.jpg" "$XDG_DATA_HOME/recently-used.xbel"'
 expect "the program that added it is remembered for the lock" 'grep -q dummyviewer "$VAULT_STATE/apps.json"'
 W="$HOME/.local/state/vault"
@@ -167,6 +172,7 @@ expect "a guard without GNOME's idle monitor (none on this test bus) raises a wa
 
 echo "test-vault: with the guard dead, vault check covers for it"
 kill -9 "$guard"; wait "$guard" 2>/dev/null
+expect "the guard is really stopped" '! alive "$guard"'
 echo c > "$M/later.txt"
 recent "$XDG_DATA_HOME/recently-used.xbel" "file://$HOME/Vault/later.txt" dummyviewer
 recent "$XDG_DATA_HOME/recently-used.xbel" "file:///tmp/elsewhere.txt" dummyviewer
@@ -209,7 +215,8 @@ expect "a new terminal shows it" 'bash "$repo/modules/vault-banner.sh" | grep -q
 expect "a warning is not repeated on every check" '[ "$(grep -c "auto-lock is not working" "$T/notified")" -eq 1 ]'
 expect "a missing ~/Vault link is put back" '[ "$(readlink "$HOME/Vault")" = "$M" ]'
 expect "Vault is added to ~/.hidden" 'grep -qx Vault "$HOME/.hidden"'
-expect "Recent: vault entries removed, others kept" '! grep -q "Vault/later.txt" "$XDG_DATA_HOME/recently-used.xbel" && grep -q elsewhere.txt "$XDG_DATA_HOME/recently-used.xbel"'
+expect "Recent: vault entries removed" '! grep -q "Vault/later.txt" "$XDG_DATA_HOME/recently-used.xbel"'
+expect "Recent: other entries kept" 'grep -q elsewhere.txt "$XDG_DATA_HOME/recently-used.xbel"'
 expect "a file chooser's last folder in the vault is reset" '[ -z "$(dconf read /org/gtk/gtk4/settings/file-chooser/last-folder-uri)" ]'
 kept="'file:///tmp'"
 expect "a file chooser's last folder elsewhere is kept" '[ "$(dconf read /org/gtk/settings/file-chooser/last-folder-uri)" = "$kept" ]'
