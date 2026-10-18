@@ -71,9 +71,10 @@
                           # See system/87-login-pin.sh.
   loginRateLimit = false; # Lock the login and lock screen after 8 failed passwords,
                           # for 15 minutes (pam_faillock). Ubuntu ships NO lockout at
-                          # all, so guessing is otherwise unlimited. Deliberately does
-                          # not cover sudo or the TTYs, so a lockout is always
-                          # recoverable with `sudo faillock --user $USER --reset`.
+                          # all, so guessing is otherwise unlimited. sudo, polkit and
+                          # the TTYs get their own count: 10 failures, 10 minutes. One
+                          # never locks the other, so a locked screen is still fixed
+                          # with `sudo faillock --user $USER --reset`.
                           # See system/88-faillock.sh.
   tpmAutoUnlock = false;  # Enroll the LUKS root into the TPM (Clevis, PCR 7) so boot
                           # skips the passphrase. Keeps the passphrase as a fallback.

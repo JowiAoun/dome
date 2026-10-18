@@ -1513,9 +1513,11 @@ screen submit the password by themselves the moment it reaches that many
 characters — a Windows Hello PIN, on GNOME. `0` (the default) leaves both
 screens asking for Enter. `loginRateLimit = true;` is the lockout that makes a
 short PIN defensible; the two are separate switches and either works alone.
-The lockout covers the login and lock screens only. `sudo` has none, so a
-program already running as you can try a short PIN many times at once and get
-root. A longer password is what protects against that.
+`sudo`, polkit's admin prompts and the text consoles get a lockout of their own:
+10 failures lock them for 10 minutes. It is counted apart from the login screen,
+so one never locks the other, and a locked login screen can still be reset with
+`sudo faillock --user $USER --reset`. Without it, a program already running as
+you could try a short PIN hundreds of times at once through `sudo` and get root.
 
 **It does not check the password after every character, and neither does Windows.**
 A Hello PIN is a fixed-length credential and Windows submits at that length. Per-
@@ -1570,20 +1572,29 @@ tries a minute `pam_unix`'s failure delay allows. A 4-digit PIN is 10,000
 combinations, i.e. under six hours. `loginRateLimit = true;` cuts that to 8 tries
 per 15 minutes, or several days.
 
-**It covers the login and lock screen only, deliberately.** The usual advice is
-to put faillock in `/etc/pam.d/common-auth`, which catches every service at once
-— including `sudo` and the TTYs. That is exactly what makes it wrong here: a
-lockout would then take the recovery tools with it, and the only way back into
-the machine is a rescue boot. Confined to `gdm-password`, a lockout is always
+**It keeps two separate counts.** The usual advice is to put faillock in
+`/etc/pam.d/common-auth`, which catches every service at once with one count.
+That is wrong here: a lockout would then take the recovery tools with it, and
+the only way back into the machine is a rescue boot. So:
+
+- **The screens** (`gdm-password`): 8 failures lock them for 15 minutes.
+- **Admin** (`sudo`, `sudo -i`, polkit's admin prompts and the text consoles):
+  10 failures lock them for 10 minutes. This one matters as much: each `sudo`
+  waits its own 2 seconds, so a program running as you could otherwise try
+  hundreds of guesses at once and get root. In a 24.04 container, 10 of 200
+  guesses started at once got through before the lock.
+
+One never locks the other, and both clear themselves, so a lockout is always
 fixable from the machine itself:
 
 ```bash
-sudo faillock --user "$USER" --reset     # clear it now
-faillock --user "$USER"                  # see the current tally
+sudo faillock --user "$USER" --reset                            # clear the screens now
+faillock --user "$USER"                                         # the screens' tally
+sudo faillock --dir /var/lib/faillock-admin --user "$USER"      # the admin tally
 ```
 
-`system/88-faillock.sh` **replaces** `@include common-auth` in
-`/etc/pam.d/gdm-password` rather than wrapping it. faillock has to bracket the
+`system/88-faillock.sh` **replaces** `@include common-auth` in each of those
+PAM files rather than wrapping it. faillock has to bracket the
 module that checks the password — `preauth` before it, `authfail` after it to
 count the failure, `authsucc` after that to clear the count — and common-auth
 ends in `auth requisite pam_deny.so`, which aborts the stack the instant
