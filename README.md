@@ -1478,7 +1478,11 @@ a genuine trade-off: the disk stays encrypted against a pulled drive, but anyone
 who can power the machine on reaches the login screen without the disk
 passphrase. It does not hold against someone who has the whole laptop either.
 PCR 7 only checks Secure Boot, and the initramfs in `/boot` is not encrypted or
-checked, so they can change it and the TPM hands the key to their copy. The
+checked, so they can change it and the TPM hands the key to their copy.
+`tpmStrictBoot = true` closes that: the key is also sealed to PCRs 8 and 9,
+where GRUB records the boot command line and every file it loads. The cost is
+one passphrase boot after each kernel update, then
+`sudo clevis luks regen -d <device> -s <slot>` to seal it to the new boot. The
 passphrase keyslot is never removed, so it remains the automatic fallback.
 
 It uses **Clevis**, not `systemd-cryptenroll`. The systemd-native

@@ -11,9 +11,17 @@
 #   - PCR 7 only proves Secure Boot is on with the same keys. The initramfs sits
 #     unencrypted in /boot and nothing checks it, so someone who swaps in their
 #     own can boot normally and the TPM hands the key to their copy.
-# Ubuntu's initramfs-tools has no TPM PIN and no signed initramfs to bind to
-# instead (see "Why Clevis" below), so use this only if a pulled drive is the
-# risk you care about.
+# Ubuntu's initramfs-tools has no TPM PIN and no signed initramfs, so the fix
+# is `tpmStrictBoot = true`, below.
+#
+# tpmStrictBoot: also bind to PCRs 8 and 9. GRUB records the kernel command
+# line in PCR 8 and every file it loads (kernel, initramfs, grub.cfg) in PCR 9,
+# so a swapped initramfs or an edited command line no longer gets the key.
+# The cost: every kernel or initramfs update changes PCR 9, so the next boot
+# asks for the passphrase once, and then
+#     sudo clevis luks regen -d <device> -s <slot>
+# seals the key to the new boot. Without it, use this only if a pulled drive
+# is the risk you care about.
 #
 # Why Clevis, not systemd-cryptenroll:
 #   The systemd-native path (`systemd-cryptenroll --tpm2-device=auto` +
@@ -29,7 +37,7 @@
 #   script commits to Clevis and leaves /etc/crypttab untouched (a plain
 #   `... none luks` line is exactly what Clevis wants).
 #
-# Why PCR 7 only:
+# Why PCR 7 by default:
 #   PCR 7 measures Secure Boot state + enrolled keys. It is unchanged by ordinary
 #   signed kernel/initramfs updates, so the binding survives them — the whole
 #   point of a low-maintenance setup. Adding PCR 0/2/4 (firmware, option ROMs,
@@ -116,6 +124,14 @@ fi
 
 log "root LUKS container: $LUKS_DEV — Secure Boot on, TPM present"
 
+# Which boot measurements the key is sealed to (see tpmStrictBoot at the top).
+if config_flag tpmStrictBoot; then
+  PCR_IDS="7,8,9"
+else
+  PCR_IDS="7"
+fi
+POLICY="{\"pcr_ids\":\"$PCR_IDS\",\"pcr_bank\":\"sha256\"}"
+
 # ── packages ─────────────────────────────────────────────────────────────────
 CLEVIS_PKGS=(clevis clevis-luks clevis-tpm2 clevis-initramfs tpm2-tools)
 missing=0
@@ -162,21 +178,31 @@ else
 fi
 
 # ── TPM binding ──────────────────────────────────────────────────────────────
-# Adds a new keyslot bound to PCR 7; the passphrase keyslot is left intact.
-if out_matches "$(clevis luks list -d "$LUKS_DEV" 2>/dev/null)" tpm2; then
+# Adds a new keyslot bound to $PCR_IDS; the passphrase keyslot is left intact.
+bound="$(clevis luks list -d "$LUKS_DEV" 2>/dev/null || true)"
+if out_matches "$bound" tpm2; then
   log "a TPM2 (clevis) keyslot already exists on $LUKS_DEV — not re-binding"
+  # A slot sealed to other PCRs than the config asks for, such as one from
+  # before tpmStrictBoot was turned on. The LUKS header is not rewritten from
+  # here: print the two commands, which need the passphrase anyway.
+  if ! out_matches "$bound" -F "\"pcr_ids\":\"$PCR_IDS\""; then
+    old_slot="$(printf '%s\n' "$bound" | awk -F: '/tpm2/ { gsub(/ /,"",$1); print $1; exit }')"
+    warn "the TPM slot is not sealed to PCRs $PCR_IDS, as user-config.nix asks. To switch:"
+    warn "    sudo clevis luks unbind -d $LUKS_DEV -s $old_slot"
+    warn "    sudo clevis luks bind -d $LUKS_DEV tpm2 '$POLICY'"
+  fi
 else
   if [ "$DRY_RUN" = 1 ]; then
-    log "DRY RUN: would run: clevis luks bind -d $LUKS_DEV tpm2 '{\"pcr_ids\":\"7\",\"pcr_bank\":\"sha256\"}'"
+    log "DRY RUN: would run: clevis luks bind -d $LUKS_DEV tpm2 '$POLICY'"
   elif [ ! -t 0 ]; then
     # No terminal to type the existing passphrase into (clevis prompts for it to
     # authorize the new slot). Do not fail the run — print the one command to run.
     warn "no interactive terminal — run this once yourself to enroll the TPM:"
-    warn "    sudo clevis luks bind -d $LUKS_DEV tpm2 '{\"pcr_ids\":\"7\",\"pcr_bank\":\"sha256\"}'"
+    warn "    sudo clevis luks bind -d $LUKS_DEV tpm2 '$POLICY'"
     warn "  then re-run 'sudo make system' to rebuild and verify the initramfs"
   else
-    log "binding $LUKS_DEV to the TPM (PCR 7) — enter your EXISTING LUKS passphrase when asked"
-    clevis luks bind -d "$LUKS_DEV" tpm2 '{"pcr_ids":"7","pcr_bank":"sha256"}'
+    log "binding $LUKS_DEV to the TPM (PCRs $PCR_IDS) — enter your EXISTING LUKS passphrase when asked"
+    clevis luks bind -d "$LUKS_DEV" tpm2 "$POLICY"
     NEED_INITRAMFS=1
     mark_change
   fi
@@ -238,8 +264,24 @@ if [ "$DRY_RUN" != 1 ] && out_matches "$(clevis luks list -d "$LUKS_DEV" 2>/dev/
     warn "the TPM could not unseal the key with the current PCRs right now"
     warn "  (your passphrase still works as the fallback; inspect with:"
     warn "   clevis luks list -d $LUKS_DEV )"
+    if [ "$PCR_IDS" != 7 ]; then
+      warn "  after a kernel or initramfs update that is expected: reseal it with"
+      warn "    sudo clevis luks regen -d $LUKS_DEV -s $slot"
+    fi
   fi
 
+  if [ "$PCR_IDS" = 7 ]; then
+    risk=("  * This guards a pulled drive, not a stolen laptop. The TPM checks"
+          "    Secure Boot, not the initramfs in /boot, so someone holding the"
+          "    laptop can change that file and get the disk key. Set"
+          "    tpmStrictBoot = true to close that.")
+  else
+    risk=("  * tpmStrictBoot: the TPM also checks the kernel, the initramfs and"
+          "    the boot command line. After each kernel update the next boot"
+          "    asks for the passphrase once. Then reseal it to the new boot:"
+          ""
+          "      sudo clevis luks regen -d $LUKS_DEV -s <slot>")
+  fi
   banner \
     "TPM auto-unlock is enrolled. Reboot to use it." \
     "" \
@@ -251,13 +293,11 @@ if [ "$DRY_RUN" != 1 ] && out_matches "$(clevis luks list -d "$LUKS_DEV" 2>/dev/
     "    trust the new state, re-enroll:" \
     "" \
     "      sudo clevis luks unbind -d $LUKS_DEV -s <slot>   # slot from: clevis luks list -d $LUKS_DEV" \
-    "      sudo clevis luks bind   -d $LUKS_DEV tpm2 '{\"pcr_ids\":\"7\",\"pcr_bank\":\"sha256\"}'" \
+    "      sudo clevis luks bind   -d $LUKS_DEV tpm2 '$POLICY'" \
     "      sudo update-initramfs -u -k all" \
     "" \
     "  * To turn this off entirely: unbind as above, set tpmAutoUnlock = false" \
     "    in user-config.nix, and rebuild the initramfs." \
     "" \
-    "  * This guards a pulled drive, not a stolen laptop. The TPM checks" \
-    "    Secure Boot, not the initramfs in /boot, so someone holding the" \
-    "    laptop can change that file and get the disk key."
+    "${risk[@]}"
 fi

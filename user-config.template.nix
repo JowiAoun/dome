@@ -80,8 +80,12 @@
                           # SECURITY TRADEOFF: anyone who powers the machine on reaches
                           # the login screen without the disk passphrase, and someone
                           # holding the laptop can change the unencrypted initramfs in
-                          # /boot to get the disk key. It guards a pulled drive only.
+                          # /boot to get the disk key, unless tpmStrictBoot is on.
                           # Off by default; opt in deliberately. See system/96-tpm-unlock.sh.
+  tpmStrictBoot = false;  # With tpmAutoUnlock: also seal the key to the kernel, initramfs
+                          # and boot command line (PCRs 8 and 9), so a stolen laptop with
+                          # a swapped initramfs gets nothing. Each kernel update then asks
+                          # for the passphrase once, then `sudo clevis luks regen`.
 
   # Machine name - applied to /etc/hostname, the GNOME "Device Name" and
   # /etc/hosts. Empty leaves whatever the machine is already called.
