@@ -111,6 +111,8 @@ fi
 # all obs-cmd has to say is "Result: Ok(true)", which tells you nothing and
 # arrives once per keypress. A notification therefore always means something
 # went wrong.
-if ! out="$(obs-cmd --websocket "obsws://localhost:$port/$pass" "${args[@]}" 2>&1)"; then
+# The URL holds the password, so it goes in the environment. A command line
+# can be read by every user on the machine, the environment only by you.
+if ! out="$(OBS_WEBSOCKET_URL="obsws://localhost:$port/$pass" obs-cmd "${args[@]}" 2>&1)"; then
   die "$(printf '%s' "$out" | tail -n1)"
 fi

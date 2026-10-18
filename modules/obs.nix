@@ -141,7 +141,9 @@ in
         if jq '.server_enabled = true' "${wsConf}" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
           mode="$(stat -c '%a' "${wsConf}" 2>/dev/null || echo 644)"
           mv "$tmp" "${wsConf}" && chmod "$mode" "${wsConf}"
-          echo "✅ OBS WebSocket server switched on (127.0.0.1, password auth, port from its own config)"
+          # obs-websocket has no setting to listen on 127.0.0.1 only, so the
+          # password OBS generated is what keeps the rest of the network out.
+          echo "✅ OBS WebSocket server switched on (password auth, port from its own config)"
           # OBS writes this file back out when it exits, so a copy running now
           # would undo the line above without saying anything.
           if pgrep -f 'obs-studio-[0-9][^ ]*/bin/' >/dev/null 2>&1; then
