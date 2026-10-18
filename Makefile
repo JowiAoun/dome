@@ -61,6 +61,7 @@ doctor:
 test:
 	bash tests/test-lib.sh
 	bash tests/test-vault.sh
+	bash tests/test-venv-auto.sh
 
 # Read-only: which apps are installed from where, and which .desktop ids clash.
 audit-apps:

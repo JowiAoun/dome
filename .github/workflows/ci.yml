@@ -19,7 +19,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq shellcheck
-          shellcheck -x system/*.sh tests/*.sh install.sh setup.sh bootstrap.sh
+          shellcheck -x system/*.sh tests/*.sh install.sh setup.sh bootstrap.sh modules/venv-auto.sh
       # modules/ carries python that runs during a home-manager ACTIVATION, where
       # a syntax error surfaces as a failed switch rather than anything readable.
       # Same reason bash syntax is checked above.
@@ -31,6 +31,9 @@ jobs:
       # root-only install_conf cases execute instead of reporting as skipped.
       - name: lib.sh unit tests
         run: sudo bash tests/test-lib.sh
+      # Which venvs a shell activates on its own: one that came with a clone must not run.
+      - name: venv auto-activate tests
+        run: bash tests/test-venv-auto.sh
       - name: setup.sh non-interactive smoke test
         run: |
           ./setup.sh --defaults zenbook-duo

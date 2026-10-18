@@ -428,36 +428,9 @@ in
       # shell opened inside a project keeps its directory.
       if [[ $- == *i* && $PWD == "$HOME" && -d "$HOME/p" ]]; then cd "$HOME/p"; fi
 
-      # Auto-activate a project's Python virtualenv — same behaviour and same
-      # hands-off rules as the zsh copy below, see the comment there.
-      _venv_auto_find() {
-        _VENV_AUTO_FOUND=""
-        local d=$PWD name
-        while [ -n "$d" ] && [ "$d" != / ] && [ "$d" != "$HOME" ]; do
-          for name in .venv venv; do
-            if [ -f "$d/$name/bin/activate" ]; then
-              _VENV_AUTO_FOUND="$d/$name"
-              return
-            fi
-          done
-          d=''${d%/*}
-        done
-      }
-
-      _venv_auto() {
-        _venv_auto_find
-        # Someone else owns the live venv -> hands off.
-        if [ -n "$VIRTUAL_ENV" ] && [ "$VIRTUAL_ENV" != "$_VENV_AUTO" ]; then return; fi
-        if [ "$_VENV_AUTO_FOUND" = "$VIRTUAL_ENV" ]; then return; fi
-        if [ -n "$VIRTUAL_ENV" ]; then
-          deactivate 2>/dev/null
-          _VENV_AUTO=""
-        fi
-        if [ -n "$_VENV_AUTO_FOUND" ]; then
-          . "$_VENV_AUTO_FOUND/bin/activate"
-          _VENV_AUTO="$_VENV_AUTO_FOUND"
-        fi
-      }
+      # Auto-activate a project's Python virtualenv. The rules, shared with
+      # zsh, are in modules/venv-auto.sh.
+      source ${./modules/venv-auto.sh}
 
       # bash has no chpwd hook, so the check rides on PROMPT_COMMAND and returns
       # immediately unless $PWD actually changed. Starship's init is appended
@@ -586,43 +559,9 @@ in
       if [[ -o interactive && $PWD == $HOME && -d $HOME/p ]]; then cd "$HOME/p"; fi
 
       # Auto-activate a project's Python virtualenv on entering it, and drop it
-      # again on leaving. Walks up from $PWD so a shell sitting in src/ or
-      # tests/ still finds the venv at the project root, and stops below $HOME
-      # so a stray ~/.venv never leaks into every unrelated directory.
-      #
-      # Only a venv this hook activated is ever deactivated — $_VENV_AUTO
-      # records which one that was. A venv sourced by hand, or one that
-      # pyenv-virtualenv switched on from a .python-version file, is left
-      # strictly alone: pyenv registers its own chpwd hook earlier in this file
-      # and therefore runs first, so we see its $VIRTUAL_ENV and stand down.
-      _venv_auto_find() {
-        _VENV_AUTO_FOUND=""
-        local d=$PWD name
-        while [ -n "$d" ] && [ "$d" != / ] && [ "$d" != "$HOME" ]; do
-          for name in .venv venv; do
-            if [ -f "$d/$name/bin/activate" ]; then
-              _VENV_AUTO_FOUND="$d/$name"
-              return
-            fi
-          done
-          d=''${d%/*}
-        done
-      }
-
-      _venv_auto() {
-        _venv_auto_find
-        # Someone else owns the live venv -> hands off.
-        if [ -n "$VIRTUAL_ENV" ] && [ "$VIRTUAL_ENV" != "$_VENV_AUTO" ]; then return; fi
-        if [ "$_VENV_AUTO_FOUND" = "$VIRTUAL_ENV" ]; then return; fi
-        if [ -n "$VIRTUAL_ENV" ]; then
-          deactivate 2>/dev/null
-          _VENV_AUTO=""
-        fi
-        if [ -n "$_VENV_AUTO_FOUND" ]; then
-          . "$_VENV_AUTO_FOUND/bin/activate"
-          _VENV_AUTO="$_VENV_AUTO_FOUND"
-        fi
-      }
+      # again on leaving. The rules, shared with bash, are in
+      # modules/venv-auto.sh.
+      source ${./modules/venv-auto.sh}
 
       # Starship's [python] module already renders ($virtualenv) and redraws the
       # prompt on every line, so let it own the indicator instead of having
@@ -811,6 +750,27 @@ in
   };
   home.activation.projectsDir =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''run mkdir -p "$HOME/p"'';
+
+  # The venvs in ~/p before modules/venv-auto.sh asked for trust go on its
+  # trusted list, so they keep activating. Runs once: after that the list is
+  # yours, and `venv-trust` adds to it.
+  home.activation.venvTrustSeed = lib.hm.dag.entryAfter [ "projectsDir" ] ''
+    trust="''${XDG_STATE_HOME:-$HOME/.local/state}/venv-auto/trusted"
+    if [ ! -e "$trust" ]; then
+      run mkdir -p "$(dirname "$trust")"
+      # find exits 1 on any folder it may not read, and activation runs under set -e.
+      found="$(find "$HOME/p" -maxdepth 6 -name node_modules -prune -o -type f -name pyvenv.cfg -print 2>/dev/null || true)"
+      if [ -z "''${DRY_RUN:-}" ]; then
+        : > "$trust"
+        while IFS= read -r cfg; do
+          venv="''${cfg%/pyvenv.cfg}"
+          if [ -n "$cfg" ] && [ -f "$venv/bin/activate" ]; then
+            (cd -P -- "$venv" && pwd) >> "$trust" || true
+          fi
+        done <<< "$found"
+      fi
+    fi
+  '';
 
   home.file = {
     # mkdesktop: turn a locally-installed binary or AppImage (something without
