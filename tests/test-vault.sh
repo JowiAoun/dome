@@ -470,6 +470,22 @@ v check >/dev/null 2>&1
 expect_app Kdenlive "Kdenlive: a cache is left alone while it has not had a vault file" '[ -e "$kd/cache/kdenlive/444/a.jpg" ]'
 rm -f "$T/docs"
 
+echo "test-vault: links an app leaves in its own data"
+# Kdenlive can write anywhere in its own data. A link there must not turn a
+# clean-up of its cache into deleting or rewriting files somewhere else.
+mkdir -p "$T/elsewhere"; echo mine > "$T/elsewhere/keep"
+rm -rf "$kd/cache/tmp"; ln -s "$T/elsewhere" "$kd/cache/tmp"; touch "$W/kdenlive-touched"
+v check >/dev/null 2>&1
+expect_app Kdenlive "a cache folder that links out of Kdenlive's data is not emptied" '[ -e "$T/elsewhere/keep" ]'
+rm "$kd/cache/tmp"; mkdir "$kd/cache/tmp"
+echo before > "$T/elsewhere/target"; echo old > "$T/settings"; ln -s "$T/elsewhere/target" "$T/.settings.tmp"
+py - "$repo/modules" "$T/settings" <<'EOF' >/dev/null 2>&1
+import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1])
+import vault
+vault.write_atomic(Path(sys.argv[2]), "new\n")
+EOF
+expect "a rewrite never writes through a link left where its temp file would go" '[ "$(cat "$T/elsewhere/target")" = before ] && [ "$(cat "$T/settings")" = new ]'
+
 echo "test-vault: a Flatpak app reading a vault file, seen from outside its sandbox"
 doc="$XDG_RUNTIME_DIR/doc"
 printf 'd2\t%s/clip.mp4\nd9\t/tmp/other.mp4\n' "$M" > "$T/docs"

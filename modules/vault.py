@@ -223,11 +223,19 @@ def write_atomic(path, data):
     """Swap in a new copy, keeping the old one's permissions: several of the
     files this edits are private (0600) to their app."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_bytes(data if isinstance(data, bytes) else data.encode("utf-8", "surrogateescape"))
-    with contextlib.suppress(OSError):
-        os.chmod(tmp, path.stat().st_mode & 0o777)
-    os.replace(tmp, path)
+    # A new, unique file: a fixed name could be a link an app left there, and
+    # writing through it would change whatever it points to.
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data if isinstance(data, bytes) else data.encode("utf-8", "surrogateescape"))
+            with contextlib.suppress(OSError):
+                os.fchmod(f.fileno(), path.stat().st_mode & 0o777)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
 
 
 def read_text(path):
@@ -1337,12 +1345,19 @@ def scrub_kdenlive(docs=None):
     if not KDENLIVE.is_dir():
         return 0
     docs = flatpak_documents() if docs is None else docs
+    root = KDENLIVE.resolve()
+
+    def found(folder, pattern="*"):
+        """What is in one of Kdenlive's folders. Nothing if a link leads the
+        folder out of Kdenlive's own data, since what is found gets deleted."""
+        return list(folder.glob(pattern)) if folder.resolve().is_relative_to(root) else []
+
     backups = KDENLIVE / "data/kdenlive/.backup"
     autosaves = KDENLIVE / "data/stalefiles/kdenlive"
-    settings = [p for d in ("config", ".local/state") for p in (KDENLIVE / d).glob("*rc") if p.is_file()]
-    vault_backups = [p for p in backups.glob("*.kdenlive") if names_vault(read_text(p), docs)]
+    settings = [p for d in ("config", ".local/state") for p in found(KDENLIVE / d, "*rc") if p.is_file()]
+    vault_backups = [p for p in found(backups, "*.kdenlive") if names_vault(read_text(p), docs)]
     # An autosave is named after the project's path, encoded.
-    vault_autosaves = [p for p in autosaves.glob("*") if p.is_file()
+    vault_autosaves = [p for p in found(autosaves) if p.is_file()
                        and (names_vault(unquote(p.name), docs) or names_vault(read_text(p), docs))]
     granted = any(in_vault(origin) for origin in flatpak_documents(KDENLIVE_ID).values())
     if granted or vault_backups or vault_autosaves or any(names_vault(read_text(p), docs) for p in settings):
@@ -1362,16 +1377,16 @@ def scrub_kdenlive(docs=None):
     # A backup's timeline picture and subtitle copies go unless they belong to
     # a backup that is kept: a project saved only once has a picture and no
     # backup to read.
-    kept = [KDENLIVE_BACKUP.search(p.name) for p in backups.glob("*.kdenlive")]
+    kept = [KDENLIVE_BACKUP.search(p.name) for p in found(backups, "*.kdenlive")]
     kept_ids = {m[1] for m in kept if m}
     kept_times = {m[2] for m in kept if m}
     gone_times = {m[2] for m in map(KDENLIVE_BACKUP.search, (p.name for p in vault_backups)) if m}
-    for picture in backups.glob("*.jpg"):
+    for picture in found(backups, "*.jpg"):
         match = KDENLIVE_BACKUP.search(picture.name)
         if not match or match[1] not in kept_ids:
             picture.unlink(missing_ok=True)
             changed += 1
-    for folder in backups.glob("*"):
+    for folder in found(backups):
         if folder.is_dir() and (folder.name in gone_times or folder.name not in kept_times):
             shutil.rmtree(folder, ignore_errors=True)
             changed += 1
@@ -1379,7 +1394,7 @@ def scrub_kdenlive(docs=None):
     # previews, masks), proxy copies, its in-memory audio cache, and the
     # sandbox's /var/tmp, where speech-to-text extracts the audio.
     cache = KDENLIVE / "cache"
-    for item in [*(cache / "kdenlive").glob("*"), *cache.glob("*.kcache"), *(cache / "tmp").glob("*")]:
+    for item in [*found(cache / "kdenlive"), *found(cache, "*.kcache"), *found(cache / "tmp")]:
         if item.parent.name == "kdenlive" and not (item.name.isdigit() or item.name == "proxy"):
             continue
         if item.is_dir() and not item.is_symlink():
