@@ -86,6 +86,12 @@ in
     desktopShell.loginPinUnlock =
       (userConfig.loginPinLength or 0) > 0 && !isCodespaces;
 
+    # CrossMacro installs its own GNOME extension on first run, for window
+    # control, screen capture and the cursor position on Wayland.
+    desktopShell.extraExtensions =
+      lib.optional (builtins.elem "io.github.alper_han.crossmacro" (userConfig.flatpakApps or [ ]))
+        "crossmacro@zynix.net";
+
     # Ghostty. Deliberately NOT tied to `modules.apps`: that switch is for the
     # optional desktop-app bundle, and the terminal is the thing everything else
     # in this repo runs inside — including Claude Code, whose Shift+Enter needs a

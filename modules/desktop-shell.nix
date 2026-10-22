@@ -206,6 +206,16 @@ in
     script writes for the extension to read
   '';
 
+  options.modules.desktopShell.extraExtensions = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [ ];
+    description = ''
+      More extension uuids for the enabled list, for extensions that an app
+      installs for itself, such as CrossMacro's. Without this they are
+      switched back off on the next `make home`.
+    '';
+  };
+
   config = lib.mkIf cfg.enable {
     # Also the GC root for the symlinks below — see the header.
     home.packages = [ dashToPanel pinnedInGrid ];
@@ -245,7 +255,8 @@ in
       # here instead — that is the trade for the set being reproducible.
       "org/gnome/shell" = {
         enabled-extensions = [ "ding@rastersoft.com" "tiling-assistant@ubuntu.com" uuid pinnedInGridUuid ]
-          ++ lib.optional cfg.loginPinUnlock pinUnlockUuid;
+          ++ lib.optional cfg.loginPinUnlock pinUnlockUuid
+          ++ cfg.extraExtensions;
         disabled-extensions = [ "ubuntu-dock@ubuntu.com" ];
         # App grid order — see appFolders/topLevel above. New apps append at end.
         app-picker-layout = appPickerLayout;
