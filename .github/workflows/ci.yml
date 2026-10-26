@@ -34,6 +34,9 @@ jobs:
       # Which venvs a shell activates on its own: one that came with a clone must not run.
       - name: venv auto-activate tests
         run: bash tests/test-venv-auto.sh
+      # When the laptop holds Performance mode for a game, with D-Bus stubbed out.
+      - name: game power tests
+        run: bash tests/test-game-power.sh
       - name: setup.sh non-interactive smoke test
         run: |
           ./setup.sh --defaults zenbook-duo

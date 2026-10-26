@@ -43,6 +43,14 @@ let
 
   curseforgeBin = "/opt/CurseForge/curseforge";
   gamemoderun = "/usr/games/gamemoderun";
+
+  # Nix's Python with Nix's GLib, the same way modules/vault.nix runs vault.py.
+  python = pkgs.python3.withPackages (ps: [ ps.pygobject3 ]);
+  gamePower = pkgs.writeShellScriptBin "game-power" ''
+    unset LD_LIBRARY_PATH
+    export GI_TYPELIB_PATH="${pkgs.glib.out}/lib/girepository-1.0"
+    exec ${python}/bin/python3 ${./game-power.py} "$@"
+  '';
 in
 {
   options.modules.gaming.enable = lib.mkEnableOption ''
@@ -54,6 +62,24 @@ in
   '';
 
   config = lib.mkIf cfg.enable {
+    # Performance mode while a game runs, your own power mode the rest of the
+    # time. See modules/game-power.py. `game-power --list` shows what it counts
+    # as a game right now; `journalctl --user -u game-power` shows what it did.
+    home.packages = [ gamePower ];
+    systemd.user.services.game-power = {
+      Unit = {
+        Description = "Hold Performance power mode while a game runs";
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" ];
+      };
+      Service = {
+        ExecStart = "${gamePower}/bin/game-power";
+        Restart = "on-failure";
+        RestartSec = 5;
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    };
+
     # entryAfter appsDesktopIntegration, not linkGeneration: that is the entry in
     # modules/apps.nix that writes the override this one amends. Ordering after
     # it is the whole point — see the header.
