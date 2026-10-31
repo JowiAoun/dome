@@ -8,14 +8,18 @@
 # into every unrelated directory. Only folders inside $HOME are searched, so a
 # venv someone else left in /tmp is never picked up.
 #
-# Activating a venv runs its bin/activate, which is a shell script. A repo you
-# just cloned or an archive you just unpacked could ship one, so a venv is only
-# activated when it was made here:
-#   - it is on the trusted list (`venv-trust` adds it), or
-#   - it sits in a git checkout and git does not track it. `git clone` only
-#     writes tracked files, so an untracked venv was made after the clone,
-#     by you or your tools (uv sync, python -m venv).
-# Anything else prints a one-line hint and is left alone.
+# Activating a venv runs its bin/activate, which is a shell script, and puts
+# its bin/ first on PATH. A repo you cloned or an archive you unpacked could
+# ship a venv, and nothing in the folder shows who made it: an archive can even
+# bring its own .git. So only a venv on your trusted list is activated. A venv
+# goes on the list when:
+#   - you run `venv-trust` in it, or
+#   - in zsh, `uv`, `virtualenv` or `python -m venv` makes it for the folder
+#     you ran the command in (home.nix runs `_venv_auto_before` and
+#     `_venv_auto_after` around each command).
+# The list names each venv folder by its inode and creation time, so a venv
+# that is deleted and replaced by another at the same path is not trusted.
+# Any other venv prints a one-line hint and is left alone.
 #
 # Only a venv this hook activated is ever deactivated: $_VENV_AUTO records
 # which one that was. A venv sourced by hand, or one that pyenv-virtualenv
@@ -40,17 +44,28 @@ _venv_auto_find() {
   done
 }
 
-# Whether the venv at $1 was made on this machine (see the top of this file).
+# How the trusted list names a venv folder: its inode and creation time.
+_venv_auto_id() {
+  command stat -L -c '%i:%.9W' -- "$1" 2>/dev/null
+}
+
+# Each line of the list is an id, a space, and the path, which is only there
+# for you to read.
 _venv_auto_trusted() {
-  local real
-  real=$(cd -P -- "$1" 2>/dev/null && pwd) || return 1
-  if [ -f "$_VENV_AUTO_TRUST" ] && grep -Fxq -- "$real" "$_VENV_AUTO_TRUST"; then
-    return 0
-  fi
-  # fsmonitor is a program named in .git/config. An unpacked archive can ship
-  # its own .git, so never let this check start one.
-  git -C "$real" -c core.fsmonitor=false rev-parse --is-inside-work-tree >/dev/null 2>&1 &&
-    ! git -C "$real" -c core.fsmonitor=false ls-files --error-unmatch -- bin/activate >/dev/null 2>&1
+  local id line
+  id=$(_venv_auto_id "$1") && [ -n "$id" ] && [ -f "$_VENV_AUTO_TRUST" ] || return 1
+  while IFS= read -r line; do
+    [ "${line%% *}" = "$id" ] && return 0
+  done < "$_VENV_AUTO_TRUST"
+  return 1
+}
+
+_venv_auto_trust() {
+  local id
+  _venv_auto_trusted "$1" && return 0
+  id=$(_venv_auto_id "$1") && [ -n "$id" ] || return 1
+  mkdir -p -- "${_VENV_AUTO_TRUST%/*}"
+  printf '%s %s\n' "$id" "${1//$'\n'/?}" >> "$_VENV_AUTO_TRUST"
 }
 
 _venv_auto() {
@@ -78,19 +93,79 @@ _venv_auto() {
   fi
 }
 
+# Run before each command you type, with that command. Only the venv tools are
+# watched: a venv that shows up while `tar` or `unzip` runs is not yours to
+# trust.
+_venv_auto_before() {
+  local cmd flag module rest
+  _VENV_AUTO_CMD_PWD=""
+  read -r cmd flag module rest <<< "$1"
+  case $cmd in
+    uv | virtualenv) ;;
+    python | python3 | python3.*)
+      [ "$flag" = -m ] && { [ "$module" = venv ] || [ "$module" = virtualenv ]; } || return 0 ;;
+    *) return 0 ;;
+  esac
+  _venv_auto_find
+  _VENV_AUTO_CMD_PWD=$PWD
+  _VENV_AUTO_CMD_ID=""
+  if [ -n "$_VENV_AUTO_FOUND" ]; then _VENV_AUTO_CMD_ID=$(_venv_auto_id "$_VENV_AUTO_FOUND"); fi
+}
+
+# Run after it. A venv for this folder that was not there before the command,
+# or was made again, came from the command, so it is trusted and activated.
+# Keeps $? as the command left it, for the prompt to show.
+_venv_auto_after() {
+  local ret=$? id
+  if [ -n "${_VENV_AUTO_CMD_PWD:-}" ] && [ "$_VENV_AUTO_CMD_PWD" = "$PWD" ]; then
+    _venv_auto_find
+    if [ -n "$_VENV_AUTO_FOUND" ] && id=$(_venv_auto_id "$_VENV_AUTO_FOUND") &&
+      [ "$id" != "$_VENV_AUTO_CMD_ID" ]; then
+      _venv_auto_trust "$_VENV_AUTO_FOUND"
+      _venv_auto
+    fi
+  fi
+  _VENV_AUTO_CMD_PWD=""
+  return "$ret"
+}
+
 # Trust the venv for the current folder, and activate it.
 venv-trust() {
-  local real
   _venv_auto_find
   if [ -z "$_VENV_AUTO_FOUND" ]; then
     echo "venv-trust: no .venv or venv here or in a folder above it (inside your home folder)" >&2
     return 1
   fi
-  real=$(cd -P -- "$_VENV_AUTO_FOUND" && pwd) || return 1
-  mkdir -p -- "${_VENV_AUTO_TRUST%/*}"
-  if ! { [ -f "$_VENV_AUTO_TRUST" ] && grep -Fxq -- "$real" "$_VENV_AUTO_TRUST"; }; then
-    printf '%s\n' "$real" >> "$_VENV_AUTO_TRUST"
+  if ! _venv_auto_trust "$_VENV_AUTO_FOUND"; then
+    echo "venv-trust: could not read $_VENV_AUTO_FOUND" >&2
+    return 1
   fi
-  echo "venv-trust: $real is trusted"
+  echo "venv-trust: $_VENV_AUTO_FOUND is trusted"
   _venv_auto
+}
+
+# Run by home-manager (home.nix), not by your shell. With no list yet, it
+# starts one from the venvs already in ~/p, so those keep activating. A list
+# from before venvs were named by inode, one path per line, is rewritten.
+_venv_auto_seed() {
+  local line id venvs="" kept=""
+  if [ -e "$_VENV_AUTO_TRUST" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      case $line in
+        /*) venvs+=$line$'\n' ;;
+        ?*) kept+=$line$'\n' ;;
+      esac
+    done < "$_VENV_AUTO_TRUST"
+    [ -n "$venvs" ] || return 0
+  else
+    # find exits 1 on any folder it may not read.
+    venvs=$(find "$HOME/p" -maxdepth 6 -name node_modules -prune -o -type f -name pyvenv.cfg -printf '%h\n' 2>/dev/null) || true
+  fi
+  while IFS= read -r line; do
+    if [ -n "$line" ] && [ -f "$line/bin/activate" ] && id=$(_venv_auto_id "$line") && [ -n "$id" ]; then
+      kept+="$id $line"$'\n'
+    fi
+  done <<< "$venvs"
+  mkdir -p -- "${_VENV_AUTO_TRUST%/*}"
+  printf '%s' "$kept" > "$_VENV_AUTO_TRUST.new" && mv -f -- "$_VENV_AUTO_TRUST.new" "$_VENV_AUTO_TRUST"
 }

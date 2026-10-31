@@ -577,6 +577,11 @@ in
       autoload -U add-zsh-hook
       add-zsh-hook chpwd _venv_auto
       _venv_auto   # for the directory this shell opened in
+      # A venv that uv, virtualenv or python -m venv makes here is trusted.
+      # preexec's $2 is the command line with aliases expanded.
+      _venv_auto_preexec() { _venv_auto_before "$2"; }
+      add-zsh-hook preexec _venv_auto_preexec
+      add-zsh-hook precmd _venv_auto_after
 
       # Source ghcup environment for Haskell development (must be at the end)
       [ -f "$HOME/.ghcup/env" ] && source "$HOME/.ghcup/env"
@@ -758,23 +763,12 @@ in
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''run mkdir -p "$HOME/p"'';
 
   # The venvs in ~/p before modules/venv-auto.sh asked for trust go on its
-  # trusted list, so they keep activating. Runs once: after that the list is
-  # yours, and `venv-trust` adds to it.
+  # trusted list, so they keep activating. Seeds once: after that the list is
+  # yours, and `venv-trust` adds to it. An older list is brought up to date.
   home.activation.venvTrustSeed = lib.hm.dag.entryAfter [ "projectsDir" ] ''
-    trust="''${XDG_STATE_HOME:-$HOME/.local/state}/venv-auto/trusted"
-    if [ ! -e "$trust" ]; then
-      run mkdir -p "$(dirname "$trust")"
-      # find exits 1 on any folder it may not read, and activation runs under set -e.
-      found="$(find "$HOME/p" -maxdepth 6 -name node_modules -prune -o -type f -name pyvenv.cfg -print 2>/dev/null || true)"
-      if [ -z "''${DRY_RUN:-}" ]; then
-        : > "$trust"
-        while IFS= read -r cfg; do
-          venv="''${cfg%/pyvenv.cfg}"
-          if [ -n "$cfg" ] && [ -f "$venv/bin/activate" ]; then
-            (cd -P -- "$venv" && pwd) >> "$trust" || true
-          fi
-        done <<< "$found"
-      fi
+    if [ -z "''${DRY_RUN:-}" ]; then
+      source ${./modules/venv-auto.sh}
+      _venv_auto_seed
     fi
   '';
 
