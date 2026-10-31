@@ -1516,8 +1516,12 @@ short PIN defensible; the two are separate switches and either works alone.
 `sudo`, polkit's admin prompts and the text consoles get a lockout of their own:
 10 failures lock them for 10 minutes. It is counted apart from the login screen,
 so one never locks the other, and a locked login screen can still be reset with
-`sudo faillock --user $USER --reset`. Without it, a program already running as
-you could try a short PIN hundreds of times at once through `sudo` and get root.
+`sudo faillock --user $USER --reset`. That stops guessing at those prompts. It
+does not stop a program already running as you. Your PIN also locks your login
+keyring, a file in `~/.local/share/keyrings` that the program can read and test
+PINs against, and `/usr/sbin/unix_chkpwd` checks your password with no count at
+all. Once it has the PIN, `sudo` takes it on the first try. A longer password
+is what protects against that.
 
 **It does not check the password after every character, and neither does Windows.**
 A Hello PIN is a fixed-length credential and Windows submits at that length. Per-
@@ -1579,10 +1583,10 @@ the only way back into the machine is a rescue boot. So:
 
 - **The screens** (`gdm-password`): 8 failures lock them for 15 minutes.
 - **Admin** (`sudo`, `sudo -i`, polkit's admin prompts and the text consoles):
-  10 failures lock them for 10 minutes. This one matters as much: each `sudo`
-  waits its own 2 seconds, so a program running as you could otherwise try
-  hundreds of guesses at once and get root. In a 24.04 container, 10 of 200
-  guesses started at once got through before the lock.
+  10 failures lock them for 10 minutes. Each `sudo` waits its own 2 seconds,
+  so without a count, hundreds of guesses can run at once. In a 24.04
+  container, 10 of 200 guesses started at once got through before the lock.
+  This does not stop a program already running as you (see the section above).
 
 One never locks the other, and both clear themselves, so a lockout is always
 fixable from the machine itself:

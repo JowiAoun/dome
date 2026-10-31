@@ -19,9 +19,9 @@
 # and the consoles with it, and the only way back into a machine that has locked
 # you out of its own recovery tools is a rescue boot.
 #
-# Leaving sudo out is no answer either. Each sudo waits its own 2 s, so a
-# program already running as you can run hundreds at once, and a 4-digit PIN
-# falls in minutes, to root. So there are two counts, kept in separate files:
+# Leaving sudo out is no answer either. Each sudo waits its own 2 s, so
+# hundreds of guesses can run at once, and a 4-digit PIN falls in minutes.
+# So there are two counts, kept in separate files:
 #   - the screen: gdm-password, the service GDM uses for the greeter AND for
 #     unlocking a locked session, so one file covers both screens;
 #   - admin: sudo, sudo -i, polkit's admin prompts and the text consoles.
@@ -33,6 +33,11 @@
 #     sudo faillock --user "$USER" --reset
 #
 # and a locked sudo clears itself after 10 minutes.
+#
+# Neither count stops a program already running as you. The PIN also locks
+# your login keyring, a file that program can read and test PINs against, and
+# /usr/sbin/unix_chkpwd checks your password with no count at all. Once it has
+# the PIN, sudo takes it on the first try. Only a longer password stops that.
 #
 # WHY THE @include IS REPLACED RATHER THAN WRAPPED.
 #

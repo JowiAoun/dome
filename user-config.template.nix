@@ -67,7 +67,10 @@
                           # MUST equal your real password length.
                           # SECURITY TRADEOFF: anyone holding the machine can learn
                           # how long your password is, by typing until it submits
-                          # itself. Set loginRateLimit below when using a short one.
+                          # itself. A short one is also your sudo password, and a
+                          # program running as you can work it out from your login
+                          # keyring with no lockout, then get root with it.
+                          # Set loginRateLimit below when using a short one.
                           # See system/87-login-pin.sh.
   loginRateLimit = false; # Lock the login and lock screen after 8 failed passwords,
                           # for 15 minutes (pam_faillock). Ubuntu ships NO lockout at
