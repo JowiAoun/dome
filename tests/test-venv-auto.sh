@@ -52,6 +52,21 @@ expect "and found from a folder below the project root" '[ "$(enter "$HOME/unpac
 rm -r "$HOME/unpacked/.venv"; make_venv "$HOME/unpacked/.venv"
 expect "a trusted venv deleted and replaced at the same path is not activated" '[ -z "$(enter "$HOME/unpacked")" ] && [ ! -e "$HOME/unpacked/.venv/ran" ]'
 
+echo "test-venv-auto: a trusted venv that a commit changed"
+git init -q "$HOME/upstream" && git -C "$HOME/upstream" -c user.name=t -c user.email=t@t commit -q --allow-empty -m start
+git clone -q "$HOME/upstream" "$HOME/proj" 2>/dev/null
+# A real venv ignores itself, so git treats everything in it as expendable.
+make_venv "$HOME/proj/.venv"; printf '*\n' > "$HOME/proj/.venv/.gitignore"
+(cd "$HOME/proj" && . "$repo/modules/venv-auto.sh" && venv-trust >/dev/null)
+expect "a venv you made in a clone is activated once trusted" '[ "$(enter "$HOME/proj")" = "$HOME/proj/.venv" ]'
+rm -f "$HOME/proj/.venv/ran"
+mkdir -p "$HOME/upstream/.venv/bin"
+printf 'echo "$PWD" > "%s/ran"\n' "$HOME/proj/.venv" > "$HOME/upstream/.venv/bin/activate"
+git -C "$HOME/upstream" add -f .venv/bin/activate && git -C "$HOME/upstream" -c user.name=t -c user.email=t@t commit -qm "add to the venv"
+git -C "$HOME/proj" pull -q 2>/dev/null
+expect "a pull that puts files in it stops it from activating" '[ -z "$(enter "$HOME/proj")" ] && [ ! -e "$HOME/proj/.venv/ran" ]'
+expect "and the shell says git tracks them" 'grep -q "git tracks" "$T/hint"'
+
 echo "test-venv-auto: a venv a tool makes for you (zsh)"
 mkdir -p "$HOME/new"
 expect "uv sync that makes a venv here: it is trusted and activated" '[ "$(typed "$HOME/new" "uv sync" make_here)" = "$HOME/new/.venv" ]'

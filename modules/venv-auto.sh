@@ -21,6 +21,12 @@
 # that is deleted and replaced by another at the same path is not trusted.
 # Any other venv prints a one-line hint and is left alone.
 #
+# A trusted venv is still refused while git tracks any file in it. Git ignores
+# a venv (the venv writes its own .gitignore), and git replaces ignored files
+# without asking. So a pull, or a pull request you check out, could swap the
+# files in a venv you made for ones from the commit. This does not catch an
+# archive unpacked on top of your project, which can replace them the same way.
+#
 # Only a venv this hook activated is ever deactivated: $_VENV_AUTO records
 # which one that was. A venv sourced by hand, or one that pyenv-virtualenv
 # switched on from a .python-version file, is left strictly alone. In zsh,
@@ -68,17 +74,30 @@ _venv_auto_trust() {
   printf '%s %s\n' "$id" "${1//$'\n'/?}" >> "$_VENV_AUTO_TRUST"
 }
 
+# Whether git tracks any file in the venv at $1.
+_venv_auto_tracked() {
+  # fsmonitor is a program named in .git/config, so never let this start one.
+  [ -n "$(git -C "$1" -c core.fsmonitor=false ls-files -- . 2>/dev/null)" ]
+}
+
 _venv_auto() {
+  local why=""
   _venv_auto_find
   # Someone else owns the live venv -> hands off.
   if [ -n "${VIRTUAL_ENV:-}" ] && [ "$VIRTUAL_ENV" != "${_VENV_AUTO:-}" ]; then return; fi
   if [ "$_VENV_AUTO_FOUND" = "${VIRTUAL_ENV:-}" ]; then return; fi
-  if [ -n "$_VENV_AUTO_FOUND" ] && ! _venv_auto_trusted "$_VENV_AUTO_FOUND"; then
+  if [ -z "$_VENV_AUTO_FOUND" ]; then
+    :
+  elif ! _venv_auto_trusted "$_VENV_AUTO_FOUND"; then
+    # shellcheck disable=SC2016  # the backticks are text for you to read
+    why='is not trusted yet, so it was not activated. If you made it, run `venv-trust`.'
+  elif _venv_auto_tracked "$_VENV_AUTO_FOUND"; then
+    why='has files that git tracks, so it was not activated. A commit put them there, so check them before you use it.'
+  fi
+  if [ -n "$why" ]; then
     # Once per venv per shell, so moving around inside the project stays quiet.
     if [ "$_VENV_AUTO_FOUND" != "${_VENV_AUTO_HINTED:-}" ]; then
-      # shellcheck disable=SC2016  # the backticks are text for you to read
-      printf 'venv: %s is not trusted yet, so it was not activated. If you made it, run `venv-trust`.\n' \
-        "$_VENV_AUTO_FOUND" >&2
+      printf 'venv: %s %s\n' "$_VENV_AUTO_FOUND" "$why" >&2
       _VENV_AUTO_HINTED=$_VENV_AUTO_FOUND
     fi
     _VENV_AUTO_FOUND=""
@@ -141,6 +160,8 @@ venv-trust() {
     return 1
   fi
   echo "venv-trust: $_VENV_AUTO_FOUND is trusted"
+  # Say again why it stays off, if it does.
+  _VENV_AUTO_HINTED=""
   _venv_auto
 }
 
