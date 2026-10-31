@@ -114,9 +114,10 @@ _venv_auto() {
 
 # Run before each command you type, with that command. Only the venv tools are
 # watched: a venv that shows up while `tar` or `unzip` runs is not yours to
-# trust.
+# trust. Notes every .venv or venv folder the search could find, with or
+# without a bin/activate yet.
 _venv_auto_before() {
-  local cmd flag module rest
+  local cmd flag module rest d=$PWD name
   _VENV_AUTO_CMD_PWD=""
   read -r cmd flag module rest <<< "$1"
   case $cmd in
@@ -125,23 +126,30 @@ _venv_auto_before() {
       [ "$flag" = -m ] && { [ "$module" = venv ] || [ "$module" = virtualenv ]; } || return 0 ;;
     *) return 0 ;;
   esac
-  _venv_auto_find
+  case $d in "$HOME"/*) ;; *) return 0 ;; esac
+  _VENV_AUTO_CMD_IDS=" "
+  while [ -n "$d" ] && [ "$d" != "$HOME" ]; do
+    for name in .venv venv; do
+      if [ -d "$d/$name" ]; then _VENV_AUTO_CMD_IDS+="$(_venv_auto_id "$d/$name") "; fi
+    done
+    d=${d%/*}
+  done
   _VENV_AUTO_CMD_PWD=$PWD
-  _VENV_AUTO_CMD_ID=""
-  if [ -n "$_VENV_AUTO_FOUND" ]; then _VENV_AUTO_CMD_ID=$(_venv_auto_id "$_VENV_AUTO_FOUND"); fi
 }
 
-# Run after it. A venv for this folder that was not there before the command,
-# or was made again, came from the command, so it is trusted and activated.
-# Keeps $? as the command left it, for the prompt to show.
+# Run after it. A venv folder that did not exist before the command was made
+# by it, so it is trusted and activated. A folder that was already there is
+# not, even if the command filled it in: an archive could have left programs
+# in its bin/. Keeps $? as the command left it, for the prompt to show.
 _venv_auto_after() {
   local ret=$? id
   if [ -n "${_VENV_AUTO_CMD_PWD:-}" ] && [ "$_VENV_AUTO_CMD_PWD" = "$PWD" ]; then
     _venv_auto_find
-    if [ -n "$_VENV_AUTO_FOUND" ] && id=$(_venv_auto_id "$_VENV_AUTO_FOUND") &&
-      [ "$id" != "$_VENV_AUTO_CMD_ID" ]; then
-      _venv_auto_trust "$_VENV_AUTO_FOUND"
-      _venv_auto
+    if [ -n "$_VENV_AUTO_FOUND" ] && id=$(_venv_auto_id "$_VENV_AUTO_FOUND") && [ -n "$id" ]; then
+      case $_VENV_AUTO_CMD_IDS in
+        *" $id "*) ;;
+        *) _venv_auto_trust "$_VENV_AUTO_FOUND"; _venv_auto ;;
+      esac
     fi
   fi
   _VENV_AUTO_CMD_PWD=""

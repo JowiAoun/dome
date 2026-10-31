@@ -75,6 +75,10 @@ expect "and the same for python3 -m venv" '[ "$(typed "$HOME/new2" "python3 -m v
 mkdir -p "$HOME/tarred"
 expect "a venv that tar leaves here is not trusted" '[ -z "$(typed "$HOME/tarred" "tar xf project.tar" make_here)" ] && [ ! -e "$HOME/tarred/.venv/ran" ]'
 expect "nor is it when you run uv there later" '[ -z "$(typed "$HOME/tarred" "uv sync" true)" ] && [ ! -e "$HOME/tarred/.venv/ran" ]'
+mkdir -p "$HOME/planted/.venv/bin" && : > "$HOME/planted/.venv/bin/sudo"
+expect "a .venv folder that was there before python3 -m venv filled it in is not trusted" '[ -z "$(typed "$HOME/planted" "python3 -m venv .venv" make_here)" ] && [ ! -e "$HOME/planted/.venv/ran" ]'
+mkdir -p "$HOME/remade"; make_venv "$HOME/remade/.venv"
+expect "a venv that uv deletes and makes again is trusted" '[ "$(typed "$HOME/remade" "uv venv" "eval rm -r .venv && make_here")" = "$HOME/remade/.venv" ]'
 expect "python3 running a script is not watched" '[ -z "$(cd "$HOME/new" && . "$repo/modules/venv-auto.sh" && _venv_auto_before "python3 app.py" && printf "%s" "$_VENV_AUTO_CMD_PWD")" ]'
 mkdir -p "$HOME/moved"
 expect "a venv in a folder the command moved to is not trusted" '[ -z "$(cd "$HOME/new" && . "$repo/modules/venv-auto.sh" && _venv_auto_before "uv sync" && cd "$HOME/moved" && make_here && _venv_auto_after 2>/dev/null && printf "%s" "${VIRTUAL_ENV:-}")" ]'
