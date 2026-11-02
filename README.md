@@ -452,10 +452,12 @@ module) installs it — it has the same bare `Exec=code` and themed `Icon=vscode
 so before this it was installed but absent from the app grid entirely. Its
 entries are written whenever `programs.vscode.enable` is on, apps module or not.
 
-The pins and default browser are **merged, not overwritten** (anything you
-pinned yourself survives), by `~/.local/bin/apps-setup`. It runs during
-`make home`; re-run it by hand if you activate from a TTY or over SSH, where
-there is no D-Bus session to write to.
+The default browser is set, and the dash pins are laid out, by
+`~/.local/bin/apps-setup`. The pins are set up **only once**, on a machine whose
+dash has never been changed. After that they are yours: pin, unpin and reorder
+in GNOME, and `make home` leaves them alone. It runs during `make home`; re-run
+it by hand if you activate from a TTY or over SSH, where there is no D-Bus
+session to write to.
 
 **Already have one of these from apt, snap or flatpak?** It is left completely
 alone — no second copy, no pin, no change to its defaults:

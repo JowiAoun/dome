@@ -251,6 +251,12 @@ same hand-made Games folder four times.
 - **New apps land at the END of the grid.** GNOME puts anything that is not
   in a folder or the layout there, and the user files it.
 
+**The taskbar pins work the same way.** `merge_dash_pins` in
+`modules/apps.nix` lays out the dash only while
+`/org/gnome/shell/favorite-apps` has never been set. After that, the user pins,
+unpins and reorders in GNOME, and `pin = true` on an app means "pinned on a new
+machine", not "kept pinned".
+
 ## Zenbook Duo hardware support lives in linux-on-zenbook-duo
 
 The dock policy, keyboard hotkeys and backlight, speaker chain, battery limit,

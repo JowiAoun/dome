@@ -1349,6 +1349,11 @@ let
     }
 
     # ── 3. dash pins ─────────────────────────────────────────────────────────
+    # The starting dash for a new machine, once. After that the pins are the
+    # user's: GNOME only stores favorite-apps in the user database once
+    # something changes it, so an empty key means Ubuntu's defaults are still
+    # in place. It used to merge and re-sort the pins on every switch, which
+    # undid every pin the user moved or removed.
     merge_dash_pins() {
       local raw cleaned joined="" entry pair name id
       local spec sys_cmd sys_ids sys_id ospec cand
@@ -1356,6 +1361,11 @@ let
       local -a unpins=(${lib.escapeShellArgs unpinIds})
       # One arg per slot; each is a space-separated candidate-id list.
       local -a order_specs=(${lib.concatMapStringsSep " " lib.escapeShellArg dashOrderSpecs})
+
+      if [ -n "$(${pkgs.dconf}/bin/dconf read /org/gnome/shell/favorite-apps 2>/dev/null)" ]; then
+        log "dash pins are yours, left alone"
+        return 0
+      fi
 
       # "name:id" pairs so a pin can be dropped by app name when the machine
       # already provides that app itself.
