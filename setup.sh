@@ -147,6 +147,7 @@ APP_PROBES=(
   "bruno|bruno.desktop com.usebruno.Bruno.desktop bruno_bruno.desktop|bruno"
   "xournalpp|com.github.xournalpp.xournalpp.desktop xournalpp.desktop xournalpp_xournalpp.desktop|xournalpp"
   "rnote|com.github.flxzt.rnote.desktop rnote.desktop rnote_rnote.desktop|rnote"
+  "inkscape|org.inkscape.Inkscape.desktop inkscape.desktop inkscape_inkscape.desktop|inkscape"
   "obs-studio|com.obsproject.Studio.desktop obs-studio.desktop obs-studio_obs-studio.desktop|obs obs-studio"
   "thunderbird|thunderbird.desktop mozilla-thunderbird.desktop net.thunderbird.Thunderbird.desktop thunderbird_thunderbird.desktop|thunderbird"
   "zoom|Zoom.desktop zoom.desktop us.zoom.Zoom.desktop zoom-client_zoom-client.desktop|zoom zoom-us"

@@ -258,6 +258,15 @@ let
       probeCommands = [ "rnote" ];
     }
     {
+      name = "inkscape";
+      package = pkgs.inkscape;           # 1.4.4 from the nixpkgs-inkscape pin, see flake.nix
+      ids = [ "org.inkscape.Inkscape.desktop" ];
+      pin = false;
+      browser = false;
+      probeDesktop = [ "org.inkscape.Inkscape.desktop" "inkscape.desktop" "inkscape_inkscape.desktop" ];
+      probeCommands = [ "inkscape" ];
+    }
+    {
       # Plugins arrive through wrapOBS, which symlink-joins them with OBS and
       # points OBS_PLUGINS_PATH / OBS_PLUGINS_DATA_PATH at the result. Nothing
       # is written under ~/.config/obs-studio, so scene collections, profiles
@@ -1457,7 +1466,10 @@ in
 {
   config = lib.mkMerge [
     (lib.mkIf cfg.enable {
-      home.packages = map (a: a.package) patched ++ extraPkgs;
+      # The Inkscape MCP server comes with Inkscape. Claude Code starts it from
+      # ~/.nix-profile/bin/inkscape-mcp (registered with `claude mcp add`).
+      home.packages = map (a: a.package) patched ++ extraPkgs
+        ++ lib.optional (lib.any (a: a.name == "inkscape") patched) pkgs.inkscape-mcp;
 
       # Absolute-path desktop entries in XDG_DATA_HOME — see the header comment.
       # Web-app launchers land in the same place for the same reason: GNOME

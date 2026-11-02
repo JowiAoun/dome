@@ -17,6 +17,10 @@
     # every other package along. To go back to the conservative 3.7.x line,
     # drop the overlay entry below rather than editing this URL.
     nixpkgs-audacity.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # Inkscape and its MCP server (pkgs/inkscape-mcp.nix), on their own pin too.
+    # The main pin carries Inkscape 1.4.2 and a fastmcp too old for the server,
+    # which upstream tests on 1.4.4. Bump both with `nix flake update nixpkgs-inkscape`.
+    nixpkgs-inkscape.url = "github:NixOS/nixpkgs/nixos-unstable";
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -34,7 +38,7 @@
     };
   };
 
-  outputs = inputs@{ self, nixpkgs, nixpkgs-ghostty, nixpkgs-audacity, home-manager, ... }:
+  outputs = inputs@{ self, nixpkgs, nixpkgs-ghostty, nixpkgs-audacity, nixpkgs-inkscape, home-manager, ... }:
   let
     system = "x86_64-linux";
     # Take Ghostty from the newer pin; everything else stays on the main one.
@@ -44,10 +48,29 @@
     audacityOverlay = final: prev: {
       audacity = (import nixpkgs-audacity { inherit system; }).audacity;
     };
+    inkscapePkgs = import nixpkgs-inkscape { inherit system; };
+    inkscapeOverlay = final: prev: {
+      # The zsh setup in home.nix puts the main pin's libstdc++ on
+      # LD_LIBRARY_PATH for pip packages, and this newer Inkscape will not start
+      # with it. Nix binaries find their own libraries, so the wrapper clears it.
+      inkscape = prev.symlinkJoin {
+        name = "inkscape-${inkscapePkgs.inkscape.version}";
+        paths = [ inkscapePkgs.inkscape ];
+        nativeBuildInputs = [ prev.makeWrapper ];
+        postBuild = ''
+          rm "$out/bin/inkscape"
+          makeWrapper ${inkscapePkgs.inkscape}/bin/inkscape "$out/bin/inkscape" --unset LD_LIBRARY_PATH
+        '';
+        inherit (inkscapePkgs.inkscape) version;
+        # Not the whole meta: its outputsToInstall names a man output this lacks.
+        meta = removeAttrs inkscapePkgs.inkscape.meta [ "outputsToInstall" ];
+      };
+      inkscape-mcp = inkscapePkgs.callPackage ./pkgs/inkscape-mcp.nix { inherit (final) inkscape; };
+    };
     pkgs = import nixpkgs {
       inherit system;
       config.allowUnfree = true;
-      overlays = [ ghosttyOverlay audacityOverlay ];
+      overlays = [ ghosttyOverlay audacityOverlay inkscapeOverlay ];
     };
 
     # Legacy path only: username from the environment. Empty under pure
