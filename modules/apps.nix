@@ -373,7 +373,9 @@ let
   # `notion-app` is macOS-only (it installs Notion.app) and
   # `notion-app-enhanced` is a third-party notion-enhancer repackage, not a
   # Notion build — and YouTube Music has never had a desktop app. For both, the
-  # vendor's web app IS the Linux client.
+  # vendor's web app IS the Linux client. Figma is the same: its desktop app is
+  # macOS and Windows only, and the unofficial figma-linux wrapper last released
+  # in October 2024 and has been delisted from Flathub.
   #
   # `--app=` opens it in its own window with no tabs and no address bar, so it
   # behaves like an application and gets its own dash entry. It costs a .desktop
@@ -410,6 +412,20 @@ let
       icon = pkgs.fetchurl {
         url = "https://music.youtube.com/img/favicon_144.png";
         hash = "sha256-EeHjawpnPC0RgpdCUJRpeVk8inVqRIUdD0UpcowaRwk=";
+      };
+    }
+    {
+      name = "figma";
+      title = "Figma";
+      comment = "Design graphics, layouts and templates";
+      url = "https://www.figma.com/";
+      categories = "Graphics;2DGraphics;VectorGraphics;";
+      pin = false;
+      # The SVG mark with a clear background. Figma's PNG icons sit on an
+      # opaque black square, which reads as a hole in GNOME's dark dash.
+      icon = pkgs.fetchurl {
+        url = "https://static.figma.com/app/icon/2/favicon.svg";
+        hash = "sha256-5iJ7fbxJyG2m9Mz6ArpDlCgQawymJ6CjPqatHgnzNbM=";
       };
     }
   ];
