@@ -1,6 +1,6 @@
-# Windows-style single bottom taskbar for the GNOME session, plus a tidied
-# "Show Apps" grid (default apps grouped into folders — see the App grid
-# organisation block below).
+# Windows-style single bottom taskbar for the GNOME session, plus a starting
+# "Show Apps" grid for a new machine (default apps grouped into folders; see the
+# App grid organisation block below). After that first run the grid is yours.
 #
 # Stock Ubuntu splits the desktop furniture in two: Ubuntu Dock down the left
 # edge and gnome-shell's own top bar holding the clock, tray and system menu.
@@ -74,22 +74,30 @@ let
   perMonitor = value: builtins.toJSON { "0" = value; "1" = value; };
 
   # ── App grid organisation ("Show Apps") ─────────────────────────────────────
-  # Tidies the grid so a fresh install is not a flat wall of system tools: the
-  # default/system apps are grouped into folders; the apps you actually launch
-  # sit at the top level. Every app NOT named below — i.e. anything installed
-  # later — is left out of the folders and off the layout, so GNOME appends it
-  # to the END of the grid, where you will notice it and can decide where it
-  # goes. File it by adding it to a folder (or to `topLevel`) here and re-running
-  # `make home`; until then it waits at the end.
+  # The STARTING grid for a new machine, so it is not a flat wall of system
+  # tools: the default and system apps are grouped into folders, and the apps
+  # you launch sit at the top level. Anything installed later is not named
+  # here, so GNOME appends it to the end of the grid for you to file.
   #
-  # This is declarative and re-asserted on every switch, so the grid is
-  # reproducible — but a drag-rearrange in GNOME does NOT survive a `make home`.
-  # Organise here, in the repo, not by dragging.
+  # It is written once, by the appGridSeed activation below, and only when the
+  # grid has never been set (no app-picker-layout and no folder-children in
+  # dconf). From then on you organise the grid by dragging in GNOME, and
+  # `make home` leaves it alone. It used to be rewritten on every switch, which
+  # threw away every folder made by hand.
+  #
+  # These keys must stay out of dconf.settings. home-manager writes those on
+  # every switch, and resets any key that leaves the list.
   #
   # Folders use explicit `apps` lists rather than `categories` on purpose: a
-  # category folder would swallow matching new apps automatically, which is the
-  # opposite of "new apps wait at the end for me to sort".
+  # category folder would swallow matching new apps automatically.
   appFolders = [
+    { id = "games"; name = "Games"; apps = [
+        "curseforge.desktop"
+        "steam_steam.desktop"
+        "warthunder-launcher.desktop"
+        "Warframe.desktop"
+        "org.vinegarhq.Sober.desktop"
+      ]; }
     { id = "development"; name = "Development"; apps = [
         "bruno.desktop"
         "code.desktop"
@@ -157,8 +165,6 @@ let
     "LocalSend.desktop"
     "open-whispr.desktop"
     "Zoom.desktop"
-    "curseforge.desktop"
-    "warthunder-launcher.desktop"
     "org.gnome.Nautilus.desktop"
     "org.gnome.Calculator.desktop"
     "org.gnome.TextEditor.desktop"
@@ -182,12 +188,22 @@ let
     name = "org/gnome/desktop/app-folders/folders/${f.id}";
     value = { name = f.name; translate = false; apps = f.apps; };
   }) appFolders);
+
+  # The starting grid as a dconf keyfile, written the same way home-manager
+  # writes dconf.settings, for appGridSeed to load once.
+  appGridSeed = pkgs.writeText "app-grid-seed.ini" (lib.generators.toINI {
+    mkKeyValue = key: value: "${key}=${toString (lib.hm.gvariant.mkValue value)}";
+  } ({
+    "org/gnome/shell".app-picker-layout = appPickerLayout;
+    "org/gnome/desktop/app-folders".folder-children = map (f: f.id) appFolders;
+  } // folderSettings));
 in
 {
   options.modules.desktopShell.enable = lib.mkEnableOption ''
     a single Windows-style taskbar along the bottom of the screen: Dash to Panel
     replaces Ubuntu Dock and folds gnome-shell's top bar (clock, tray, system
-    menu) into the same panel. Also organises the "Show Apps" grid into folders.
+    menu) into the same panel. Also gives a new machine a starting "Show Apps"
+    grid with folders, which you then organise yourself.
     Takes effect at the next login — gnome-shell only picks up extensions at
     startup, and Wayland cannot restart it in place
   '';
@@ -258,8 +274,6 @@ in
           ++ lib.optional cfg.loginPinUnlock pinUnlockUuid
           ++ cfg.extraExtensions;
         disabled-extensions = [ "ubuntu-dock@ubuntu.com" ];
-        # App grid order — see appFolders/topLevel above. New apps append at end.
-        app-picker-layout = appPickerLayout;
       };
 
       "org/gnome/shell/extensions/dash-to-panel" = {
@@ -279,10 +293,6 @@ in
       # Only consulted if Ubuntu Dock is ever turned back on, but it keeps the
       # "dash lives at the bottom" intent true in that fallback too.
       "org/gnome/shell/extensions/dash-to-dock".dock-position = "BOTTOM";
-
-      # The folder set. Replaces Ubuntu's stock children (Utilities/YaST/Pardus)
-      # with ours; the per-folder name/apps live in folderSettings, merged below.
-      "org/gnome/desktop/app-folders".folder-children = map (f: f.id) appFolders;
 
       # Keep the file indexer out of the game directories.
       #
@@ -323,6 +333,25 @@ in
         "core-dumps"
         "lost+found"
       ];
-    } // folderSettings;
+    };
+
+    # The starting grid, once. See the App grid organisation block above. Runs
+    # after dconfSettings, which resets these keys on the first switch after
+    # they left dconf.settings, so that switch lays the grid out again instead
+    # of leaving it scrambled.
+    home.activation.appGridSeed = lib.hm.dag.entryAfter [ "dconfSettings" ] ''
+      if [ -z "$(${pkgs.dconf}/bin/dconf read /org/gnome/shell/app-picker-layout)" ] \
+        && [ -z "$(${pkgs.dconf}/bin/dconf read /org/gnome/desktop/app-folders/folder-children)" ]; then
+        # The same session handling as home-manager's dconfSettings.
+        if [[ -v DBUS_SESSION_BUS_ADDRESS ]]; then
+          _grid_bus=""
+        else
+          _grid_bus="${pkgs.dbus}/bin/dbus-run-session --dbus-daemon=${pkgs.dbus}/bin/dbus-daemon"
+        fi
+        echo "app grid: never set up here, so writing the starting folders"
+        run $_grid_bus ${pkgs.dconf}/bin/dconf load / < ${appGridSeed}
+        unset _grid_bus
+      fi
+    '';
   };
 }
