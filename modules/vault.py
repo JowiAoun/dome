@@ -74,6 +74,7 @@ IDLE_SECONDS = int(os.environ.get("VAULT_IDLE_SECONDS") or 15 * 60)
 GUARD = os.environ.get("VAULT_GUARD_UNIT") or "vault-guard.service"
 CHECK = "vault-check.service"
 TIMER = os.environ.get("VAULT_TIMER_UNIT") or "vault-check.timer"
+DESKTOP = os.environ.get("VAULT_DESKTOP_UNIT") or "graphical-session.target"
 
 ROOTS = (str(MOUNT), str(LINK))
 # Either root, as long as what follows ends the name: /run/user/1000/vault-state
@@ -1557,6 +1558,12 @@ def ensure_guard():
     raise ChildProcessError("vault-guard will not start")
 
 
+def desktop_running():
+    """Whether you are logged in to the desktop. The guard is part of that
+    session, so logging out or GNOME crashing stops it, and that is no fault."""
+    return subprocess.run(["systemctl", "--user", "is-active", "--quiet", DESKTOP]).returncode == 0
+
+
 def ensure_paused():
     """Thumbnails stay off for as long as the vault is open, whoever flipped
     them back."""
@@ -1726,7 +1733,7 @@ def review(report, restarted, reason, lock_error, previous):
              fixed="Auto-lock is working again: vault-guard is running.")
     elif guard == "ok":
         resolve("guard-down")
-        if restarted:
+        if restarted and desktop_running():
             warn("guard-stopped", "Vault: the guard had stopped",
                  "vault-guard was not running, so this check started it again. Until then, only this "
                  "check could lock the vault.", incident=True)
@@ -1740,12 +1747,14 @@ def review(report, restarted, reason, lock_error, previous):
 
     health = guard_health()
     if health is not None:
-        if health.get("idle_watch") is False:
+        # None while GNOME is not running: no desktop, so nobody to go idle.
+        idle_watch = health.get("idle_watch")
+        if idle_watch is False:
             warn("guard-idle", "Vault: the idle lock is not working",
                  "GNOME's idle monitor did not answer the guard, so going idle does not lock the vault "
                  "right away. This check still locks it, within 2 minutes of the idle time passing.",
                  fixed="The idle lock is working again.")
-        else:
+        elif idle_watch:
             resolve("guard-idle")
         if is_open() and health.get("inhibitor") is False:
             warn("guard-sleep", "Vault: the vault may not lock before sleep",
@@ -2144,7 +2153,9 @@ class Guard:
         self.system = Gio.bus_get_sync(Gio.BusType.SYSTEM)
         self.armed = False
         self.inhibitor = None
+        self.idle_monitor = False
         self.idle_id = None
+        self.idle_failed = False
         self.dirs = {}
         self.recent = []
         self.pending = set()
@@ -2167,7 +2178,13 @@ class Guard:
         self.system.signal_subscribe(None, "org.freedesktop.login1.Manager",
                                      "PrepareForSleep", "/org/freedesktop/login1", None,
                                      Gio.DBusSignalFlags.NONE, self.on_sleep)
-        self.add_idle_watch()
+        # The idle monitor is part of gnome-shell, so it comes and goes with
+        # the desktop. The guard can start before you log in, and a shell that
+        # crashes takes its idle watches with it. So the watch is set each time
+        # the monitor appears, not once.
+        self.idle_watcher = Gio.bus_watch_name_on_connection(
+            self.session, "org.gnome.Mutter.IdleMonitor", Gio.BusNameWatcherFlags.NONE,
+            self.on_idle_monitor_up, self.on_idle_monitor_gone)
         self.report_health()
         # Polled, and poked with SIGUSR1 by `vault open` so it does not wait.
         GLib.timeout_add_seconds(2, self.refresh)
@@ -2192,6 +2209,8 @@ class Guard:
         if self.armed:
             strip_recent(True)
             hide_everything()
+        if self.idle_monitor and self.idle_id is None:
+            self.add_idle_watch()
         self.report_health()
         self.ticks += 1
         if self.ticks % 10 == 0:
@@ -2200,10 +2219,11 @@ class Guard:
 
     def report_health(self):
         """What the check reads to know the guard is whole: whether the idle
-        watch and, while the vault is open, the sleep delay are in place, and
-        when it last ran."""
+        watch (None with no desktop running) and, while the vault is open, the
+        sleep delay are in place, and when it last ran."""
         write_atomic(HEALTH, json.dumps({
-            "pid": os.getpid(), "beat_monotonic": time.monotonic(), "idle_watch": self.idle_id is not None,
+            "pid": os.getpid(), "beat_monotonic": time.monotonic(),
+            "idle_watch": (self.idle_id is not None) if self.idle_monitor else None,
             "inhibitor": (self.inhibitor is not None) if self.armed else None,
         }))
 
@@ -2234,8 +2254,28 @@ class Guard:
                 "org.gnome.Mutter.IdleMonitor", "AddIdleWatch", GLib.Variant("(t)", (IDLE_SECONDS * 1000,)),
                 GLib.VariantType("(u)"), Gio.DBusCallFlags.NONE, -1, None)
             self.idle_id = reply.unpack()[0]
+            self.idle_failed = False
         except GLib.Error as error:
-            log(f"no idle watch, so the idle lock is off: {error.message}")
+            # Tried again every 30 seconds, but logged once.
+            if not self.idle_failed:
+                log(f"no idle watch, so the idle lock is off: {error.message}")
+            self.idle_failed = True
+
+    @quietly()
+    def on_idle_monitor_up(self, _conn, _name, _owner):
+        self.idle_monitor = True
+        self.idle_id = None
+        self.idle_failed = False
+        self.add_idle_watch()
+        if self.idle_id is not None:
+            log("GNOME's idle monitor is up, so the idle lock is on")
+        self.report_health()
+
+    @quietly()
+    def on_idle_monitor_gone(self, _conn, _name):
+        self.idle_monitor = False
+        self.idle_id = None
+        self.report_health()
 
     @quietly(keep=True)
     def refresh(self, *_):

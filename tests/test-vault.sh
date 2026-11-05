@@ -168,7 +168,47 @@ expect "a Recent entry for a vault file is removed as it is written" '! grep -q 
 expect "the program that added it is remembered for the lock" 'grep -q dummyviewer "$VAULT_STATE/apps.json"'
 W="$HOME/.local/state/vault"
 v check --quiet
-expect "a guard without GNOME's idle monitor (none on this test bus) raises a warning" 'grep -q guard-idle "$W/warnings.json"'
+expect "with no desktop running (no idle monitor on this test bus), the idle lock is not called broken" '! grep -q guard-idle "$W/warnings.json" 2>/dev/null'
+
+echo "test-vault: the idle lock follows GNOME's idle monitor as it comes and goes"
+# A stand-in for gnome-shell's idle monitor, started after the guard, the way
+# a login or a shell crash orders them. "broken" refuses every watch.
+cat > "$T/idle-monitor.py" <<'EOF'
+import sys, warnings, gi; warnings.simplefilter("ignore", DeprecationWarning); gi.require_version("Gio", "2.0"); from gi.repository import Gio, GLib
+XML = """<node><interface name="org.gnome.Mutter.IdleMonitor">
+<method name="AddIdleWatch"><arg type="t" direction="in"/><arg type="u" direction="out"/></method>
+<method name="GetIdletime"><arg type="t" direction="out"/></method></interface></node>"""
+def call(_conn, _sender, _path, _iface, method, _params, invocation):
+    if method == "GetIdletime":
+        invocation.return_value(GLib.Variant("(t)", (0,)))
+    elif sys.argv[1:] == ["broken"]:
+        invocation.return_dbus_error("org.freedesktop.DBus.Error.Failed", "broken on purpose")
+    else:
+        invocation.return_value(GLib.Variant("(u)", (7,)))
+bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+bus.register_object("/org/gnome/Mutter/IdleMonitor/Core", Gio.DBusNodeInfo.new_for_xml(XML).interfaces[0], call, None, None)
+Gio.bus_own_name_on_connection(bus, "org.gnome.Mutter.IdleMonitor", Gio.BusNameOwnerFlags.NONE, None, None)
+GLib.MainLoop().run()
+EOF
+idle_watch() { py -c "import json; print(json.load(open('$VAULT_STATE/guard.json')).get('idle_watch'))" 2>/dev/null; }
+"$T/bin/py" "$T/idle-monitor.py" & monitor=$!
+eventually '[ "$(idle_watch)" = True ]'
+expect "the guard sets its idle watch once the idle monitor appears" '[ "$(idle_watch)" = True ]'
+kill "$monitor"; wait "$monitor" 2>/dev/null
+eventually '[ "$(idle_watch)" = None ]'
+expect "and lets it go when the monitor goes" '[ "$(idle_watch)" = None ]'
+"$T/bin/py" "$T/idle-monitor.py" broken & monitor=$!
+eventually '[ "$(idle_watch)" = False ]'
+v check --quiet
+expect "a monitor that refuses the watch raises a warning" 'grep -q guard-idle "$W/warnings.json"'
+kill "$monitor"; wait "$monitor" 2>/dev/null
+"$T/bin/py" "$T/idle-monitor.py" & monitor=$!
+eventually '[ "$(idle_watch)" = True ]'
+v check --quiet
+expect "a monitor that comes back, as after a shell crash, gets a new watch and the warning clears" \
+  '[ "$(idle_watch)" = True ] && ! grep -q guard-idle "$W/warnings.json"'
+kill "$monitor"; wait "$monitor" 2>/dev/null
+expect "none of the guard's handlers failed along the way" '! grep -q " failed: " "$T/guard.log"'
 
 echo "test-vault: with the guard dead, vault check covers for it"
 kill -9 "$guard"; wait "$guard" 2>/dev/null
@@ -558,6 +598,21 @@ expect "new terminals show it" 'bash "$repo/modules/vault-banner.sh" | grep -q "
 v check --quiet
 expect "the next check that runs clears it" '[ ! -e "$W/alarms.txt" ]'
 expect "a terminal with nothing to report shows nothing" '[ -z "$(XDG_STATE_HOME="$T/none" bash "$repo/modules/vault-banner.sh")" ]'
+
+echo "test-vault: a guard stopped by a logout is not reported"
+# What the check decides after it had to start the guard again, with the
+# desktop down (a made-up unit) and then up (default.target always is).
+restarted_guard() { VAULT_DESKTOP_UNIT="$1" py - "$repo/modules/vault.py" <<'EOF'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("vault", sys.argv[1])
+vault = importlib.util.module_from_spec(spec); spec.loader.exec_module(vault)
+vault.review([("vault-guard", "ok", 1)], 1, None, None, {})
+EOF
+}
+restarted_guard "no-desktop-$$.target"
+expect "a guard that stopped with the desktop session is not news" '! grep -q guard-stopped "$W/warnings.json" 2>/dev/null'
+restarted_guard default.target
+expect "one that stopped while you were logged in is" 'grep -q guard-stopped "$W/warnings.json"'
 
 echo "test-vault: $pass passed, $fail failed, $skipped skipped"
 [ "$fail" -eq 0 ]
