@@ -461,10 +461,16 @@ def warn_part(label):
          fixed=f"{label} is working again.")
 
 
+# Taken out of the environment so the guard's child processes never see it.
+# systemctl reports its own exit status to any notify socket it inherits, and
+# systemd logs a complaint each time.
+NOTIFY_SOCKET = os.environ.pop("NOTIFY_SOCKET", None)
+
+
 def sd_notify(state):
     """Tell systemd how the guard is doing: READY=1 once it is listening, then
     WATCHDOG=1 regularly. If those stop, systemd restarts it."""
-    address = os.environ.get("NOTIFY_SOCKET")
+    address = NOTIFY_SOCKET
     if not address:
         return
     if address.startswith("@"):
