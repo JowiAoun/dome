@@ -367,6 +367,7 @@ the default browser, and the GNOME dash:
   `NoDisplay` via `hideIds` in `modules/apps.nix` so they stay out of the grid.
   Move one into that entry's `ids` to give it an icon
 - **Notion**, **YouTube Music** — pinned **web apps**, see below
+- **Notion Calendar**, **Figma**: web apps too, not pinned
 
 Budget roughly **7 GiB** of disk for the set. To hold one back without
 removing it from the module, name it in `appsSkip` — that is the same switch

@@ -382,7 +382,8 @@ let
   # `notion-app` is macOS-only (it installs Notion.app) and
   # `notion-app-enhanced` is a third-party notion-enhancer repackage, not a
   # Notion build — and YouTube Music has never had a desktop app. For both, the
-  # vendor's web app IS the Linux client. Figma is the same: its desktop app is
+  # vendor's web app IS the Linux client. Notion Calendar ships for macOS,
+  # Windows and phones only. Figma is the same: its desktop app is
   # macOS and Windows only, and the unofficial figma-linux wrapper last released
   # in October 2024 and has been delisted from Flathub.
   #
@@ -409,6 +410,20 @@ let
       icon = pkgs.fetchurl {
         url = "https://www.notion.so/front-static/shared/icons/notion-app-icon-3d.png";
         hash = "sha256-ZlblCHqYTzPYoVO0N3+l1nBcB0N3sbOaHv+7d+OMwB4=";
+      };
+    }
+    {
+      name = "notion-calendar";
+      title = "Notion Calendar";
+      comment = "See your calendars and schedule meetings";
+      url = "https://calendar.notion.so/";
+      categories = "Office;Calendar;";
+      pin = false;
+      # The site's own SVG. The black mark has a white outline, so it stays
+      # visible on GNOME's dark dash.
+      icon = pkgs.fetchurl {
+        url = "https://calendar.notion.so/notion-calendar-favicon.svg";
+        hash = "sha256-jn2OKvBUkSf9FoUHZm44SvWN7uhhNS6Ns2llTJ5dcDA=";
       };
     }
     {
