@@ -35,8 +35,9 @@ PPD = ("org.freedesktop.UPower.PowerProfiles", "/org/freedesktop/UPower/PowerPro
 GAMEMODE = ("com.feralinteractive.GameMode", "/com/feralinteractive/GameMode",
             "com.feralinteractive.GameMode")
 # Games that are neither started by Steam nor registered with GameMode, by the
-# name of their program.
-GAME_PROGRAMS = {"sober": "Roblox"}
+# name of their program. War Thunder from Gaijin's own launcher runs as `aces`.
+# The launcher itself is not counted, so the hold starts when the game does.
+GAME_PROGRAMS = {"sober": "Roblox", "aces": "War Thunder"}
 # Where Steam keeps its library: the snap, the .deb and the Flatpak.
 STEAM_ROOTS = [Path.home() / p / "steamapps" for p in (
     "snap/steam/common/.local/share/Steam",

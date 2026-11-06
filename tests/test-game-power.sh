@@ -78,6 +78,13 @@ expect("a game Steam started is found, by its number when Steam has no record of
 expect("Steam's own AppId=0 is not a game", "Steam game 0" not in games)
 fake.kill(); other.kill(); fake.wait(); other.wait()
 expect("and it is gone once the game exits", "Steam game 4242" not in gp.running_games())
+# A program renamed the way the kernel sees it (PR_SET_NAME is 15), as Gaijin's
+# launcher leaves War Thunder running.
+aces = subprocess.Popen([sys.executable, "-c",
+                         "import ctypes, time; ctypes.CDLL(None).prctl(15, b'aces', 0, 0, 0); time.sleep(30)"])
+time.sleep(0.3)
+expect("War Thunder is found by its program, aces", "War Thunder" in gp.running_games())
+aces.kill(); aces.wait()
 
 print(f"test-game-power: {passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
