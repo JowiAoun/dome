@@ -37,6 +37,9 @@
   openWhispr = true;      # OpenWhispr voice-to-text dictation, from the vendor's GitHub
                           # release (.deb). x64 Linux only, and a ~1 GB install — the
                           # script refuses rather than filling a small disk.
+  hyperframes = true;     # HyperFrames Studio, HeyGen's app for making videos from
+                          # HTML with an agent, from the vendor's .deb (~650 MB).
+                          # It updates itself after that. See system/74-hyperframes.sh.
   braveBrowser = true;    # Brave from Brave's signed apt repo, upgraded to the newest
                           # published build on every `sudo make system` instead of
                           # freezing at the flake pin

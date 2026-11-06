@@ -512,6 +512,12 @@ let
       wmClass = "";
     }
     {
+      name = "hyperframes";              # /opt/hyperframes/resources/app.asar
+      command = "hyperframes";
+      ids = [ "dev.hyperframes.desktop.desktop" ];
+      wmClass = "";
+    }
+    {
       name = "curseforge";               # /opt/CurseForge/resources/app.asar
       command = "curseforge";
       ids = [ "curseforge.desktop" "CurseForge.desktop" ];

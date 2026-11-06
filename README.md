@@ -751,6 +751,7 @@ tailscale = true;           # Tailscale from its apt repo; joins nothing until `
 dockerDesktop = false;      # Docker Desktop GUI
 claudeDesktop = true;       # Claude desktop app (beta)
 openWhispr = true;          # OpenWhispr dictation, from its GitHub release (~1 GB)
+hyperframes = true;         # HyperFrames Studio, videos from HTML, from its .deb (~650 MB)
 braveBrowser = true;        # Brave from Brave's apt repo, not nixpkgs
 braveManagedPolicy = true;  # Leo, Wallet, Rewards, VPN, News, Web Discovery off
 geckoPolicy = true;         # Firefox + Thunderbird: middle-click autoscroll, as policy
@@ -758,7 +759,7 @@ flatpak = true;             # Flatpak + the Flathub remote, system-wide
 ```
 
 Each has a matching one-run override on `system/run.sh` — `--no-brave`,
-`--no-brave-policy`, `--no-gecko-policy`, `--no-openwhispr`,
+`--no-brave-policy`, `--no-gecko-policy`, `--no-openwhispr`, `--no-hyperframes`,
 `--no-claude-desktop`, `--no-flatpak`.
 
 ### Flatpak
@@ -1163,6 +1164,21 @@ click itself and never reads `gtk-enable-primary-paste`, it exposes no setting
 for it, and its keybind triggers are keyboard-only
 (`keybind = mouse_middle=...` → `error.InvalidFormat`), so there is nothing to
 set and nothing to bind. Middle-click paste stays in Ghostty.
+
+### HyperFrames Studio
+
+`system/74-hyperframes.sh` installs
+[HyperFrames Studio](https://github.com/heygen-com/hyperframes), HeyGen's app
+for making videos out of HTML with an agent, from the vendor's own `.deb`.
+nixpkgs does not have it.
+
+- **What it installs:** the build that `latest.json` on the vendor's download
+  host names, checked against the sha256 listed there. The `.deb` brings its own
+  launcher, icon and AppArmor profile.
+- **Updates:** the app updates itself. It reads the same `latest.json` and asks
+  for your password to install the new `.deb`. `sudo make system` also upgrades
+  it, and downloads only when the installed build is older.
+- **Size:** a 172 MB download, about 650 MB installed.
 
 ### OpenWhispr
 

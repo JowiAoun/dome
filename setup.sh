@@ -461,7 +461,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   # up its redirection first and truncates the file, so a $(cfg_get ...) inside
   # the heredoc body would read the now-empty file and every saved preference
   # would silently reset to the hard-coded default below on each re-run.
-  local git_branch git_editor pref_shell pref_editor docker_engine docker_desktop claude_desktop brave_browser brave_policy open_whispr game_mode tailscale flatpak flatpak_apps login_pin_length login_rate_limit
+  local git_branch git_editor pref_shell pref_editor docker_engine docker_desktop claude_desktop brave_browser brave_policy open_whispr hyperframes game_mode tailscale flatpak flatpak_apps login_pin_length login_rate_limit
   git_branch="$(cfg_get gitDefaultBranch)"
   git_editor="$(cfg_get gitEditor)"
   pref_shell="$(cfg_get preferredShell)"
@@ -475,6 +475,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   brave_policy="$(cfg_get braveManagedPolicy)"
   gecko_policy="$(cfg_get geckoPolicy)"
   open_whispr="$(cfg_get openWhispr)"
+  hyperframes="$(cfg_get hyperframes)"
   game_mode="$(cfg_get gameMode)"
   tailscale="$(cfg_get tailscale)"
   flatpak="$(cfg_get flatpak)"
@@ -522,6 +523,7 @@ write_config() { # <host> <name> <email> then module vars m_python.. in env
   dockerDesktop = $docker_desktop;
   claudeDesktop = $claude_desktop;
   openWhispr = $open_whispr;
+  hyperframes = $hyperframes;
   braveBrowser = $brave_browser;
   braveManagedPolicy = $brave_policy;
   geckoPolicy = $gecko_policy;
@@ -574,6 +576,7 @@ EOF
   sed -i 's/braveManagedPolicy = ;/braveManagedPolicy = true;/' user-config.nix
   sed -i 's/geckoPolicy = ;/geckoPolicy = true;/' user-config.nix
   sed -i 's/openWhispr = ;/openWhispr = true;/' user-config.nix
+  sed -i 's/hyperframes = ;/hyperframes = true;/' user-config.nix
   sed -i 's/gameMode = ;/gameMode = false;/' user-config.nix
   sed -i 's/tailscale = ;/tailscale = true;/' user-config.nix
   sed -i 's/flatpak = ;/flatpak = true;/' user-config.nix

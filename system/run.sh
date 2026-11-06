@@ -13,7 +13,7 @@
 # Order: preflight (read-only) → Timeshift snapshot → base → kernel → GRUB,
 # then 40-zenbook-duo.sh (the linux-on-zenbook-duo installer) when the host
 # profile is zenbook-duo, then the host-independent extras (60 docker, 62 tailscale, 70 docker-desktop,
-# 75 claude-desktop, 76 openwhispr, 77 gecko-policy, 78 brave, 79 brave-policy, 80 nix-gpu,
+# 74 hyperframes, 75 claude-desktop, 76 openwhispr, 77 gecko-policy, 78 brave, 79 brave-policy, 80 nix-gpu,
 # 82 flatpak, 83 qt-runtime, 85 apparmor-userns, 86 gamemode, 87 login-pin, 88 faillock,
 # 96 tpm-unlock, 95 luks).
 #
@@ -26,7 +26,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./lib.sh
 
-usage_text() { echo "usage: run.sh [--host <profile>] [--dry-run] [--snapshot] [--docker-desktop] [--no-claude-desktop] [--no-brave] [--no-brave-policy] [--no-gecko-policy] [--no-openwhispr] [--gamemode|--no-gamemode] [--flatpak|--no-flatpak]"; }
+usage_text() { echo "usage: run.sh [--host <profile>] [--dry-run] [--snapshot] [--docker-desktop] [--no-claude-desktop] [--no-brave] [--no-brave-policy] [--no-gecko-policy] [--no-openwhispr] [--no-hyperframes] [--gamemode|--no-gamemode] [--flatpak|--no-flatpak]"; }
 usage() { die "$(usage_text)"; }
 
 while [ $# -gt 0 ]; do
@@ -48,6 +48,8 @@ while [ $# -gt 0 ]; do
     --no-gecko-policy)   GECKO_POLICY=0; export GECKO_POLICY; shift ;;
     --openwhispr)        OPENWHISPR=1; export OPENWHISPR; shift ;;
     --no-openwhispr)     OPENWHISPR=0; export OPENWHISPR; shift ;;
+    --hyperframes)       HYPERFRAMES=1; export HYPERFRAMES; shift ;;
+    --no-hyperframes)    HYPERFRAMES=0; export HYPERFRAMES; shift ;;
     --gamemode)          GAME_MODE=1; export GAME_MODE; shift ;;
     --no-gamemode)       GAME_MODE=0; export GAME_MODE; shift ;;
     --flatpak)           FLATPAK=1; export FLATPAK; shift ;;
@@ -88,7 +90,7 @@ fi
 # Host-independent extras. Each one either honors a user-config.nix switch
 # (docker) or detects that it has nothing to do (GPU, AppArmor), and every one
 # of them logs why it is skipping — so they are safe to run unconditionally.
-for script in 60-docker.sh 62-tailscale.sh 70-docker-desktop.sh 75-claude-desktop.sh 76-openwhispr.sh 77-gecko-policy.sh 78-brave.sh 79-brave-policy.sh 80-nix-gpu.sh 82-flatpak.sh 83-qt-runtime.sh 84-media.sh 85-apparmor-userns.sh 86-gamemode.sh 87-login-pin.sh 88-faillock.sh 96-tpm-unlock.sh 95-luks.sh; do
+for script in 60-docker.sh 62-tailscale.sh 70-docker-desktop.sh 74-hyperframes.sh 75-claude-desktop.sh 76-openwhispr.sh 77-gecko-policy.sh 78-brave.sh 79-brave-policy.sh 80-nix-gpu.sh 82-flatpak.sh 83-qt-runtime.sh 84-media.sh 85-apparmor-userns.sh 86-gamemode.sh 87-login-pin.sh 88-faillock.sh 96-tpm-unlock.sh 95-luks.sh; do
   log "── $script"
   bash "./$script"
 done
